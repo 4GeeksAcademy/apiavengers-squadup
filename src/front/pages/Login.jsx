@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useState,useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 
 export const Login = () => {
   const [username, setUsername] = useState(''); // Changed from email to username
   const [password, setPassword] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
    const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,12 +39,21 @@ export const Login = () => {
 
       // Save  access token 
       localStorage.setItem('access_token', data.access_token);
+      setIsLoggedIn(true)
+      console.log("login success")
+      setError(err.message || 'Failed to login. Please try again.');
       
     } catch (err) {
-      setError(err.message || 'Failed to login. Please try again.');
-    } finally {
-    }
+      setError(err.message || "You didn't say the magic word")
+    } 
+ 
   };
+    
+  useEffect(() => {
+    if (isLoggedIn) {
+      navigate('/Single'); 
+    }
+  }, [isLoggedIn, navigate]);
 
   return (
     <div className="login-container">

@@ -39,9 +39,6 @@ export const Home = () => {
 			<p className="lead">
 				<img src={rigoImageUrl} className="img-fluid rounded-circle mb-3" alt="Rigo Baby" />
 			</p>
-			<link to="/pages/Login">
-			<button>Login</button>
-			</link>
 			<div className="alert alert-info">
 				{store.message ? (
 					<span>{store.message}</span>

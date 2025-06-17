@@ -3,6 +3,9 @@ import { Link, useParams } from "react-router-dom";  // To use link for navigati
 import PropTypes from "prop-types";  // To define prop types for this component
 import rigoImageUrl from "../assets/img/rigo-baby.jpg"  // Import an image asset
 import useGlobalReducer from "../hooks/useGlobalReducer";  // Import a custom hook for accessing the global state
+import { useNavigate } from 'react-router-dom';
+import { useEffect, useState} from 'react';
+import { jwtDecode } from 'jwt-decode'
 
 // Define and export the Single component which displays individual item details.
 export const Single = props => {
@@ -12,7 +15,52 @@ export const Single = props => {
   // Retrieve the 'theId' URL parameter using useParams hook.
   const { theId } = useParams()
   const singleTodo = store.todos.find(todo => todo.id === parseInt(theId));
+  const navigate = useNavigate();
 
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const decoded = jwtDecode(token);
+      const currentTime = Date.now() / 1000;
+      
+      if (decoded.exp < currentTime) {
+        localStorage.removeItem('access_token');
+        navigate('/login');
+      }
+    } catch (err) {
+      localStorage.removeItem('access_token');
+      navigate('/login');
+    }
+  }, [navigate]);
+
+  /*
+  const fetchProtectedData = async () => {
+    try {
+      const response = await fetch('https://api.example.com/protected', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch data');
+      }
+      
+      const data = await response.json();
+      // Handle your data
+    } catch (err) {
+      console.error(err);
+      navigate('/login');
+    }
+      
+  };
+*/
   return (
     <div className="container text-center">
       {/* Display the title of the todo element dynamically retrieved from the store using theId. */}
