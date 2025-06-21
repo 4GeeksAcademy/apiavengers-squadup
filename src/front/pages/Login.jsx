@@ -1,8 +1,11 @@
 import { useState,useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import useGlobalReducer from "../hooks/useGlobalReducer";
+import { login } from "../fetch";
 
 
 export const Login = () => {
+  const { store, dispatch } = useGlobalReducer();
   const [username, setUsername] = useState(''); // Changed from email to username
   const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -10,47 +13,46 @@ export const Login = () => {
   const navigate = useNavigate();
 
    const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  e.preventDefault();  // This should be FIRST
+  setError('');  // Clear previous errors
+  
+  // Validate inputs
+  if (!username || !password) {
+    setError('Please fill in all fields');
+    return;
+  }
+
+  try {
+    // Await the login call and handle the response
+    const userData = await login(username, password);
     
-    if (!username || !password) {
-      setError('Please fill in all fields');
-      return;
-    }
-
+    // Handle successful login
+dispatch({
+  type: 'fetchedToken',
+  payload: {
+    message: 'Login successful',
+    token: data.access_token, 
+    isLoginSuccessful: true,
+    loggedIn: true,  
+  }
+});
+    // Optional: Redirect or update state
+    navigate('/single');
     
-    try {
-      const response = await fetch('https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: username,
-          password: password
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.msg || 'Login failed');
+  } catch (err) {
+    // Handle login failure
+    setError(err.message || 'Login failed');
+    dispatch({
+      type: 'loginFailure',
+      payload: {
+        error: err.message
       }
-
-      // Save  access token 
-      localStorage.setItem('access_token', data.access_token);
-      setIsLoggedIn(true)
-      console.log("login success")
-      setError(err.message || 'Failed to login. Please try again.');
-      
-    } catch (err) {
-      setError(err.message || "You didn't say the magic word")
-    } 
- 
-  };
+    });
+  }
+};
     
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn ) {
       navigate('/Single'); 
     }
   }, [isLoggedIn, navigate]);
@@ -62,8 +64,8 @@ export const Login = () => {
         
         <div className="error-message">{error}</div>
         
-        <div className="form-group">
-          <label htmlFor="username">Username</label>
+        <div id="username-group">
+          <label id="username">Username</label>
           <input type="text" id="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -71,7 +73,7 @@ export const Login = () => {
           />
         </div>
         
-        <div className="form-group">
+        <div id="password-group">
           <label htmlFor="password">Password</label>
           <input type="password" id="password"
             value={password}

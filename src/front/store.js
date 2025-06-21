@@ -1,6 +1,10 @@
 export const initialStore=()=>{
   return{
     message: null,
+    access_token: null,
+    isLoginSuccessful: false,
+    isLoggedIn: false,
+    isSignUpSuccessful: false,
     todos: [
       {
         id: 1,
@@ -17,7 +21,7 @@ export const initialStore=()=>{
 }
 
 export default function storeReducer(store, action = {}) {
-  switch(action.type){
+  switch(action.type) {
     case 'set_hello':
       return {
         ...store,
@@ -25,14 +29,36 @@ export default function storeReducer(store, action = {}) {
       };
       
     case 'add_task':
-
-      const { id,  color } = action.payload
-
+      const { id, color } = action.payload;
       return {
         ...store,
-        todos: store.todos.map((todo) => (todo.id === id ? { ...todo, background: color } : todo))
+        todos: store.todos.map((todo) => 
+          todo.id === id ? { ...todo, background: color } : todo
+        )
       };
+    
+    case 'fetchedToken': {
+      const { message, token, isLoginSuccessful, loggedIn } = action.payload;
+      return {
+        ...store,
+        message: message,
+        access_token: token,  
+        isLoginSuccessful: isLoginSuccessful,
+        isLoggedIn: loggedIn, 
+      };
+    }
+    
+    case 'loggedOut': {
+      return {
+        ...store,
+        message: null,
+        access_token: null, 
+        isLoginSuccessful: false,
+        isLoggedIn: false,  
+      };
+    }
+    
     default:
-      throw Error('Unknown action.');
+      return store; 
   }    
 }

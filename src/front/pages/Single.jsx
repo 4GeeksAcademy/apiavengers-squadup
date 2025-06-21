@@ -12,7 +12,7 @@ export const Single = props => {
   // Access the global state using the custom hook.
   const { store } = useGlobalReducer()
 
-  // Retrieve the 'theId' URL parameter using useParams hook.
+
   const { theId } = useParams()
   const singleTodo = store.todos.find(todo => todo.id === parseInt(theId));
   const navigate = useNavigate();
