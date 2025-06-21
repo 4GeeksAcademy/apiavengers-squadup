@@ -7,12 +7,9 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState} from 'react';
 import { jwtDecode } from 'jwt-decode'
 
-// Define and export the Single component which displays individual item details.
+
 export const Single = props => {
-  // Access the global state using the custom hook.
   const { store } = useGlobalReducer()
-
-
   const { theId } = useParams()
   const singleTodo = store.todos.find(todo => todo.id === parseInt(theId));
   const navigate = useNavigate();
@@ -39,32 +36,11 @@ export const Single = props => {
     }
   }, [navigate]);
 
-  /*
-  const fetchProtectedData = async () => {
-    try {
-      const response = await fetch('https://api.example.com/protected', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch data');
-      }
-      
-      const data = await response.json();
-      // Handle your data
-    } catch (err) {
-      console.error(err);
-      navigate('/login');
-    }
-      
-  };
-*/
+  
   return (
     <div className="container text-center">
       {/* Display the title of the todo element dynamically retrieved from the store using theId. */}
-      <h1 className="display-4">Todo: {singleTodo?.title}</h1>
+      <h1 className="display-4">Todo: You Are now logged in to a protected link.</h1>
       <hr className="my-4" />  {/* A horizontal rule for visual separation. */}
 
       {/* A Link component acts as an anchor tag but is used for client-side routing to prevent page reloads. */}

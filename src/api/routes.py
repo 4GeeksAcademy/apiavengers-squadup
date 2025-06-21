@@ -24,11 +24,9 @@ def login():
     if username != "test" or password != "test":
         return jsonify({"msg": "Bad username or password"}), 401
     access_token = create_access_token(identity=username)
-    response = {
-        'access_token': access_token,
-        'message': f'Welcome {User.username}!'
-    }
-    return jsonify(response, access_token=access_token)
+
+    return jsonify({"access_token": access_token,
+                    "msg": "Login success"}), 200
 
 
 # Protect a route with jwt_required, which will kick out requests
@@ -38,5 +36,7 @@ def login():
 def protected():
     current_user = get_jwt_identity()
     return jsonify(logged_in_as=current_user), 200
+
+
 if __name__ == "__main__":
     api.run()

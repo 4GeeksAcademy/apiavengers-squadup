@@ -1,59 +1,42 @@
-import { useState,useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useGlobalReducer from "../hooks/useGlobalReducer";
-import { login } from "../fetch";
+import { loginFetch } from "../fetch";
 
 
 export const Login = () => {
-  const { store, dispatch } = useGlobalReducer();
+  const { dispatch } = useGlobalReducer();
   const [username, setUsername] = useState(''); // Changed from email to username
   const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-   const handleSubmit = async (e) => {
-  e.preventDefault();  // This should be FIRST
-  setError('');  // Clear previous errors
-  
-  // Validate inputs
-  if (!username || !password) {
-    setError('Please fill in all fields');
-    return;
-  }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
 
-  try {
-    // Await the login call and handle the response
-    const userData = await login(username, password);
-    
-    // Handle successful login
-dispatch({
-  type: 'fetchedToken',
-  payload: {
-    message: 'Login successful',
-    token: data.access_token, 
-    isLoginSuccessful: true,
-    loggedIn: true,  
-  }
-});
-    // Optional: Redirect or update state
-    navigate('/single');
-    
-  } catch (err) {
-    // Handle login failure
-    setError(err.message || 'Login failed');
-    dispatch({
-      type: 'loginFailure',
-      payload: {
-        error: err.message
-      }
-    });
-  }
-};
-    
+    // Validate inputs
+    if (!username || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    try {
+
+      const userData = await loginFetch(username, password, dispatch);
+
+      navigate('/single');
+
+    } catch (err) {
+      setError(err.message || 'Login failed');
+
+    }
+  };
+
   useEffect(() => {
-    if (isLoggedIn ) {
-      navigate('/Single'); 
+    if (isLoggedIn) {
+      navigate('/Single');
     }
   }, [isLoggedIn, navigate]);
 
@@ -61,9 +44,9 @@ dispatch({
     <div className="login-container">
       <form onSubmit={handleSubmit} >
         <h2>Login</h2>
-        
+
         <div className="error-message">{error}</div>
-        
+
         <div id="username-group">
           <label id="username">Username</label>
           <input type="text" id="username"
@@ -72,7 +55,7 @@ dispatch({
             placeholder="Enter your username"
           />
         </div>
-        
+
         <div id="password-group">
           <label htmlFor="password">Password</label>
           <input type="password" id="password"
