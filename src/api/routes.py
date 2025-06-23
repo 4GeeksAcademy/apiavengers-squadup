@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, url_for, Blueprint
 from api.models import db, User
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
-
+# import JWT - Token Generator  - Auth JWT 3 in route 1 in app.py Secret
 api = Blueprint('api', __name__)
 
 # Allow CORS requests to this API
