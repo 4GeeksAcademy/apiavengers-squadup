@@ -1,28 +1,32 @@
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import String, Boolean, DateTime, Text
+from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 
 db = SQLAlchemy()
 
 class User(db.Model):
-    __tablename__ = 'user'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
+    avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
+    bio: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_login: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
+    is_steam_connected: Mapped[bool] = mapped_column(Boolean(), default=False)
 
     def serialize(self):
         return {
             "id": self.id,
             "email": self.email,
             "username": self.username,
-            "created_at": self.created_at.isoformat()
+            "avatar_url": self.avatar_url,
+            "bio": self.bio,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+            "is_active": self.is_active,
+            "is_steam_connected": self.is_steam_connected
+            # do not serialize the password, its a security breach
         }
