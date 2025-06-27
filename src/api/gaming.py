@@ -288,7 +288,7 @@ def get_user_groups():
         return jsonify({"error": "Internal server error"}), 500
 
 # ============================================================================
-# GAME SYNERGY AND MATCHING ROUTES
+# GAME SYNERGY AND MATCHING ROUTES - THE CORE FEATURE
 # ============================================================================
 
 @gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])

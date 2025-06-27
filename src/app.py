@@ -12,6 +12,7 @@ from api.utils import APIException, generate_sitemap
 from api.models import db
 from api.routes import api
 from api.auth import auth
+from api.gaming import gaming  # Import gaming blueprint
 from api.admin import setup_admin
 from api.commands import setup_commands
 
@@ -194,9 +195,10 @@ db.init_app(app)
 setup_admin(app)
 setup_commands(app)
 
-# Register blueprints
+# Register blueprints - MOVED TO CORRECT LOCATION
 app.register_blueprint(api, url_prefix='/api')
 app.register_blueprint(auth, url_prefix='/api/auth')
+app.register_blueprint(gaming, url_prefix='/api/gaming')  # Gaming routes now available!
 
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
@@ -218,4 +220,4 @@ def serve_any_other_file(path):
 
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=True) 
