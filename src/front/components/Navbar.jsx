@@ -46,114 +46,132 @@ export const Navbar = () => {
     };
 
     return (
-        <nav className="fixed top-4 left-4 right-4 z-50">
-            <div className="backdrop-blur-md bg-white/10 border border-white/20 rounded-2xl px-6 py-4 shadow-2xl">
-                <div className="flex justify-between items-center">
-                    
-                    {/* Logo and Brand */}
-                    <button 
-                        onClick={navigateToHome}
-                        className="flex items-center space-x-3 group"
-                    >
-                        <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-blue-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                            <span className="text-white font-bold text-sm">S</span>
-                        </div>
-                        <span className="text-white font-bold text-xl group-hover:text-coral-400 transition-colors duration-300">
-                            SquadUp
-                        </span>
-                    </button>
-
-                    {/* Navigation Links and User Menu */}
-                    <div className="flex items-center space-x-4">
+        <>
+            <nav className="fixed top-4 left-4 right-4 z-50">
+                <div className="backdrop-blur-md bg-white/10 border border-white/20 rounded-2xl px-6 py-4 shadow-2xl">
+                    <div className="flex justify-between items-center">
                         
-                        {/* Navigation Links - Show different links based on auth status */}
-                        {isAuthenticated ? (
-                            <>
-                                <button 
-                                    onClick={navigateToDashboard}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
-                                >
-                                    Dashboard
-                                </button>
-                                <button 
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
-                                >
-                                    Find Games
-                                </button>
-                                <button 
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
-                                >
-                                    Friends
-                                </button>
-                            </>
-                        ) : (
-                            <button 
-                                className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
-                            >
-                                About
-                            </button>
-                        )}
+                        {/* Logo and Brand */}
+                        <button 
+                            onClick={navigateToHome}
+                            className="flex items-center space-x-3 group"
+                        >
+                            <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-blue-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                <span className="text-white font-bold text-sm">S</span>
+                            </div>
+                            <span className="text-white font-bold text-xl group-hover:text-coral-400 transition-colors duration-300">
+                                SquadUp
+                            </span>
+                        </button>
 
-                        {/* User Menu or Auth Buttons */}
-                        {isAuthenticated ? (
-                            <div className="flex items-center space-x-3">
-                                {/* User Avatar and Menu */}
-                                <div className="relative group">
+                        {/* Navigation Links and User Menu */}
+                        <div className="flex items-center space-x-4">
+                            
+                            {/* Navigation Links - Show different links based on auth status */}
+                            {isAuthenticated ? (
+                                <>
                                     <button 
-                                        onClick={navigateToProfile}
-                                        className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
+                                        onClick={navigateToDashboard}
+                                        className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
                                     >
-                                        {user?.avatar_url ? (
-                                            <img 
-                                                src={user.avatar_url} 
-                                                alt="Avatar" 
-                                                className="w-8 h-8 rounded-full"
-                                            />
-                                        ) : (
-                                            <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center">
-                                                <span className="text-white font-bold text-sm">
-                                                    {user?.username?.[0]?.toUpperCase() || 'U'}
-                                                </span>
-                                            </div>
-                                        )}
-                                        <span className="text-white font-medium">
-                                            {user?.username || 'User'}
-                                        </span>
+                                        Dashboard
                                     </button>
-                                    
-                                    {/* Dropdown menu - would be positioned absolute in real implementation */}
-                                </div>
+                                    <button 
+                                        className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    >
+                                        Find Games
+                                    </button>
+                                    <button 
+                                        className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    >
+                                        Friends
+                                    </button>
+                                </>
+                            ) : (
+                                <button 
+                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                >
+                                    About
+                                </button>
+                            )}
 
-                                {/* Logout Button */}
-                                <button
-                                    onClick={handleLogout}
-                                    className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 hover:text-red-200 rounded-xl transition-all duration-300 font-medium"
-                                >
-                                    Logout
-                                </button>
-                            </div>
-                        ) : (
-                            /* Auth Buttons for non-authenticated users */
-                            <div className="flex items-center space-x-3">
-                                <button
-                                    onClick={navigateToLogin}
-                                    className="px-4 py-2 text-white/80 hover:text-white transition-colors duration-300 font-medium"
-                                >
-                                    Login
-                                </button>
-                                <button
-                                    onClick={navigateToSignUp}
-                                    className="px-4 py-2 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
-                                >
-                                    Sign Up
-                                </button>
-                            </div>
-                        )}
+                            {/* User Menu or Auth Buttons */}
+                            {isAuthenticated ? (
+                                <div className="flex items-center space-x-3">
+                                    {/* User Avatar and Menu */}
+                                    <div className="relative group">
+                                        <button 
+                                            onClick={navigateToProfile}
+                                            className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
+                                        >
+                                            {user?.avatar_url ? (
+                                                <img 
+                                                    src={user.avatar_url} 
+                                                    alt="Avatar" 
+                                                    className="w-8 h-8 rounded-full"
+                                                />
+                                            ) : (
+                                                <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center">
+                                                    <span className="text-white font-bold text-sm">
+                                                        {user?.username?.[0]?.toUpperCase() || 'U'}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <span className="text-white font-medium">
+                                                {user?.username || 'User'}
+                                            </span>
+                                        </button>
+                                        
+                                        {/* Dropdown menu - positioned absolute */}
+                                        <div className="navbar-dropdown">
+                                            <button className="dropdown-item" onClick={navigateToProfile}>
+                                                Profile Settings
+                                            </button>
+                                            <button className="dropdown-item">
+                                                Gaming Preferences
+                                            </button>
+                                            <button className="dropdown-item">
+                                                Steam Integration
+                                            </button>
+                                            <hr className="my-2 border-white/20" />
+                                            <button className="dropdown-item text-red-300" onClick={handleLogout}>
+                                                Logout
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Logout Button */}
+                                    <button
+                                        onClick={handleLogout}
+                                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 hover:text-red-200 rounded-xl transition-all duration-300 font-medium"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            ) : (
+                                /* Auth Buttons for non-authenticated users */
+                                <div className="flex items-center space-x-3">
+                                    <button
+                                        onClick={navigateToLogin}
+                                        className="px-4 py-2 text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    >
+                                        Login
+                                    </button>
+                                    <button
+                                        onClick={navigateToSignUp}
+                                        className="px-4 py-2 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
+                                    >
+                                        Sign Up
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            </nav>
 
-            <style jsx>{`
+            {/* CSS Styles - moved to a regular style tag */}
+            <style>{`
                 .navbar-dropdown {
                     position: absolute;
                     top: 100%;
@@ -170,6 +188,7 @@ export const Navbar = () => {
                     visibility: hidden;
                     transform: translateY(-10px);
                     transition: all 0.3s ease;
+                    z-index: 1000;
                 }
 
                 .group:hover .navbar-dropdown {
@@ -189,6 +208,7 @@ export const Navbar = () => {
                     border-radius: 8px;
                     transition: all 0.2s ease;
                     font-size: 14px;
+                    cursor: pointer;
                 }
 
                 .dropdown-item:hover {
@@ -196,6 +216,6 @@ export const Navbar = () => {
                     color: white;
                 }
             `}</style>
-        </nav>
+        </>
     );
 };
