@@ -15,11 +15,24 @@ class SteamService:
         self.api_key = os.getenv('STEAM_API_KEY')
         self.base_url = 'https://api.steampowered.com'
         
+        # Don't raise error if Steam API key is missing - just log it
         if not self.api_key:
-            raise ValueError("STEAM_API_KEY environment variable is required")
+            print("⚠️  STEAM_API_KEY not found in environment variables")
+            print("   Steam integration will be disabled until API key is provided")
+            print("   Get your Steam API key from: https://steamcommunity.com/dev/apikey")
+    
+    def _check_api_key(self):
+        """Check if Steam API key is available"""
+        if not self.api_key:
+            raise APIException(
+                "Steam integration is not configured. Please contact administrator.", 
+                status_code=503
+            )
     
     def get_user_profile(self, steam_id: str) -> Dict:
         """Get Steam user profile information"""
+        self._check_api_key()
+        
         url = f"{self.base_url}/ISteamUser/GetPlayerSummaries/v0002/"
         params = {
             'key': self.api_key,
@@ -41,6 +54,8 @@ class SteamService:
     
     def get_user_games(self, steam_id: str) -> List[Dict]:
         """Get user's owned games from Steam"""
+        self._check_api_key()
+        
         url = f"{self.base_url}/IPlayerService/GetOwnedGames/v0001/"
         params = {
             'key': self.api_key,
@@ -294,4 +309,8 @@ class SteamService:
         return filtered
 
 # Initialize service
-steam_service = SteamService()
+try:
+    steam_service = SteamService()
+except Exception as e:
+    print(f"Warning: Steam service initialization failed: {e}")
+    steam_service = None
