@@ -6,12 +6,17 @@ import { Footer } from "../components/Footer";
 
 export const Layout = () => {
     return (
-        <div>
+        <div className="min-h-screen flex flex-col">
+            {/* Only show navbar on non-auth pages */}
             <Navbar />
-            <main className="container my-5">
+            
+            {/* Main content area */}
+            <main className="flex-1">
                 {/* The <Outlet> is where your pages like Home and SignUp will be rendered */}
                 <Outlet />
             </main>
+            
+            {/* Footer */}
             <Footer />
         </div>
     );

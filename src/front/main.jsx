@@ -2,15 +2,15 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+
+// Import CSS FIRST - this is critical for styling to work
 import './index.css';
 
-// CHANGE: Import the tools for routing
+// Import routing tools
 import { RouterProvider } from "react-router-dom";
-import { router } from "./routes.jsx"; // This file defines your pages
+import { router } from "./routes.jsx";
 
-// CHANGE: We no longer need to import App.jsx
-
-// Import your custom store provider and helper component
+// Import store provider with correct syntax
 import { StoreProvider } from './hooks/useGlobalReducer.jsx';
 import { BackendURL } from './components/BackendURL.jsx';
 
@@ -19,7 +19,9 @@ const Main = () => {
     if (!import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND_URL === "") {
         return (
             <React.StrictMode>
-                <BackendURL />
+                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+                    <BackendURL />
+                </div>
             </React.StrictMode>
         );
     }
@@ -28,7 +30,6 @@ const Main = () => {
     return (
         <React.StrictMode>
             <StoreProvider>
-                {/* CHANGE: Replace <App /> with the RouterProvider */}
                 <RouterProvider router={router} />
             </StoreProvider>
         </React.StrictMode>

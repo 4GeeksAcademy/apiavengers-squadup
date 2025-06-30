@@ -1,4 +1,4 @@
-// src/front/hooks/useGlobalReducer.jsx - Enhanced with authentication
+// src/front/hooks/useGlobalReducer.jsx - Fixed exports and imports
 
 import { useContext, useReducer, createContext, useEffect } from "react";
 import storeReducer, { initialStore, ACTION_TYPES } from "../store/store";
@@ -22,27 +22,29 @@ export function StoreProvider({ children }) {
                 // Verify token with backend
                 try {
                     const backendUrl = import.meta.env.VITE_BACKEND_URL;
-                    const response = await fetch(`${backendUrl}/api/auth/verify`, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                        }
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        dispatch({ 
-                            type: ACTION_TYPES.LOGIN_SUCCESS, 
-                            payload: { 
-                                user: data.user, 
-                                token: token 
-                            } 
+                    if (backendUrl) {
+                        const response = await fetch(`${backendUrl}/api/auth/verify`, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json',
+                            }
                         });
-                    } else {
-                        // Token is invalid, clear it
-                        localStorage.removeItem('token');
-                        sessionStorage.removeItem('token');
-                        dispatch({ type: ACTION_TYPES.LOGOUT });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            dispatch({ 
+                                type: ACTION_TYPES.LOGIN_SUCCESS, 
+                                payload: { 
+                                    user: data.user, 
+                                    token: token 
+                                } 
+                            });
+                        } else {
+                            // Token is invalid, clear it
+                            localStorage.removeItem('token');
+                            sessionStorage.removeItem('token');
+                            dispatch({ type: ACTION_TYPES.LOGOUT });
+                        }
                     }
                 } catch (error) {
                     console.error('Auth verification failed:', error);
@@ -131,7 +133,7 @@ export function StoreProvider({ children }) {
 }
 
 // Custom hook to access the global state and dispatch function
-export default function useGlobalReducer() {
+function useGlobalReducer() {
     const context = useContext(StoreContext);
     
     if (!context) {
@@ -153,3 +155,6 @@ export default function useGlobalReducer() {
         message: store.message
     };
 }
+
+// Export as default
+export default useGlobalReducer;
