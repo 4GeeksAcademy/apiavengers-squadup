@@ -1,10 +1,24 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 export const Navbar = () => {
-    // In your actual implementation, you'll use your global reducer
-    // For now, I'll simulate the auth state
     const [user, setUser] = React.useState(null);
     const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+    const [showUserMenu, setShowUserMenu] = useState(false);
+    const location = useLocation();
+
+    // Check if we're on auth pages where we don't want to show the navbar
+    const authPages = ['/login', '/signup'];
+    const isAuthPage = authPages.includes(location.pathname);
+
+    // Don't render navbar on auth pages
+    if (isAuthPage) {
+        return null;
+    }
 
     // Check authentication status on component mount
     React.useEffect(() => {
@@ -21,7 +35,7 @@ export const Navbar = () => {
         sessionStorage.removeItem('token');
         setUser(null);
         setIsAuthenticated(false);
-        // Navigate to home
+        setShowUserMenu(false);
         window.location.href = '/';
     };
 
@@ -47,7 +61,7 @@ export const Navbar = () => {
 
     return (
         <nav className="fixed top-4 left-4 right-4 z-50">
-            <div className="backdrop-blur-md bg-white/10 border border-white/20 rounded-2xl px-6 py-4 shadow-2xl">
+            <div className="navbar-glass">
                 <div className="flex justify-between items-center">
                     
                     {/* Logo and Brand */}
@@ -55,40 +69,40 @@ export const Navbar = () => {
                         onClick={navigateToHome}
                         className="flex items-center space-x-3 group"
                     >
-                        <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-blue-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                            <span className="text-white font-bold text-sm">S</span>
+                        <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                            <span className="text-white font-bold text-lg">S</span>
                         </div>
-                        <span className="text-white font-bold text-xl group-hover:text-coral-400 transition-colors duration-300">
+                        <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
                             SquadUp
                         </span>
                     </button>
 
                     {/* Navigation Links and User Menu */}
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-6">
                         
                         {/* Navigation Links - Show different links based on auth status */}
                         {isAuthenticated ? (
                             <>
                                 <button 
                                     onClick={navigateToDashboard}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                                 >
                                     Dashboard
                                 </button>
                                 <button 
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                                 >
                                     Find Games
                                 </button>
                                 <button 
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                                 >
                                     Friends
                                 </button>
                             </>
                         ) : (
                             <button 
-                                className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                             >
                                 About
                             </button>
@@ -96,11 +110,11 @@ export const Navbar = () => {
 
                         {/* User Menu or Auth Buttons */}
                         {isAuthenticated ? (
-                            <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-4">
                                 {/* User Avatar and Menu */}
-                                <div className="relative group">
+                                <div className="relative">
                                     <button 
-                                        onClick={navigateToProfile}
+                                        onClick={() => setShowUserMenu(!showUserMenu)}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
                                     >
                                         {user?.avatar_url ? (
@@ -116,34 +130,67 @@ export const Navbar = () => {
                                                 </span>
                                             </div>
                                         )}
-                                        <span className="text-white font-medium">
+                                        <span className="text-white font-medium hidden sm:block">
                                             {user?.username || 'User'}
                                         </span>
+                                        <svg 
+                                            className={`w-4 h-4 text-white/60 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`}
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
                                     </button>
                                     
-                                    {/* Dropdown menu - would be positioned absolute in real implementation */}
+                                    {/* Dropdown menu */}
+                                    <div className={`nav-dropdown ${showUserMenu ? 'active' : ''}`}>
+                                        <button className="dropdown-item" onClick={navigateToProfile}>
+                                            <span className="flex items-center space-x-2">
+                                                <span>👤</span>
+                                                <span>Profile Settings</span>
+                                            </span>
+                                        </button>
+                                        <button className="dropdown-item" onClick={navigateToDashboard}>
+                                            <span className="flex items-center space-x-2">
+                                                <span>📊</span>
+                                                <span>Dashboard</span>
+                                            </span>
+                                        </button>
+                                        <button className="dropdown-item">
+                                            <span className="flex items-center space-x-2">
+                                                <span>🎮</span>
+                                                <span>Gaming Preferences</span>
+                                            </span>
+                                        </button>
+                                        <button className="dropdown-item">
+                                            <span className="flex items-center space-x-2">
+                                                <span>🔗</span>
+                                                <span>Steam Integration</span>
+                                            </span>
+                                        </button>
+                                        <hr className="my-2 border-white/20" />
+                                        <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
+                                            <span className="flex items-center space-x-2">
+                                                <span>🚪</span>
+                                                <span>Logout</span>
+                                            </span>
+                                        </button>
+                                    </div>
                                 </div>
-
-                                {/* Logout Button */}
-                                <button
-                                    onClick={handleLogout}
-                                    className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 hover:text-red-200 rounded-xl transition-all duration-300 font-medium"
-                                >
-                                    Logout
-                                </button>
                             </div>
                         ) : (
                             /* Auth Buttons for non-authenticated users */
                             <div className="flex items-center space-x-3">
                                 <button
                                     onClick={navigateToLogin}
-                                    className="px-4 py-2 text-white/80 hover:text-white transition-colors duration-300 font-medium"
+                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
                                 >
                                     Login
                                 </button>
                                 <button
                                     onClick={navigateToSignUp}
-                                    className="px-4 py-2 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
+                                    className="btn-coral"
                                 >
                                     Sign Up
                                 </button>
@@ -153,49 +200,13 @@ export const Navbar = () => {
                 </div>
             </div>
 
-            <style jsx>{`
-                .navbar-dropdown {
-                    position: absolute;
-                    top: 100%;
-                    right: 0;
-                    margin-top: 8px;
-                    width: 200px;
-                    background: rgba(0, 0, 0, 0.8);
-                    backdrop-filter: blur(20px);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 12px;
-                    padding: 8px;
-                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-                    opacity: 0;
-                    visibility: hidden;
-                    transform: translateY(-10px);
-                    transition: all 0.3s ease;
-                }
-
-                .group:hover .navbar-dropdown {
-                    opacity: 1;
-                    visibility: visible;
-                    transform: translateY(0);
-                }
-
-                .dropdown-item {
-                    display: block;
-                    width: 100%;
-                    padding: 8px 12px;
-                    text-align: left;
-                    color: rgba(255, 255, 255, 0.8);
-                    background: transparent;
-                    border: none;
-                    border-radius: 8px;
-                    transition: all 0.2s ease;
-                    font-size: 14px;
-                }
-
-                .dropdown-item:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                    color: white;
-                }
-            `}</style>
+            {/* Click outside to close dropdown */}
+            {showUserMenu && (
+                <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowUserMenu(false)}
+                ></div>
+            )}
         </nav>
     );
 };
