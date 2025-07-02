@@ -1,39 +1,74 @@
-"""
-This module takes care of starting the API Server, Loading the DB and Adding the endpoints
-"""
-from flask import Flask, request, jsonify, url_for, Blueprint
-from api.models import db, User
-import os
-from api.utils import generate_sitemap, APIException
-from flask_cors import CORS
-from flask_jwt_extended import create_access_token
-from flask_jwt_extended import get_jwt_identity
-from flask_jwt_extended import jwt_required
-from flask_jwt_extended import JWTManager
+// src/front/routes.jsx - Fixed with correct file imports
 
-api = Blueprint('app', __name__)
-# Allow CORS requests to this API
-CORS(api)
+import {
+    createBrowserRouter,
+    createRoutesFromElements,
+    Route,
+} from "react-router-dom";
+import { Layout } from "./pages/Layout";
+import { Home } from "./pages/Home";
+import { Single } from "./pages/Single";
+import { Demo } from "./pages/Demo";
+import { SignUp } from "./pages/SignUp";
+import { Login } from "./pages/Login";
+import { Dashboard } from "./pages/Dashboard";
+import { Profile } from "./pages/Profile";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
-
-@api.route("/login", methods=["POST"])
-def login():
-    username = request.json.get("username", None)
-    password = request.json.get("password", None)
-    if username != "test" or password != "test":
-        return jsonify({"msg": "Bad username or password"}), 401
-    access_token = create_access_token(identity=username)
-
-    return jsonify({"access_token": access_token,
-                    "msg": "Login success"}), 200
-
-
-# Protect a route with jwt_required, which will kick out requests
-# without a valid JWT present.
-@api.route("/protected", methods=["GET"])
-@jwt_required()
-def protected():
-    current_user = get_jwt_identity()
-    return jsonify(logged_in_as=current_user), 200
-
-
+export const router = createBrowserRouter(
+    createRoutesFromElements(
+        // Root Route: All navigation will start from here
+        <Route path="/" element={<Layout />} errorElement={<h1>Not found!</h1>}>
+            
+            {/* Public Routes */}
+            <Route path="/" element={<Home />} />
+            <Route path="/demo" element={<Demo />} />
+            <Route path="/single/:theId" element={<Single />} />
+            
+            {/* Authentication Routes */}
+            <Route path="/signup" element={<SignUp />} />
+            <Route path="/login" element={<Login />} />
+            
+            {/* Protected Routes - Require Authentication */}
+            <Route path="/dashboard" element={
+                <ProtectedRoute>
+                    <Dashboard />
+                </ProtectedRoute>
+            } />
+            
+            <Route path="/profile" element={
+                <ProtectedRoute>
+                    <Profile />
+                </ProtectedRoute>
+            } />
+            
+            {/* Gaming Routes - Future implementation */}
+            <Route path="/sessions" element={
+                <ProtectedRoute>
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="glass rounded-3xl p-8 text-center">
+                                <h1 className="text-3xl font-bold text-white mb-4">Gaming Sessions</h1>
+                                <p className="text-white/70">Coming soon! This will show all your gaming sessions.</p>
+                            </div>
+                        </div>
+                    </div>
+                </ProtectedRoute>
+            } />
+            
+            <Route path="/friends" element={
+                <ProtectedRoute>
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="glass rounded-3xl p-8 text-center">
+                                <h1 className="text-3xl font-bold text-white mb-4">Friends</h1>
+                                <p className="text-white/70">Coming soon! This will show your gaming friends.</p>
+                            </div>
+                        </div>
+                    </div>
+                </ProtectedRoute>
+            } />
+            
+        </Route>
+    )
+);
