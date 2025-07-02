@@ -11,209 +11,469 @@ const GamingAnimations = ({ children, className = "" }) => {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    // Load GSAP dynamically
-    const loadGSAP = async () => {
-      try {
-        // Import GSAP from CDN
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-        script.onload = () => {
-          setIsLoaded(true);
-          initializeAnimations();
-        };
-        document.head.appendChild(script);
-      } catch (error) {
-        console.error('Failed to load GSAP:', error);
-        // Fallback to CSS animations
-        setIsLoaded(true);
-      }
-    };
-
-    loadGSAP();
-
+    setIsLoaded(true);
+    initializeAnimations();
+    
     return () => {
-      // Cleanup
-      const script = document.querySelector('script[src*="gsap"]');
-      if (script) {
-        document.head.removeChild(script);
-      }
+      // Cleanup GSAP animations
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+      particlesRef.current.forEach(particle => {
+        if (particle && particle.parentNode) {
+          particle.parentNode.removeChild(particle);
+        }
+      });
     };
   }, []);
 
   const initializeAnimations = () => {
-    if (typeof window.gsap === 'undefined') return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const gsap = window.gsap;
-    
-    // Timeline for entrance animations
-    const tl = gsap.timeline();
+    // Master timeline for entrance animations
+    const masterTL = gsap.timeline();
 
-    // Animate container entrance
-    tl.fromTo(containerRef.current, 
-      { opacity: 0, y: 50, scale: 0.95 },
-      { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: "power2.out" }
+    // 1. Container entrance with dramatic effect
+    masterTL.fromTo(container, 
+      { 
+        opacity: 0, 
+        scale: 0.8,
+        filter: 'blur(10px)'
+      },
+      { 
+        opacity: 1, 
+        scale: 1,
+        filter: 'blur(0px)',
+        duration: 1.2, 
+        ease: "power3.out" 
+      }
     );
 
-    // Animate child elements with stagger
-    const children = containerRef.current?.children;
-    if (children) {
-      tl.fromTo(children,
-        { opacity: 0, y: 30, rotationX: -15 },
+    // 2. Staggered element animations
+    const animatedElements = container.querySelectorAll('[data-animate]');
+    if (animatedElements.length > 0) {
+      masterTL.fromTo(animatedElements,
+        { 
+          opacity: 0, 
+          y: 60, 
+          rotationX: -20,
+          scale: 0.8
+        },
         { 
           opacity: 1, 
           y: 0, 
           rotationX: 0,
-          duration: 0.6,
-          stagger: 0.1,
+          scale: 1,
+          duration: 0.8,
+          stagger: {
+            amount: 0.6,
+            from: "start"
+          },
           ease: "back.out(1.7)"
         },
-        "-=0.4"
+        "-=0.8"
       );
     }
 
-    // Create floating particles animation
-    createParticleSystem(gsap);
-    
-    // Add magnetic hover effects
-    addMagneticEffects(gsap);
-    
-    // Create energy flow animation
-    createEnergyFlow(gsap);
+    // 3. Initialize all advanced effects
+    createParticleSystem();
+    addMagneticEffects();
+    createEnergyFlow();
+    setupScrollTriggers();
+    addMouseFollower();
+    createFloatingElements();
   };
 
-  const createParticleSystem = (gsap) => {
+  const createParticleSystem = () => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Create particles
-    for (let i = 0; i < 50; i++) {
-      const particle = document.createElement('div');
-      particle.className = 'particle absolute w-1 h-1 bg-cyan-400 rounded-full opacity-60';
-      particle.style.left = Math.random() * 100 + '%';
-      particle.style.top = Math.random() * 100 + '%';
-      
-      container.appendChild(particle);
-      particlesRef.current.push(particle);
+    // Create multiple particle layers
+    for (let layer = 0; layer < 3; layer++) {
+      for (let i = 0; i < 15; i++) {
+        const particle = document.createElement('div');
+        
+        // Different particle types per layer
+        const particleTypes = [
+          'w-1 h-1 bg-cyan-400 rounded-full',
+          'w-2 h-2 bg-purple-500 rounded-full',
+          'w-1 h-4 bg-gradient-to-t from-cyan-400 to-transparent'
+        ];
+        
+        particle.className = `particle absolute ${particleTypes[layer]} opacity-60 pointer-events-none`;
+        particle.style.left = Math.random() * 100 + '%';
+        particle.style.top = Math.random() * 100 + '%';
+        particle.style.zIndex = -1;
+        
+        container.appendChild(particle);
+        particlesRef.current.push(particle);
 
-      // Animate each particle
-      gsap.to(particle, {
-        x: (Math.random() - 0.5) * 400,
-        y: (Math.random() - 0.5) * 400,
-        opacity: Math.random() * 0.8 + 0.2,
-        scale: Math.random() * 2 + 0.5,
-        duration: Math.random() * 4 + 2,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-        delay: Math.random() * 2
-      });
+        // Unique animation per layer
+        const baseAnimation = {
+          duration: Math.random() * 6 + 4,
+          repeat: -1,
+          yoyo: true,
+          ease: "sine.inOut",
+          delay: Math.random() * 3
+        };
+
+        switch(layer) {
+          case 0: // Floating particles
+            gsap.to(particle, {
+              ...baseAnimation,
+              x: (Math.random() - 0.5) * 200,
+              y: (Math.random() - 0.5) * 200,
+              rotation: 360,
+              opacity: Math.random() * 0.8 + 0.2,
+              scale: Math.random() * 1.5 + 0.5
+            });
+            break;
+          case 1: // Orbital particles  
+            gsap.to(particle, {
+              ...baseAnimation,
+              motionPath: {
+                path: "M0,0 Q50,-50 100,0 T200,0",
+                autoRotate: true
+              },
+              opacity: Math.random() * 0.6 + 0.3
+            });
+            break;
+          case 2: // Streak particles
+            gsap.to(particle, {
+              ...baseAnimation,
+              x: (Math.random() - 0.5) * 800,
+              y: (Math.random() - 0.5) * 400,
+              scaleY: Math.random() * 3 + 1,
+              opacity: Math.random() * 0.4 + 0.1
+            });
+            break;
+        }
+      }
     }
   };
 
-  const addMagneticEffects = (gsap) => {
+  const addMagneticEffects = () => {
     const magneticElements = containerRef.current?.querySelectorAll('.magnetic');
     
     magneticElements?.forEach(element => {
+      let isHovering = false;
+      
       const handleMouseMove = (e) => {
+        if (!isHovering) return;
+        
         const rect = element.getBoundingClientRect();
-        const x = e.clientX - rect.left - rect.width / 2;
-        const y = e.clientY - rect.top - rect.height / 2;
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        const deltaX = (e.clientX - centerX) * 0.15;
+        const deltaY = (e.clientY - centerY) * 0.15;
         
         gsap.to(element, {
-          x: x * 0.3,
-          y: y * 0.3,
+          x: deltaX,
+          y: deltaY,
+          rotation: deltaX * 0.1,
+          duration: 0.3,
+          ease: "power2.out"
+        });
+
+        // Add glow effect
+        gsap.to(element, {
+          boxShadow: `0 0 30px rgba(0, 255, 255, 0.4)`,
+          duration: 0.3
+        });
+      };
+
+      const handleMouseEnter = () => {
+        isHovering = true;
+        gsap.to(element, {
+          scale: 1.05,
           duration: 0.3,
           ease: "power2.out"
         });
       };
 
       const handleMouseLeave = () => {
+        isHovering = false;
         gsap.to(element, {
           x: 0,
           y: 0,
-          duration: 0.5,
+          rotation: 0,
+          scale: 1,
+          boxShadow: "none",
+          duration: 0.6,
           ease: "elastic.out(1, 0.3)"
         });
       };
 
       element.addEventListener('mousemove', handleMouseMove);
+      element.addEventListener('mouseenter', handleMouseEnter);
       element.addEventListener('mouseleave', handleMouseLeave);
     });
   };
 
-  const createEnergyFlow = (gsap) => {
+  const createEnergyFlow = () => {
     const energyElements = containerRef.current?.querySelectorAll('.energy-flow');
     
     energyElements?.forEach(element => {
-      // Create flowing energy effect
-      gsap.to(element, {
-        backgroundPosition: "200% 0",
-        duration: 3,
+      // Multi-layer energy animation
+      gsap.timeline({ repeat: -1 })
+        .to(element, {
+          backgroundPosition: "200% 0",
+          duration: 2,
+          ease: "none"
+        })
+        .to(element, {
+          opacity: 0.8,
+          duration: 0.5,
+          yoyo: true,
+          repeat: 1
+        }, 0);
+    });
+
+    // Create dynamic energy waves
+    const createEnergyWave = () => {
+      const wave = document.createElement('div');
+      wave.className = 'absolute inset-0 rounded-full pointer-events-none';
+      wave.style.background = 'radial-gradient(circle, rgba(0,255,255,0.3) 0%, transparent 70%)';
+      wave.style.transform = 'scale(0)';
+      
+      containerRef.current?.appendChild(wave);
+      
+      gsap.timeline()
+        .to(wave, {
+          scale: 3,
+          opacity: 0,
+          duration: 2,
+          ease: "power2.out",
+          onComplete: () => {
+            wave.remove();
+          }
+        });
+    };
+
+    // Trigger energy waves periodically
+    setInterval(createEnergyWave, 3000);
+  };
+
+  const setupScrollTriggers = () => {
+    // Enhanced scroll animations for cards
+    const cards = containerRef.current?.querySelectorAll('.gaming-card');
+    cards?.forEach((card, index) => {
+      // Main card animation
+      gsap.fromTo(card, 
+        { 
+          opacity: 0, 
+          y: 100, 
+          rotationY: -15,
+          scale: 0.8
+        },
+        {
+          opacity: 1,
+          y: 0,
+          rotationY: 0,
+          scale: 1,
+          duration: 1,
+          ease: "back.out(1.7)",
+          scrollTrigger: {
+            trigger: card,
+            start: "top 85%",
+            end: "bottom 20%",
+            toggleActions: "play none none reverse"
+          },
+          delay: index * 0.2
+        }
+      );
+
+      // Parallax effect for card content
+      const cardContent = card.children[0];
+      if (cardContent) {
+        gsap.to(cardContent, {
+          y: -20,
+          duration: 1,
+          ease: "none",
+          scrollTrigger: {
+            trigger: card,
+            start: "top bottom",
+            end: "bottom top",
+            scrub: 1
+          }
+        });
+      }
+    });
+
+    // Animated counter for stats
+    const stats = containerRef.current?.querySelectorAll('.stat-number');
+    stats?.forEach(stat => {
+      const target = parseInt(stat.getAttribute('data-target')) || 0;
+      const suffix = stat.getAttribute('data-suffix') || '';
+      
+      gsap.fromTo(stat, 
+        { textContent: 0 },
+        {
+          textContent: target,
+          duration: 2.5,
+          ease: "power2.out",
+          snap: { textContent: 1 },
+          scrollTrigger: {
+            trigger: stat,
+            start: "top 80%",
+            toggleActions: "play none none reverse"
+          },
+          onUpdate: function() {
+            const value = Math.round(this.targets()[0].textContent);
+            const formatted = value >= 1000000 
+              ? (value / 1000000).toFixed(1) + 'M'
+              : value >= 1000 
+              ? (value / 1000).toFixed(0) + 'K'
+              : value.toString();
+            
+            stat.textContent = formatted + suffix;
+          }
+        }
+      );
+
+      // Glow effect on count
+      gsap.to(stat, {
+        textShadow: "0 0 20px currentColor",
+        duration: 0.5,
         repeat: -1,
-        ease: "none"
+        yoyo: true,
+        scrollTrigger: {
+          trigger: stat,
+          start: "top 80%",
+          toggleActions: "play none none reverse"
+        }
       });
+    });
+
+    // Background parallax
+    gsap.to(containerRef.current, {
+      backgroundPosition: "50% 100%",
+      ease: "none",
+      scrollTrigger: {
+        trigger: containerRef.current,
+        start: "top bottom",
+        end: "bottom top",
+        scrub: 1
+      }
     });
   };
 
-  // Mouse follower effect
-  useEffect(() => {
+  const addMouseFollower = () => {
+    // Create cursor follower
+    const cursor = document.createElement('div');
+    cursor.className = 'fixed w-6 h-6 pointer-events-none z-50 mix-blend-difference rounded-full';
+    cursor.style.background = 'radial-gradient(circle, rgba(0,255,255,0.8) 0%, transparent 70%)';
+    cursor.style.transform = 'translate(-50%, -50%)';
+    cursor.style.transition = 'width 0.3s, height 0.3s';
+    
+    document.body.appendChild(cursor);
+
     const handleMouseMove = (e) => {
-      if (!isLoaded || typeof window.gsap === 'undefined') return;
-      
-      const gsap = window.gsap;
-      const cursor = document.querySelector('.cursor-follower');
-      
-      if (cursor) {
-        gsap.to(cursor, {
-          x: e.clientX,
-          y: e.clientY,
-          duration: 0.1,
-          ease: "power2.out"
-        });
-      }
+      gsap.to(cursor, {
+        x: e.clientX,
+        y: e.clientY,
+        duration: 0.1,
+        ease: "power2.out"
+      });
     };
 
-    if (isLoaded) {
-      document.addEventListener('mousemove', handleMouseMove);
-    }
+    const handleMouseEnter = () => {
+      gsap.to(cursor, {
+        scale: 2,
+        duration: 0.3,
+        ease: "power2.out"
+      });
+    };
 
+    const handleMouseLeave = () => {
+      gsap.to(cursor, {
+        scale: 1,
+        duration: 0.3,
+        ease: "power2.out"
+      });
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    
+    // Add hover effects for interactive elements
+    const interactiveElements = document.querySelectorAll('button, a, .magnetic');
+    interactiveElements.forEach(el => {
+      el.addEventListener('mouseenter', handleMouseEnter);
+      el.addEventListener('mouseleave', handleMouseLeave);
+    });
+
+    // Cleanup function
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
+      cursor.remove();
     };
-  }, [isLoaded]);
+  };
+
+  const createFloatingElements = () => {
+    // Create geometric shapes that float around
+    const shapes = ['circle', 'triangle', 'square'];
+    
+    shapes.forEach((shape, index) => {
+      const element = document.createElement('div');
+      element.className = `floating-${shape} absolute pointer-events-none`;
+      
+      // Style based on shape
+      switch(shape) {
+        case 'circle':
+          element.style.cssText = `
+            width: 20px; height: 20px; 
+            background: linear-gradient(45deg, rgba(0,255,255,0.3), rgba(191,0,255,0.3));
+            border-radius: 50%;
+          `;
+          break;
+        case 'triangle':
+          element.style.cssText = `
+            width: 0; height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 20px solid rgba(57,255,20,0.3);
+          `;
+          break;
+        case 'square':
+          element.style.cssText = `
+            width: 15px; height: 15px;
+            background: linear-gradient(45deg, rgba(255,20,147,0.3), rgba(255,140,0,0.3));
+            transform: rotate(45deg);
+          `;
+          break;
+      }
+      
+      element.style.left = Math.random() * 100 + '%';
+      element.style.top = Math.random() * 100 + '%';
+      element.style.zIndex = '-1';
+      
+      containerRef.current?.appendChild(element);
+      
+      // Animate floating movement
+      gsap.to(element, {
+        x: (Math.random() - 0.5) * 300,
+        y: (Math.random() - 0.5) * 300,
+        rotation: 360,
+        scale: Math.random() * 1.5 + 0.5,
+        opacity: Math.random() * 0.7 + 0.3,
+        duration: Math.random() * 8 + 6,
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut",
+        delay: index * 1
+      });
+    });
+  };
 
   return (
     <div 
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
-      style={{ perspective: '1000px' }}
+      style={{ 
+        perspective: '1000px',
+        backgroundImage: 'radial-gradient(circle at 25% 25%, rgba(0,255,255,0.1) 0%, transparent 50%), radial-gradient(circle at 75% 75%, rgba(191,0,255,0.1) 0%, transparent 50%)'
+      }}
     >
-      {/* Custom cursor follower */}
-      <div 
-        className="cursor-follower fixed w-6 h-6 pointer-events-none z-50 mix-blend-difference"
-        style={{
-          background: 'radial-gradient(circle, rgba(0,255,255,0.8) 0%, transparent 70%)',
-          borderRadius: '50%',
-          transform: 'translate(-50%, -50%)'
-        }}
-      />
-      
-      {/* Energy flow background */}
-      <div 
-        className="absolute inset-0 opacity-30 energy-flow"
-        style={{
-          background: `linear-gradient(45deg, 
-            transparent 30%, 
-            rgba(0,255,255,0.1) 50%, 
-            transparent 70%),
-            linear-gradient(-45deg, 
-            transparent 30%, 
-            rgba(191,0,255,0.1) 50%, 
-            transparent 70%)`,
-          backgroundSize: '200% 200%'
-        }}
-      />
-      
       {children}
     </div>
   );
@@ -231,50 +491,102 @@ const GamingButton = ({
   const buttonRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window.gsap === 'undefined') return;
-
-    const gsap = window.gsap;
     const button = buttonRef.current;
+    if (!button) return;
 
-    const handleClick = () => {
-      gsap.to(button, {
-        scale: 0.95,
-        duration: 0.1,
-        yoyo: true,
-        repeat: 1,
-        ease: "power2.inOut"
+    // Create pulse effect
+    const createPulse = () => {
+      const pulse = document.createElement('div');
+      pulse.className = 'absolute inset-0 rounded-xl pointer-events-none';
+      pulse.style.background = 'rgba(255, 255, 255, 0.3)';
+      pulse.style.transform = 'scale(0)';
+      
+      button.appendChild(pulse);
+      
+      gsap.timeline()
+        .to(pulse, {
+          scale: 1,
+          opacity: 0,
+          duration: 0.6,
+          ease: "power2.out",
+          onComplete: () => pulse.remove()
+        });
+    };
+
+    const handleClick = (e) => {
+      // Ripple effect from click position
+      const rect = button.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const ripple = document.createElement('div');
+      ripple.className = 'absolute rounded-full pointer-events-none';
+      ripple.style.cssText = `
+        left: ${x}px; top: ${y}px;
+        width: 20px; height: 20px;
+        background: rgba(255, 255, 255, 0.6);
+        transform: translate(-50%, -50%) scale(0);
+      `;
+      
+      button.appendChild(ripple);
+      
+      gsap.to(ripple, {
+        scale: 10,
+        opacity: 0,
+        duration: 0.6,
+        ease: "power2.out",
+        onComplete: () => ripple.remove()
       });
+
+      // Button press animation
+      gsap.timeline()
+        .to(button, { scale: 0.95, duration: 0.1 })
+        .to(button, { scale: 1, duration: 0.2, ease: "elastic.out(1, 0.3)" });
     };
 
     const handleHover = () => {
       gsap.to(button, {
-        y: -2,
-        boxShadow: "0 8px 25px rgba(255, 127, 80, 0.4)",
+        y: -3,
+        scale: 1.02,
         duration: 0.3,
         ease: "power2.out"
       });
+
+      // Enhanced glow
+      gsap.to(button, {
+        boxShadow: "0 10px 30px rgba(255, 127, 80, 0.5)",
+        duration: 0.3
+      });
+
+      // Shimmer effect
+      const shimmer = button.querySelector('.shimmer');
+      if (shimmer) {
+        gsap.fromTo(shimmer, 
+          { x: '-100%', opacity: 0 },
+          { x: '100%', opacity: 1, duration: 0.8, ease: "power2.out" }
+        );
+      }
     };
 
     const handleLeave = () => {
       gsap.to(button, {
         y: 0,
+        scale: 1,
         boxShadow: "0 4px 14px rgba(255, 127, 80, 0.3)",
-        duration: 0.3,
-        ease: "power2.out"
+        duration: 0.4,
+        ease: "elastic.out(1, 0.3)"
       });
     };
 
-    if (button) {
-      button.addEventListener('click', handleClick);
-      button.addEventListener('mouseenter', handleHover);
-      button.addEventListener('mouseleave', handleLeave);
+    button.addEventListener('click', handleClick);
+    button.addEventListener('mouseenter', handleHover);
+    button.addEventListener('mouseleave', handleLeave);
 
-      return () => {
-        button.removeEventListener('click', handleClick);
-        button.removeEventListener('mouseenter', handleHover);
-        button.removeEventListener('mouseleave', handleLeave);
-      };
-    }
+    return () => {
+      button.removeEventListener('click', handleClick);
+      button.removeEventListener('mouseenter', handleHover);
+      button.removeEventListener('mouseleave', handleLeave);
+    };
   }, []);
 
   const getVariantClasses = () => {
@@ -306,32 +618,31 @@ const GamingButton = ({
       
       {/* Shimmer effect */}
       <div 
-        className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12"
-        style={{
-          animation: 'shimmer 2s infinite'
-        }}
+        className="shimmer absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12 -translate-x-full opacity-0"
       />
     </button>
   );
 };
 
-// Gaming Card Component with 3D effects
+// Gaming Card Component with 3D GSAP effects
 const GamingCard = ({ children, className = "", ...props }) => {
   const cardRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window.gsap === 'undefined') return;
-
-    const gsap = window.gsap;
     const card = cardRef.current;
+    if (!card) return;
+
+    let isHovering = false;
 
     const handleMouseMove = (e) => {
+      if (!isHovering) return;
+      
       const rect = card.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       
-      const rotateX = (e.clientY - centerY) / 10;
-      const rotateY = (centerX - e.clientX) / 10;
+      const rotateX = (e.clientY - centerY) / 15;
+      const rotateY = (centerX - e.clientX) / 15;
 
       gsap.to(card, {
         rotationX: rotateX,
@@ -340,37 +651,67 @@ const GamingCard = ({ children, className = "", ...props }) => {
         duration: 0.3,
         ease: "power2.out"
       });
+
+      // Dynamic lighting effect
+      const lightX = ((e.clientX - rect.left) / rect.width) * 100;
+      const lightY = ((e.clientY - rect.top) / rect.height) * 100;
+      
+      card.style.background = `
+        radial-gradient(circle at ${lightX}% ${lightY}%, 
+        rgba(0, 255, 255, 0.15) 0%, 
+        rgba(255, 255, 255, 0.08) 50%, 
+        rgba(191, 0, 255, 0.1) 100%)
+      `;
     };
 
-    const handleMouseLeave = () => {
+    const handleMouseEnter = () => {
+      isHovering = true;
       gsap.to(card, {
-        rotationX: 0,
-        rotationY: 0,
-        duration: 0.5,
-        ease: "elastic.out(1, 0.3)"
+        scale: 1.03,
+        y: -5,
+        boxShadow: "0 25px 50px rgba(0, 255, 255, 0.2)",
+        duration: 0.4,
+        ease: "power2.out"
       });
     };
 
-    if (card) {
-      card.addEventListener('mousemove', handleMouseMove);
-      card.addEventListener('mouseleave', handleMouseLeave);
+    const handleMouseLeave = () => {
+      isHovering = false;
+      gsap.to(card, {
+        rotationX: 0,
+        rotationY: 0,
+        scale: 1,
+        y: 0,
+        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.37)",
+        duration: 0.6,
+        ease: "elastic.out(1, 0.3)"
+      });
 
-      return () => {
-        card.removeEventListener('mousemove', handleMouseMove);
-        card.removeEventListener('mouseleave', handleMouseLeave);
-      };
-    }
+      // Reset background
+      card.style.background = '';
+    };
+
+    card.addEventListener('mousemove', handleMouseMove);
+    card.addEventListener('mouseenter', handleMouseEnter);
+    card.addEventListener('mouseleave', handleMouseLeave);
+
+    return () => {
+      card.removeEventListener('mousemove', handleMouseMove);
+      card.removeEventListener('mouseenter', handleMouseEnter);
+      card.removeEventListener('mouseleave', handleMouseLeave);
+    };
   }, []);
 
   return (
     <div
       ref={cardRef}
       className={`
-        backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8
+        gaming-card backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8
         shadow-2xl transition-all duration-300 preserve-3d
         ${className}
       `}
       style={{ transformStyle: 'preserve-3d' }}
+      data-animate="true"
       {...props}
     >
       {children}
@@ -378,133 +719,4 @@ const GamingCard = ({ children, className = "", ...props }) => {
   );
 };
 
-// Main Demo Component showcasing all animations
-const ModernGamingDemo = () => {
-  const [activeTab, setActiveTab] = useState('home');
-  
-  return (
-    <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
-      <div className="max-w-6xl mx-auto">
-        
-        {/* Header with animated logo */}
-        <div className="text-center mb-12">
-          <h1 className="text-6xl font-black mb-4 magnetic">
-            Squad
-            <span 
-              className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500"
-              style={{
-                background: 'linear-gradient(45deg, #00ffff, #bf00ff)',
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}
-            >
-              Up
-            </span>
-          </h1>
-          <p className="text-xl text-white/80 mb-8">
-            Next-generation gaming platform with cutting-edge animations
-          </p>
-        </div>
-
-        {/* Navigation with magnetic effects */}
-        <div className="flex justify-center mb-12">
-          <div className="backdrop-blur-xl bg-white/10 border border-cyan-400/30 rounded-2xl p-2">
-            {['home', 'features', 'gaming', 'community'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`
-                  px-6 py-3 rounded-xl font-medium transition-all duration-300 magnetic
-                  ${activeTab === tab 
-                    ? 'bg-cyan-400 text-black' 
-                    : 'text-white hover:bg-white/10'
-                  }
-                `}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Animated cards grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
-          
-          <GamingCard className="stagger-1">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 magnetic">
-                <span className="text-3xl">🎯</span>
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Smart Matching</h3>
-              <p className="text-white/70 leading-relaxed">
-                AI-powered game matching that analyzes your preferences and finds perfect squad mates.
-              </p>
-            </div>
-          </GamingCard>
-
-          <GamingCard className="stagger-2">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6 magnetic">
-                <span className="text-3xl">⚡</span>
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Real-time Sync</h3>
-              <p className="text-white/70 leading-relaxed">
-                Instant synchronization across all devices with seamless multiplayer coordination.
-              </p>
-            </div>
-          </GamingCard>
-
-          <GamingCard className="stagger-3">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-6 magnetic">
-                <span className="text-3xl">🚀</span>
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Lightning Fast</h3>
-              <p className="text-white/70 leading-relaxed">
-                Optimized performance with sub-millisecond response times for competitive gaming.
-              </p>
-            </div>
-          </GamingCard>
-        </div>
-
-        {/* Interactive buttons showcase */}
-        <div className="flex flex-wrap justify-center gap-6 mb-12">
-          <GamingButton variant="primary" className="stagger-1">
-            Start Gaming
-          </GamingButton>
-          <GamingButton variant="neon" className="stagger-2">
-            Join Squad
-          </GamingButton>
-          <GamingButton variant="ghost" className="stagger-3">
-            Learn More
-          </GamingButton>
-        </div>
-
-        {/* Stats section with counters */}
-        <GamingCard className="stagger-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-4xl font-black text-cyan-400 mb-2">1M+</div>
-              <div className="text-white/70 text-sm uppercase tracking-wide">Active Players</div>
-            </div>
-            <div>
-              <div className="text-4xl font-black text-purple-400 mb-2">50K+</div>
-              <div className="text-white/70 text-sm uppercase tracking-wide">Games Matched</div>
-            </div>
-            <div>
-              <div className="text-4xl font-black text-green-400 mb-2">99.9%</div>
-              <div className="text-white/70 text-sm uppercase tracking-wide">Uptime</div>
-            </div>
-            <div>
-              <div className="text-4xl font-black text-orange-400 mb-2">24/7</div>
-              <div className="text-white/70 text-sm uppercase tracking-wide">Support</div>
-            </div>
-          </div>
-        </GamingCard>
-      </div>
-    </GamingAnimations>
-  );
-};
-
-export default ModernGamingDemo;
+export { GamingAnimations, GamingButton, GamingCard };

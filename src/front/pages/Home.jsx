@@ -1,59 +1,44 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-// Advanced Gaming Animation Component with GSAP Integration
+// Register GSAP plugins
+gsap.registerPlugin(ScrollTrigger);
+
+// Advanced Gaming Animation Component with GSAP
 const GamingAnimations = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const particlesRef = useRef([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    // Load GSAP dynamically
-    const loadGSAP = async () => {
-      try {
-        // Import GSAP from CDN
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-        script.onload = () => {
-          setIsLoaded(true);
-          initializeAnimations();
-        };
-        document.head.appendChild(script);
-      } catch (error) {
-        console.error('Failed to load GSAP:', error);
-        // Fallback to CSS animations
-        setIsLoaded(true);
-      }
-    };
-
-    loadGSAP();
-
+    setIsLoaded(true);
+    initializeAnimations();
+    
     return () => {
-      // Cleanup
-      const script = document.querySelector('script[src*="gsap"]');
-      if (script) {
-        document.head.removeChild(script);
-      }
+      // Cleanup GSAP animations
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
     };
   }, []);
 
   const initializeAnimations = () => {
-    if (typeof window.gsap === 'undefined') return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const gsap = window.gsap;
-    
     // Timeline for entrance animations
     const tl = gsap.timeline();
 
     // Animate container entrance
-    tl.fromTo(containerRef.current, 
+    tl.fromTo(container, 
       { opacity: 0, y: 50, scale: 0.95 },
       { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: "power2.out" }
     );
 
     // Animate child elements with stagger
-    const children = containerRef.current?.children;
-    if (children) {
-      tl.fromTo(children,
+    const animatedElements = container.querySelectorAll('[data-animate]');
+    if (animatedElements.length > 0) {
+      tl.fromTo(animatedElements,
         { opacity: 0, y: 30, rotationX: -15 },
         { 
           opacity: 1, 
@@ -68,23 +53,26 @@ const GamingAnimations = ({ children, className = "" }) => {
     }
 
     // Create floating particles animation
-    createParticleSystem(gsap);
+    createParticleSystem();
     
     // Add magnetic hover effects
-    addMagneticEffects(gsap);
+    addMagneticEffects();
     
     // Create energy flow animation
-    createEnergyFlow(gsap);
+    createEnergyFlow();
+
+    // Scroll-triggered animations
+    setupScrollTriggers();
   };
 
-  const createParticleSystem = (gsap) => {
+  const createParticleSystem = () => {
     const container = containerRef.current;
     if (!container) return;
 
     // Create particles
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 30; i++) {
       const particle = document.createElement('div');
-      particle.className = 'particle absolute w-1 h-1 bg-cyan-400 rounded-full opacity-60';
+      particle.className = 'particle absolute w-1 h-1 bg-cyan-400 rounded-full opacity-60 pointer-events-none';
       particle.style.left = Math.random() * 100 + '%';
       particle.style.top = Math.random() * 100 + '%';
       
@@ -106,7 +94,7 @@ const GamingAnimations = ({ children, className = "" }) => {
     }
   };
 
-  const addMagneticEffects = (gsap) => {
+  const addMagneticEffects = () => {
     const magneticElements = containerRef.current?.querySelectorAll('.magnetic');
     
     magneticElements?.forEach(element => {
@@ -137,11 +125,10 @@ const GamingAnimations = ({ children, className = "" }) => {
     });
   };
 
-  const createEnergyFlow = (gsap) => {
+  const createEnergyFlow = () => {
     const energyElements = containerRef.current?.querySelectorAll('.energy-flow');
     
     energyElements?.forEach(element => {
-      // Create flowing energy effect
       gsap.to(element, {
         backgroundPosition: "200% 0",
         duration: 3,
@@ -151,32 +138,53 @@ const GamingAnimations = ({ children, className = "" }) => {
     });
   };
 
-  // Mouse follower effect
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isLoaded || typeof window.gsap === 'undefined') return;
-      
-      const gsap = window.gsap;
-      const cursor = document.querySelector('.cursor-follower');
-      
-      if (cursor) {
-        gsap.to(cursor, {
-          x: e.clientX,
-          y: e.clientY,
-          duration: 0.1,
-          ease: "power2.out"
-        });
-      }
-    };
+  const setupScrollTriggers = () => {
+    // Scroll-triggered animations for cards
+    const cards = containerRef.current?.querySelectorAll('.gaming-card');
+    cards?.forEach((card, index) => {
+      gsap.fromTo(card, 
+        { 
+          opacity: 0, 
+          y: 100, 
+          rotationY: -15 
+        },
+        {
+          opacity: 1,
+          y: 0,
+          rotationY: 0,
+          duration: 0.8,
+          ease: "power2.out",
+          scrollTrigger: {
+            trigger: card,
+            start: "top 80%",
+            end: "bottom 20%",
+            toggleActions: "play none none reverse"
+          },
+          delay: index * 0.1
+        }
+      );
+    });
 
-    if (isLoaded) {
-      document.addEventListener('mousemove', handleMouseMove);
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-    };
-  }, [isLoaded]);
+    // Stats counter animation
+    const stats = containerRef.current?.querySelectorAll('.stat-number');
+    stats?.forEach(stat => {
+      const target = stat.getAttribute('data-target');
+      gsap.fromTo(stat, 
+        { textContent: 0 },
+        {
+          textContent: target,
+          duration: 2,
+          ease: "power2.out",
+          snap: { textContent: 1 },
+          scrollTrigger: {
+            trigger: stat,
+            start: "top 80%",
+            toggleActions: "play none none reverse"
+          }
+        }
+      );
+    });
+  };
 
   return (
     <div 
@@ -184,16 +192,6 @@ const GamingAnimations = ({ children, className = "" }) => {
       className={`relative overflow-hidden ${className}`}
       style={{ perspective: '1000px' }}
     >
-      {/* Custom cursor follower */}
-      <div 
-        className="cursor-follower fixed w-6 h-6 pointer-events-none z-50 mix-blend-difference"
-        style={{
-          background: 'radial-gradient(circle, rgba(0,255,255,0.8) 0%, transparent 70%)',
-          borderRadius: '50%',
-          transform: 'translate(-50%, -50%)'
-        }}
-      />
-      
       {/* Energy flow background */}
       <div 
         className="absolute inset-0 opacity-30 energy-flow"
@@ -215,7 +213,7 @@ const GamingAnimations = ({ children, className = "" }) => {
   );
 };
 
-// Enhanced Gaming Button Component
+// Enhanced Gaming Button Component with GSAP
 const GamingButton = ({ 
   children, 
   variant = "primary", 
@@ -227,10 +225,8 @@ const GamingButton = ({
   const buttonRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window.gsap === 'undefined') return;
-
-    const gsap = window.gsap;
     const button = buttonRef.current;
+    if (!button) return;
 
     const handleClick = () => {
       gsap.to(button, {
@@ -245,32 +241,41 @@ const GamingButton = ({
     const handleHover = () => {
       gsap.to(button, {
         y: -2,
+        scale: 1.05,
         boxShadow: "0 8px 25px rgba(255, 127, 80, 0.4)",
         duration: 0.3,
         ease: "power2.out"
       });
+
+      // Shimmer effect
+      const shimmer = button.querySelector('.shimmer');
+      if (shimmer) {
+        gsap.fromTo(shimmer, 
+          { x: '-100%' },
+          { x: '100%', duration: 0.6, ease: "power2.out" }
+        );
+      }
     };
 
     const handleLeave = () => {
       gsap.to(button, {
         y: 0,
+        scale: 1,
         boxShadow: "0 4px 14px rgba(255, 127, 80, 0.3)",
         duration: 0.3,
         ease: "power2.out"
       });
     };
 
-    if (button) {
-      button.addEventListener('click', handleClick);
-      button.addEventListener('mouseenter', handleHover);
-      button.addEventListener('mouseleave', handleLeave);
+    button.addEventListener('click', handleClick);
+    button.addEventListener('mouseenter', handleHover);
+    button.addEventListener('mouseleave', handleLeave);
 
-      return () => {
-        button.removeEventListener('click', handleClick);
-        button.removeEventListener('mouseenter', handleHover);
-        button.removeEventListener('mouseleave', handleLeave);
-      };
-    }
+    return () => {
+      button.removeEventListener('click', handleClick);
+      button.removeEventListener('mouseenter', handleHover);
+      button.removeEventListener('mouseleave', handleLeave);
+    };
   }, []);
 
   const getVariantClasses = () => {
@@ -302,24 +307,19 @@ const GamingButton = ({
       
       {/* Shimmer effect */}
       <div 
-        className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12"
-        style={{
-          animation: 'shimmer 2s infinite'
-        }}
+        className="shimmer absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12 -translate-x-full"
       />
     </button>
   );
 };
 
-// Gaming Card Component with 3D effects
+// Gaming Card Component with 3D GSAP effects
 const GamingCard = ({ children, className = "", ...props }) => {
   const cardRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window.gsap === 'undefined') return;
-
-    const gsap = window.gsap;
     const card = cardRef.current;
+    if (!card) return;
 
     const handleMouseMove = (e) => {
       const rect = card.getBoundingClientRect();
@@ -336,37 +336,43 @@ const GamingCard = ({ children, className = "", ...props }) => {
         duration: 0.3,
         ease: "power2.out"
       });
+
+      // Glow effect
+      gsap.to(card, {
+        boxShadow: "0 20px 40px rgba(0, 255, 255, 0.2)",
+        duration: 0.3
+      });
     };
 
     const handleMouseLeave = () => {
       gsap.to(card, {
         rotationX: 0,
         rotationY: 0,
+        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.37)",
         duration: 0.5,
         ease: "elastic.out(1, 0.3)"
       });
     };
 
-    if (card) {
-      card.addEventListener('mousemove', handleMouseMove);
-      card.addEventListener('mouseleave', handleMouseLeave);
+    card.addEventListener('mousemove', handleMouseMove);
+    card.addEventListener('mouseleave', handleMouseLeave);
 
-      return () => {
-        card.removeEventListener('mousemove', handleMouseMove);
-        card.removeEventListener('mouseleave', handleMouseLeave);
-      };
-    }
+    return () => {
+      card.removeEventListener('mousemove', handleMouseMove);
+      card.removeEventListener('mouseleave', handleMouseLeave);
+    };
   }, []);
 
   return (
     <div
       ref={cardRef}
       className={`
-        backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8
+        gaming-card backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8
         shadow-2xl transition-all duration-300 preserve-3d
         ${className}
       `}
       style={{ transformStyle: 'preserve-3d' }}
+      data-animate="true"
       {...props}
     >
       {children}
@@ -374,8 +380,8 @@ const GamingCard = ({ children, className = "", ...props }) => {
   );
 };
 
-// Main Demo Component showcasing all animations
-const ModernGamingDemo = () => {
+// Main Home Component with Full GSAP Integration
+export const Home = () => {
   const [activeTab, setActiveTab] = useState('home');
   
   return (
@@ -383,28 +389,22 @@ const ModernGamingDemo = () => {
       <div className="max-w-6xl mx-auto">
         
         {/* Header with animated logo */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-12" data-animate="true">
           <h1 className="text-6xl font-black mb-4 magnetic">
             Squad
             <span 
               className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500"
-              style={{
-                background: 'linear-gradient(45deg, #00ffff, #bf00ff)',
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}
             >
               Up
             </span>
           </h1>
           <p className="text-xl text-white/80 mb-8">
-            Next-generation gaming platform with cutting-edge animations
+            Next-generation gaming platform with cutting-edge motion design
           </p>
         </div>
 
         {/* Navigation with magnetic effects */}
-        <div className="flex justify-center mb-12">
+        <div className="flex justify-center mb-12" data-animate="true">
           <div className="backdrop-blur-xl bg-white/10 border border-cyan-400/30 rounded-2xl p-2">
             {['home', 'features', 'gaming', 'community'].map((tab) => (
               <button
@@ -427,7 +427,7 @@ const ModernGamingDemo = () => {
         {/* Animated cards grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
           
-          <GamingCard className="stagger-1">
+          <GamingCard>
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 magnetic">
                 <span className="text-3xl">🎯</span>
@@ -439,7 +439,7 @@ const ModernGamingDemo = () => {
             </div>
           </GamingCard>
 
-          <GamingCard className="stagger-2">
+          <GamingCard>
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6 magnetic">
                 <span className="text-3xl">⚡</span>
@@ -451,7 +451,7 @@ const ModernGamingDemo = () => {
             </div>
           </GamingCard>
 
-          <GamingCard className="stagger-3">
+          <GamingCard>
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-6 magnetic">
                 <span className="text-3xl">🚀</span>
@@ -465,42 +465,71 @@ const ModernGamingDemo = () => {
         </div>
 
         {/* Interactive buttons showcase */}
-        <div className="flex flex-wrap justify-center gap-6 mb-12">
-          <GamingButton variant="primary" className="stagger-1">
-            Start Gaming
-          </GamingButton>
-          <GamingButton variant="neon" className="stagger-2">
-            Join Squad
-          </GamingButton>
-          <GamingButton variant="ghost" className="stagger-3">
-            Learn More
-          </GamingButton>
+        <div className="flex flex-wrap justify-center gap-6 mb-12" data-animate="true">
+          <Link to="/signup">
+            <GamingButton variant="primary">
+              Start Gaming
+            </GamingButton>
+          </Link>
+          <Link to="/demo">
+            <GamingButton variant="neon">
+              Try Demo
+            </GamingButton>
+          </Link>
+          <Link to="/login">
+            <GamingButton variant="ghost">
+              Sign In
+            </GamingButton>
+          </Link>
         </div>
 
-        {/* Stats section with counters */}
-        <GamingCard className="stagger-4">
+        {/* Stats section with animated counters */}
+        <GamingCard data-animate="true">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-4xl font-black text-cyan-400 mb-2">1M+</div>
+            <div className="magnetic">
+              <div className="stat-number text-4xl font-black text-cyan-400 mb-2" data-target="1000000">0</div>
               <div className="text-white/70 text-sm uppercase tracking-wide">Active Players</div>
             </div>
-            <div>
-              <div className="text-4xl font-black text-purple-400 mb-2">50K+</div>
+            <div className="magnetic">
+              <div className="stat-number text-4xl font-black text-purple-400 mb-2" data-target="50000">0</div>
               <div className="text-white/70 text-sm uppercase tracking-wide">Games Matched</div>
             </div>
-            <div>
-              <div className="text-4xl font-black text-green-400 mb-2">99.9%</div>
-              <div className="text-white/70 text-sm uppercase tracking-wide">Uptime</div>
+            <div className="magnetic">
+              <div className="stat-number text-4xl font-black text-green-400 mb-2" data-target="99">0</div>
+              <div className="text-white/70 text-sm uppercase tracking-wide">% Uptime</div>
             </div>
-            <div>
-              <div className="text-4xl font-black text-orange-400 mb-2">24/7</div>
-              <div className="text-white/70 text-sm uppercase tracking-wide">Support</div>
+            <div className="magnetic">
+              <div className="stat-number text-4xl font-black text-orange-400 mb-2" data-target="24">0</div>
+              <div className="text-white/70 text-sm uppercase tracking-wide">Hour Support</div>
             </div>
           </div>
         </GamingCard>
+
+        {/* Call to Action with GSAP entrance */}
+        <div className="text-center mt-16" data-animate="true">
+          <GamingCard className="magnetic">
+            <h2 className="text-4xl font-bold text-white mb-6">
+              Ready to <span className="text-transparent bg-clip-text bg-gradient-to-r from-coral-500 to-marine-500">Squad Up</span>?
+            </h2>
+            <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
+              Join thousands of gamers finding their perfect squad. Connect your Steam library, 
+              create groups, and vote on what to play next!
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link to="/signup">
+                <GamingButton variant="primary" className="text-lg px-12 py-4">
+                  Get Started Free
+                </GamingButton>
+              </Link>
+              <Link to="/demo">
+                <GamingButton variant="ghost" className="text-lg px-12 py-4">
+                  Watch Demo
+                </GamingButton>
+              </Link>
+            </div>
+          </GamingCard>
+        </div>
       </div>
     </GamingAnimations>
   );
 };
-
-export { ModernGamingDemo as Home };
