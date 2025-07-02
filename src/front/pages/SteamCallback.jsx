@@ -43,7 +43,7 @@ export const SteamCallback = () => {
 
         /* 5️⃣ All done → go back  --------------------------------------------- */
         setPhase("done");
-        navigate("/single", { replace: true });
+        navigate("/dashboard", { replace: true });
       } catch (err) {
         console.error("Steam callback error", err);
         setPhase("error");

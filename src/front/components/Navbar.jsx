@@ -123,7 +123,7 @@ export const Navbar = () => {
 
       {/* Overlay to close dropdown */}
       {showUserMenu && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)}></div>
+        <div className="" onClick={() => setShowUserMenu(false)}></div>
       )}
     </nav>
   );

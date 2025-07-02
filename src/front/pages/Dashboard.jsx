@@ -19,24 +19,29 @@ export const Dashboard = () => {
     const backendUrl = authService.getApiUrl();
     const { isAuthenticated } = useGlobalReducer();
     
-    if (!isAuthenticated) return <Navigate to="/login" replace />;
     
- useEffect(() => {
-    let cancelled = false;
+useEffect(() => {
+  let cancelled = false;
 
-    const fetchAll = async () => {
-      try {
-        /* 1️⃣  profile */
+  const fetchAll = async () => {
+    try {
+      
+      if (!storeUser) {
         const prof = await authService.makeAuthenticatedRequest(
           `${authService.getApiUrl()}/api/auth/profile`
         );
+
         if (!cancelled && prof.ok) {
           const { user } = await prof.json();
           setUser(user);
+          dispatch({ type: 'SET_USER', payload: user }); // ✅ global cache
         }
+      } else {
+        setUser(storeUser);
+      }
 
-        /* 2️⃣  stats  – replace with real endpoint when ready */
-        if (!cancelled) {
+
+      if (!cancelled) {
           setStats({
             totalSessions : 12,
             totalVotes    : 47,
@@ -45,7 +50,6 @@ export const Dashboard = () => {
           });
         }
 
-        /* 3️⃣  recent sessions  – replace with real endpoint */
         if (!cancelled) {
           setRecentSessions([
             {
@@ -355,7 +359,6 @@ const toProfile  = () => navigate('/profile');
       </button>
     </>
   ) : (
-    /* not yet linked */
     <ConnectSteamButton />
   )}
 </div>

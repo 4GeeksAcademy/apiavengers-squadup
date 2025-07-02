@@ -1,7 +1,8 @@
 import os, re, json, base64, requests
 from urllib.parse import urlencode
 from flask import Blueprint, current_app, jsonify, redirect, request, url_for
-
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from api.models import User, db
 # ---------------------------------------------------------------------- config
 FRONTEND_URL   = os.getenv("FRONTEND_URL", "https://animated-eureka-5grpx4q7wvpgf66g-3000.app.github.dev")
 STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
@@ -68,10 +69,41 @@ def authorize():
     try:
         summary = _get_player_summary(steamid)
         games   = _get_owned_games(steamid)
+
+        payload = {
+            "steamid": steamid,
+            "profile": summary,
+            "games": games
+        }
+
+        json_payload = json.dumps(payload)
+        b64_payload = base64.urlsafe_b64encode(json_payload.encode()).decode()
+
+        return redirect(f"{FRONTEND_URL}/steam/callback?d={b64_payload}")
+    
     except Exception as err:
         current_app.logger.exception(err)
         return jsonify({"msg": "Failed to fetch Steam data"}), 500
 
-    payload = {"steamid": steamid, "profile": summary, "games": games}
-    b64     = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-    return redirect(f"{FRONTEND_URL}/steam/callback?d={b64}")
+
+@steam_bp.route("/gaming/steam/connect", methods=["POST"])
+@jwt_required()
+def connect_steam():
+    from api.models import User, db 
+
+    data = request.get_json()
+    steam_id = data.get("steam_id")
+    user_id = get_jwt_identity()
+
+    if not user_id or not steam_id:
+        return jsonify({ "msg": "Missing user or Steam ID" }), 400
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({ "msg": "User not found" }), 404
+
+    user.steam_id = steam_id
+    user.is_steam_connected = True
+    db.session.commit()
+
+    return jsonify({ "msg": "Steam linked successfully!" }), 200
