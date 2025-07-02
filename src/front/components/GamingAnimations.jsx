@@ -1,4 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 // Advanced Gaming Animation Component with GSAP Integration
 const GamingAnimations = ({ children, className = "" }) => {
@@ -503,4 +507,4 @@ const ModernGamingDemo = () => {
   );
 };
 
-export { ModernGamingDemo as Home };
+export default ModernGamingDemo;

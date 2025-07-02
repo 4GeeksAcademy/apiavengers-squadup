@@ -1,11 +1,11 @@
 {
   "name": "squadup-gaming-app",
-  "type": "module",
   "engines": {
     "node": ">=20.0.0"
   },
   "version": "1.0.0",
-  "description": "SquadUp - Find Your Gaming Squad",
+  "description": "SquadUp - Find Your Gaming Squad with Tailwind CSS v4",
+  "main": "index.js",
   "scripts": {
     "dev": "vite",
     "start": "vite",
@@ -13,6 +13,11 @@
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
+  "author": {
+    "name": "SquadUp Team",
+    "url": "https://github.com/your-repo"
+  },
+  "license": "ISC",
   "dependencies": {
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
@@ -21,12 +26,12 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0-alpha.26",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^4.0.3",
     "eslint": "^8.45.0",
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.3",
     "tailwindcss": "^4.0.0-alpha.26",
-    "vite": "^5.4.0"
+    "vite": "^4.4.5"
   }
 }
