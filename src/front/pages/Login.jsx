@@ -4,8 +4,9 @@ import useGlobalReducer from "../hooks/useGlobalReducer";
 import { loginFetch } from "../fetch";
 
 
+
 export const Login = () => {
-  const { dispatch } = useGlobalReducer();
+  const { store, dispatch } = useGlobalReducer();
   const [username, setUsername] = useState(''); // Changed from email to username
   const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -39,6 +40,17 @@ export const Login = () => {
       navigate('/Single');
     }
   }, [isLoggedIn, navigate]);
+
+  
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("openid.claimed_id")) {
+    fetch("/api/steam/authorize" + window.location.search)
+      .then(res => res.json())
+      .then(data => setSteamData(data));
+  }
+}, []);
+
 
   return (
     <div className="login-container">

@@ -11,8 +11,7 @@ from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended import JWTManager
 
-api = Blueprint('api', __name__)
-
+api = Blueprint('app', __name__)
 # Allow CORS requests to this API
 CORS(api)
 
@@ -38,5 +37,3 @@ def protected():
     return jsonify(logged_in_as=current_user), 200
 
 
-if __name__ == "__main__":
-    api.run()

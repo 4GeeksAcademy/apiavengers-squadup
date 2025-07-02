@@ -1,61 +1,106 @@
-// Import necessary hooks and components from react-router-dom and other libraries.
-import { Link, useParams } from "react-router-dom";  // To use link for navigation and useParams to get URL parameters
-import PropTypes from "prop-types";  // To define prop types for this component
-import rigoImageUrl from "../assets/img/rigo-baby.jpg"  // Import an image asset
-import useGlobalReducer from "../hooks/useGlobalReducer";  // Import a custom hook for accessing the global state
-import { useNavigate } from 'react-router-dom';
-import { useEffect, useState} from 'react';
-import { jwtDecode } from 'jwt-decode'
+// src/pages/Single.jsx
+import { useEffect, useState } from "react";
+import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
+import { jwtDecode } from "jwt-decode";
 
+import useGlobalReducer from "../hooks/useGlobalReducer";
+import {ConnectSteamButton} from "../components/ConnectSteamButton";   
 
-export const Single = props => {
-  const { store } = useGlobalReducer()
-  const { theId } = useParams()
-  const singleTodo = store.todos.find(todo => todo.id === parseInt(theId));
-  const navigate = useNavigate();
+export const Single = () => {
+  /* ── context + router ─────────────────────────────────────────────────── */
+  const { store, dispatch } = useGlobalReducer();
+  const { theId }           = useParams();
+  const navigate            = useNavigate();
+  const location            = useLocation();
 
+  /* ── local fallback for steam data ────────────────────────────────────── */
+  const [steamData, setSteamData] = useState(null);
+
+  /* ── auth-gate + openid catch-up ──────────────────────────────────────── */
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
+    /* JWT gate */
+    const token = localStorage.getItem("access_token");
+    if (!token) return navigate("/login");
 
-    if (!token) {
-      navigate('/login');
+    try {
+      const { exp } = jwtDecode(token);
+      // Only log out if exp exists **and** is in the past
+      if (exp && exp < Date.now() / 1000) {
+        localStorage.removeItem("access_token");
+        return navigate("/login");
+      }
+    } catch {
+      localStorage.removeItem("access_token");
+      return navigate("/login");
+    }
+
+    /* Use global steam data if we already have it */
+    if (store.steamLinked) {
+      setSteamData(store.steamLinked);
       return;
     }
 
-    try {
-      const decoded = jwtDecode(token);
-      const currentTime = Date.now() / 1000;
-      
-      if (decoded.exp < currentTime) {
-        localStorage.removeItem('access_token');
-        navigate('/login');
-      }
-    } catch (err) {
-      localStorage.removeItem('access_token');
-      navigate('/login');
+    /* One-step flow: we landed on /single?openid.* so fetch it directly */
+    if (location.search.includes("openid.")) {
+      fetch(`/api/steam/authorize${location.search}`)
+        .then(r => r.json())
+        .then(data => {
+          dispatch({ type: "steamLinked", payload: data });
+          setSteamData(data);
+          // wipe query-string to keep URL clean
+          window.history.replaceState({}, "", location.pathname);
+        })
+        .catch(console.error);
     }
-  }, [navigate]);
+  }, [dispatch, navigate, location.search, store.steamLinked]);
 
-  
+  /* ── other data you might still need ─────────────────────────────────── */
+  const singleTodo = store.todos?.find(t => t.id === Number(theId));
+
+  /* ── final games array for render ─────────────────────────────────────── */
+  const games = steamData?.games?.games || [];
+
+  /* ── JSX ──────────────────────────────────────────────────────────────── */
   return (
     <div className="container text-center">
-      {/* Display the title of the todo element dynamically retrieved from the store using theId. */}
-      <h1 className="display-4">Todo: You Are now logged in to a protected link.</h1>
-      <hr className="my-4" />  {/* A horizontal rule for visual separation. */}
+      <h1 className="display-4">
+        Todo: You are now logged in to a protected link.
+      </h1>
 
-      {/* A Link component acts as an anchor tag but is used for client-side routing to prevent page reloads. */}
-      <Link to="/">
-        <span className="btn btn-primary btn-lg" href="#" role="button">
-          Back home
-        </span>
+      <hr className="my-4" />
+
+      {/* Steam-connect button only if we have no games yet */}
+      {!games.length && <ConnectSteamButton />}
+
+      {/* Back-home link */}
+      <Link to="/" className="btn btn-primary btn-lg ms-3">
+        Back home
       </Link>
+
+      {/* Games grid or friendly message */}
+      {games.length ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-5">
+          {games.map(game => (
+            <div key={game.appid} className="bg-white p-4 shadow rounded-lg">
+              <img
+                src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/header.jpg`}
+                alt={game.name}
+                className="w-full h-auto mb-2 rounded"
+              />
+              <h2 className="text-lg font-semibold">{game.name}</h2>
+              <p className="text-sm text-gray-600">
+                {(game.playtime_forever / 60).toFixed(1)} hrs played
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-5">
+          {store.steamLinked
+            ? "No games found on this Steam account."
+            : "Link your Steam account to see your games."}
+        </p>
+      )}
     </div>
   );
-};
-
-// Use PropTypes to validate the props passed to this component, ensuring reliable behavior.
-Single.propTypes = {
-  // Although 'match' prop is defined here, it is not used in the component.
-  // Consider removing or using it as needed.
-  match: PropTypes.object
 };

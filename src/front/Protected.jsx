@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 export const Protected = () => {
   const token = localStorage.getItem('access_token');
+  window.location.href = `${import.meta.env.VITE_BACKEND_URL}/api/steam/login`;
 
   const isAuthenticated = () => {
     if (!token) return false;

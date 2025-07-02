@@ -10,6 +10,8 @@ import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Single } from "./pages/Single";
 import { Protected } from "../front/Protected"
+import { SteamCallback } from "/workspaces/apiavengers-squadup/src/front/pages/SteamCallback.jsx";
+
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -25,6 +27,9 @@ export const router = createBrowserRouter(
       {/* Nested Routes: Defines sub-routes within the BaseHome component. */}
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/steam/callback" element={<SteamCallback />} />
+
+      {/* protected routes */}
       <Route element={<Protected />} />
         <Route path="/single" element={<Single />} />
 
