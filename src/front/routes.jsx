@@ -1,4 +1,4 @@
-// src/front/routes.jsx - Updated with authentication routes
+// src/front/routes.jsx - Fixed with correct file imports
 
 import {
     createBrowserRouter,
@@ -11,9 +11,9 @@ import { Single } from "./pages/Single";
 import { Demo } from "./pages/Demo";
 import { SignUp } from "./pages/SignUp";
 import { Login } from "./pages/Login";
-import { Dashboard } from "./pages/Dashboard"; // You'll need to create this
-import { Profile } from "./pages/Profile"; // You'll need to create this
-import { ProtectedRoute } from "./components/ProtectedRoute"; // You'll need to create this
+import { Dashboard } from "./pages/Dashboard";
+import { Profile } from "./pages/Profile";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -45,13 +45,27 @@ export const router = createBrowserRouter(
             {/* Gaming Routes - Future implementation */}
             <Route path="/sessions" element={
                 <ProtectedRoute>
-                    <div>Gaming Sessions Page</div>
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="glass rounded-3xl p-8 text-center">
+                                <h1 className="text-3xl font-bold text-white mb-4">Gaming Sessions</h1>
+                                <p className="text-white/70">Coming soon! This will show all your gaming sessions.</p>
+                            </div>
+                        </div>
+                    </div>
                 </ProtectedRoute>
             } />
             
             <Route path="/friends" element={
                 <ProtectedRoute>
-                    <div>Friends Page</div>
+                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="glass rounded-3xl p-8 text-center">
+                                <h1 className="text-3xl font-bold text-white mb-4">Friends</h1>
+                                <p className="text-white/70">Coming soon! This will show your gaming friends.</p>
+                            </div>
+                        </div>
+                    </div>
                 </ProtectedRoute>
             } />
             
