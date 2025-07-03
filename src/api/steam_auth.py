@@ -1,7 +1,5 @@
-import os, re, json, base64
+import os, re, json, base64, requests
 from urllib.parse import urlencode
-
-import requests
 from flask import Blueprint, current_app, jsonify, redirect, request, url_for
 
 # ---------------------------------------------------------------------- config
@@ -16,17 +14,21 @@ steam_bp = Blueprint("steam", __name__)
 
 # ------------------------------------------------------------- helper builders
 def _build_steam_login_url() -> str:
-    return_to = url_for("steam.authorize", _external=True)           # needs SERVER_NAME
-    realm     = request.url_root.rstrip("/")
+    # 1️⃣ Use the exact Codespaces host
+    host = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"
+    base = f"https://{host}"
+    return_to = f"{base}/api/steam/authorize"
+
     params = {
-        "openid.ns":       "http://specs.openid.net/auth/2.0",
-        "openid.mode":     "checkid_setup",
+        "openid.ns":        "http://specs.openid.net/auth/2.0",
+        "openid.mode":      "checkid_setup",
         "openid.return_to": return_to,
-        "openid.realm":     realm,
+        "openid.realm":     base,
         "openid.identity":  "http://specs.openid.net/auth/2.0/identifier_select",
         "openid.claimed_id":"http://specs.openid.net/auth/2.0/identifier_select",
     }
     return f"{STEAM_OPENID_URL}?{urlencode(params)}"
+
 
 def _verify_steam_login(openid_response: dict) -> bool:
     data = dict(openid_response)

@@ -7,23 +7,32 @@ from flask import Flask, send_from_directory, jsonify
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-
+from flask_socketio import SocketIO
 from api.models import db
 from api.routes import api as api_bp          # ← fixed import
 from api.steam_auth import steam_bp
 from api.utils import APIException, generate_sitemap
 from api.admin import setup_admin
 from api.commands import setup_commands
+from api.genre_routes import genre_bp
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 
 ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
 static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../dist")
 
 app = Flask(__name__, static_folder=static_file_dir, static_url_path="/")
+
 app.url_map.strict_slashes = False
 CORS(app)
 
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+
 # JWT
 app.config["JWT_SECRET_KEY"] = os.getenv("SUPER_SECRET_SECRET", "dev-secret")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1) 
+
 jwt = JWTManager(app)
 
 # Database
@@ -43,8 +52,9 @@ setup_admin(app)
 setup_commands(app)
 
 # Blueprints
-app.register_blueprint(api_bp, url_prefix="/api")   # ← now mounted
-app.register_blueprint(steam_bp, url_prefix="/api") # ← comma added
+app.register_blueprint(api_bp, url_prefix="/api")
+app.register_blueprint(steam_bp, url_prefix="/api") 
+app.register_blueprint(genre_bp, url_prefix='/api')
 
 # Error handler
 @app.errorhandler(APIException)
@@ -68,4 +78,5 @@ def static_proxy(path):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 3001))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    #app.run(host="0.0.0.0", port=port, debug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=True)
