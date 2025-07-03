@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+//import { gsap } from 'gsap';
+//import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-gsap.registerPlugin(ScrollTrigger);
+//gsap.registerPlugin(ScrollTrigger);
 
 // This component allows the scroll to go to the beginning when changing the view,
 // otherwise it would remain in the position of the previous view. 

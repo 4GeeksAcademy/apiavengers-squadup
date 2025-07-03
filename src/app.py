@@ -5,34 +5,22 @@ import os
 
 from flask import Flask, send_from_directory, jsonify
 from flask_migrate import Migrate
-<<<<<<< HEAD
-from flask_cors import CORS
-from flask_jwt_extended import JWTManager
 from flask_socketio import SocketIO
-from api.models import db
 from api.routes import api as api_bp          # ← fixed import
 from api.steam_auth import steam_bp
-from api.utils import APIException, generate_sitemap
-=======
 from flask_swagger import swagger
 from flask_jwt_extended import JWTManager, get_jwt, create_refresh_token
 from flask_cors import CORS
 from datetime import timedelta
 from api.utils import APIException, generate_sitemap
 from api.models import db
-from api.routes import api
 from api.auth import auth
 from api.gaming import gaming  # Import gaming blueprint
->>>>>>> origin/visual-test2
 from api.admin import setup_admin
 from api.commands import setup_commands
 from api.genre_routes import genre_bp
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/visual-test2
 ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
 static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../dist")
 
@@ -41,7 +29,6 @@ app = Flask(__name__, static_folder=static_file_dir, static_url_path="/")
 app.url_map.strict_slashes = False
 CORS(app)
 
-<<<<<<< HEAD
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 
@@ -71,7 +58,6 @@ setup_commands(app)
 app.register_blueprint(api_bp, url_prefix="/api")
 app.register_blueprint(steam_bp, url_prefix="/api") 
 app.register_blueprint(genre_bp, url_prefix='/api')
-=======
 # Enable CORS for your GitHub Codespace frontend
 CORS(app, origins=[
     "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
@@ -249,44 +235,27 @@ setup_commands(app)
 app.register_blueprint(api, url_prefix='/api')
 app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')  # Gaming routes now available!
->>>>>>> origin/visual-test2
 
 # Error handler
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
     return jsonify(error.to_dict()), error.status_code
 
-<<<<<<< HEAD
 # Sitemap / SPA fall-through
 @app.route("/")
-=======
-@app.route('/')
->>>>>>> origin/visual-test2
 def sitemap():
     if ENV == "development":
         return generate_sitemap(app)
     return send_from_directory(static_file_dir, "index.html")
 
-<<<<<<< HEAD
-@app.route("/<path:path>")
-def static_proxy(path):
-=======
 @app.route('/<path:path>', methods=['GET'])
 def serve_any_other_file(path):
->>>>>>> origin/visual-test2
     if not os.path.isfile(os.path.join(static_file_dir, path)):
         path = "index.html"
     response = send_from_directory(static_file_dir, path)
     response.cache_control.max_age = 0
     return response
 
-<<<<<<< HEAD
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 3001))
-    #app.run(host="0.0.0.0", port=port, debug=True)
-    socketio.run(app, host='0.0.0.0', port=port, debug=True)
-=======
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
     app.run(host='0.0.0.0', port=PORT, debug=True) 
->>>>>>> origin/visual-test2
