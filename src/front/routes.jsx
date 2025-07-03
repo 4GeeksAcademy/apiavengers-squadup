@@ -7,7 +7,6 @@ import {
 } from "react-router-dom";
 import { Layout } from "./pages/Layout";
 import { Home } from "./pages/Home";
-import { Login } from "./pages/Login";
 import { Single } from "./pages/Single";
 import { Demo } from "./pages/Demo";
 import { SignUp } from "./pages/SignUp";
