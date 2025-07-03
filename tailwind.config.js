@@ -68,6 +68,20 @@ export default {
           purple: '#8000ff',
           cyan: '#00ffff',
           lime: '#80ff00'
+        },
+        
+        // Add lavender color that's referenced in your code
+        lavender: {
+          50: '#faf5ff',
+          100: '#f3e8ff',
+          200: '#e9d5ff',
+          300: '#d8b4fe',
+          400: '#c084fc',
+          500: '#a855f7',
+          600: '#9333ea',
+          700: '#7c3aed',
+          800: '#6b21a8',
+          900: '#581c87'
         }
       },
       
@@ -326,7 +340,7 @@ export default {
         },
         
         // Gaming button utilities
-        '.btn-gaming': {
+        '.btn-coral': {
           'position': 'relative',
           'background': 'linear-gradient(135deg, #ff7f50, #e66b45)',
           'color': 'white',
@@ -340,10 +354,40 @@ export default {
           'transform': 'translateY(0)',
           'overflow': 'hidden'
         },
-        '.btn-gaming:hover': {
+        '.btn-coral:hover': {
           'background': 'linear-gradient(135deg, #e66b45, #cc5a3a)',
           'transform': 'translateY(-2px) scale(1.02)',
           'box-shadow': '0 8px 25px rgba(255, 127, 80, 0.4)'
+        },
+        '.btn-marine': {
+          'background': 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+          'color': 'white',
+          'font-weight': '600',
+          'padding': '12px 32px',
+          'border-radius': '12px',
+          'border': 'none',
+          'box-shadow': '0 4px 14px rgba(14, 165, 233, 0.3)',
+          'transition': 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+          'cursor': 'pointer'
+        },
+        '.btn-marine:hover': {
+          'background': 'linear-gradient(135deg, #0284c7, #0369a1)',
+          'transform': 'translateY(-2px)',
+          'box-shadow': '0 8px 25px rgba(14, 165, 233, 0.4)'
+        },
+        '.btn-ghost': {
+          'background': 'rgba(255, 255, 255, 0.1)',
+          'border': '1px solid rgba(255, 255, 255, 0.3)',
+          'color': 'white',
+          'padding': '12px 32px',
+          'border-radius': '12px',
+          'font-weight': '600',
+          'transition': 'all 0.3s ease',
+          'cursor': 'pointer'
+        },
+        '.btn-ghost:hover': {
+          'background': 'rgba(255, 255, 255, 0.2)',
+          'transform': 'translateY(-2px)'
         },
         '.btn-neon': {
           'background': 'transparent',
@@ -362,10 +406,106 @@ export default {
         },
         '.btn-neon:hover': {
           'color': '#000',
+          'background': '#00ffff',
           'box-shadow': '0 0 30px rgba(0, 255, 255, 0.6)'
         },
         
+        // Navbar glassmorphism
+        '.navbar-glass': {
+          'backdrop-filter': 'blur(16px)',
+          '-webkit-backdrop-filter': 'blur(16px)',
+          'background': 'rgba(255, 255, 255, 0.08)',
+          'border': '1px solid rgba(255, 255, 255, 0.15)',
+          'border-radius': '20px',
+          'padding': '16px 24px',
+          'box-shadow': '0 8px 32px rgba(0, 0, 0, 0.37)',
+          'max-width': '1200px',
+          'margin': '0 auto'
+        },
+        '.nav-dropdown': {
+          'position': 'absolute',
+          'top': '100%',
+          'right': '0',
+          'margin-top': '8px',
+          'width': '240px',
+          'backdrop-filter': 'blur(20px)',
+          '-webkit-backdrop-filter': 'blur(20px)',
+          'background': 'rgba(0, 0, 0, 0.8)',
+          'border': '1px solid rgba(255, 255, 255, 0.15)',
+          'border-radius': '16px',
+          'padding': '12px',
+          'box-shadow': '0 12px 40px rgba(0, 0, 0, 0.6)',
+          'transform': 'scale(0.95) translateY(-10px)',
+          'opacity': '0',
+          'pointer-events': 'none',
+          'transition': 'all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+          'z-index': '100'
+        },
+        '.nav-dropdown.active': {
+          'transform': 'scale(1) translateY(0)',
+          'opacity': '1',
+          'pointer-events': 'auto'
+        },
+        '.dropdown-item': {
+          'display': 'block',
+          'width': '100%',
+          'padding': '12px 16px',
+          'text-align': 'left',
+          'color': 'rgba(255, 255, 255, 0.9)',
+          'background': 'transparent',
+          'border': 'none',
+          'border-radius': '8px',
+          'font-size': '14px',
+          'font-weight': '500',
+          'transition': 'all 0.2s ease',
+          'cursor': 'pointer',
+          'margin-bottom': '4px'
+        },
+        '.dropdown-item:hover': {
+          'background': 'rgba(255, 255, 255, 0.1)',
+          'color': 'white'
+        },
+        
+        // Page container
+        '.page-container': {
+          'min-height': '100vh',
+          'background': 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 25%, #7c3aed 75%, #be185d 100%)',
+          'position': 'relative',
+          'overflow': 'hidden',
+          'display': 'flex',
+          'flex-direction': 'column'
+        },
+        '.content-wrapper': {
+          'position': 'relative',
+          'z-index': '10',
+          'flex': '1',
+          'display': 'flex',
+          'flex-direction': 'column',
+          'max-width': '1200px',
+          'margin': '0 auto',
+          'padding': '96px 24px 48px',
+          'width': '100%'
+        },
+        '.particles': {
+          'position': 'absolute',
+          'inset': '0',
+          'overflow': 'hidden',
+          'pointer-events': 'none'
+        },
+        '.particle': {
+          'position': 'absolute',
+          'width': '2px',
+          'height': '2px',
+          'background': 'rgba(255, 255, 255, 0.4)',
+          'border-radius': '50%',
+          'opacity': '0.6',
+          'filter': 'blur(0.5px)'
+        },
+        
         // Text effects
+        '.text-shadow': {
+          'text-shadow': '0 2px 4px rgba(0, 0, 0, 0.5)'
+        },
         '.text-glow': {
           'text-shadow': '0 0 10px currentColor'
         },
@@ -387,72 +527,13 @@ export default {
           'transform-style': 'preserve-3d'
         },
         
-        // Gaming card effects
-        '.card-gaming': {
-          'backdrop-filter': 'blur(20px)',
-          '-webkit-backdrop-filter': 'blur(20px)',
-          'background': 'rgba(255, 255, 255, 0.08)',
-          'border': '1px solid rgba(255, 255, 255, 0.15)',
-          'border-radius': '20px',
-          'padding': '32px',
-          'box-shadow': '0 8px 32px rgba(0, 0, 0, 0.37)',
-          'transition': 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-          'position': 'relative',
-          'overflow': 'hidden'
+        // Hide scrollbars
+        '.scrollbar-hide': {
+          '-ms-overflow-style': 'none',
+          'scrollbar-width': 'none'
         },
-        '.card-gaming:hover': {
-          'transform': 'translateY(-8px) scale(1.02)',
-          'box-shadow': '0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 255, 255, 0.2) inset'
-        },
-        
-        // Scrollbar styling
-        '.scrollbar-gaming': {
-          'scrollbar-width': 'thin',
-          'scrollbar-color': '#00ffff rgba(15, 23, 42, 0.5)'
-        },
-        '.scrollbar-gaming::-webkit-scrollbar': {
-          'width': '8px',
-          'height': '8px'
-        },
-        '.scrollbar-gaming::-webkit-scrollbar-track': {
-          'background': 'rgba(15, 23, 42, 0.5)',
-          'border-radius': '4px'
-        },
-        '.scrollbar-gaming::-webkit-scrollbar-thumb': {
-          'background': 'linear-gradient(180deg, #00ffff, #bf00ff)',
-          'border-radius': '4px'
-        },
-        '.scrollbar-gaming::-webkit-scrollbar-thumb:hover': {
-          'background': 'linear-gradient(180deg, #bf00ff, #00ffff)'
-        },
-        
-        // Loading spinner
-        '.spinner-gaming': {
-          'width': '40px',
-          'height': '40px',
-          'border': '3px solid rgba(0, 255, 255, 0.3)',
-          'border-radius': '50%',
-          'border-top-color': '#00ffff',
-          'animation': 'spin 1s linear infinite',
-          'position': 'relative'
-        },
-        
-        // Particle effects
-        '.particle': {
-          'position': 'absolute',
-          'width': '2px',
-          'height': '2px',
-          'background': 'rgba(0, 255, 255, 0.6)',
-          'border-radius': '50%',
-          'opacity': '0.6',
-          'filter': 'blur(0.5px)'
-        },
-        
-        // Energy flow background
-        '.energy-flow': {
-          'background': 'linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.4), transparent)',
-          'background-size': '200% 100%',
-          'animation': 'energy-flow 3s ease-in-out infinite'
+        '.scrollbar-hide::-webkit-scrollbar': {
+          'display': 'none'
         }
       }
       

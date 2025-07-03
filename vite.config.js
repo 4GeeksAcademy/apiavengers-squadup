@@ -3,15 +3,15 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss() // Tailwind v4 Vite plugin
-  ],
+  plugins: [react()],
   server: {
     port: 3000,
-    host: true, // Good for Codespaces
+    host: true,
   },
   build: {
     outDir: 'dist'
+  },
+  css: {
+    postcss: './postcss.config.js'
   }
 })

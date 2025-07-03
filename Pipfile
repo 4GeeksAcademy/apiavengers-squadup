@@ -1,36 +1,32 @@
 [[source]]
-name = "pypi"
 url = "https://pypi.org/simple"
 verify_ssl = true
-
-[dev-packages]
+name = "pypi"
 
 [packages]
 flask = "*"
 flask-sqlalchemy = "*"
 flask-migrate = "*"
+flask-jwt-extended = "*"
+flask-cors = "*"
+flask-admin = "*"
 flask-swagger = "*"
 psycopg2-binary = "*"
 python-dotenv = "*"
-flask-cors = "*"
 gunicorn = "*"
 cloudinary = "*"
-flask-admin = "*"
-typing-extensions = "*"
-flask-jwt-extended = "==4.6.0"
-wtforms = "==3.1.2"
-sqlalchemy = "*"
+werkzeug = "*"
+requests = "*"
+
+[dev-packages]
 
 [requires]
 python_version = "3.13"
 
 [scripts]
-start="flask run -p 3001 -h 0.0.0.0"
-init="flask db init"
-migrate="flask db migrate"
-local="heroku local"
-upgrade="flask db upgrade"
-downgrade="flask db downgrade"
-insert-test-data="flask insert-test-data"
-reset_db="bash ./docs/assets/reset_migrations.bash"
-deploy="echo 'Please follow this 3 steps to deploy: https://github.com/4GeeksAcademy/flask-rest-hello/blob/master/README.md#deploy-your-website-to-heroku' "
+start = "flask --app src/app.py run --host=0.0.0.0 --port=3001 --debug"
+dev = "flask --app src/app.py run --host=0.0.0.0 --port=3001 --debug"
+init = "flask --app src/app.py db init"
+migrate = "flask --app src/app.py db migrate"
+upgrade = "flask --app src/app.py db upgrade"
+reset_db = "flask --app src/app.py db upgrade"
