@@ -60,7 +60,6 @@ class User(db.Model):
         return {
             "id": self.id,
             "email": self.email,
-<<<<<<< HEAD
             # do not serialize the password, its a security breach
         }
 # ────────────────────────────────────────────────────────────
@@ -88,22 +87,22 @@ class Game(db.Model):
     appid:         Mapped[int] = mapped_column(Integer)
     name:          Mapped[str] = mapped_column(String(200))
     playtime:      Mapped[int] = mapped_column(Integer)   # minutes played
-
     steam_link_id: Mapped[int] = mapped_column(ForeignKey("steam_link.id"))
     steam_link   = relationship("SteamLink", back_populates="games")
-=======
-            "username": self.username,
-            "avatar_url": self.avatar_url or self.steam_avatar_url,
-            "bio": self.bio,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_login": self.last_login.isoformat() if self.last_login else None,
-            "is_active": self.is_active,
-            "steam_connected": self.is_steam_connected,
-            "steam_username": self.steam_username,
-            "steam_avatar": self.steam_avatar_url,
-            "gaming_style": self.gaming_style,
-            "favorite_genres": json.loads(self.favorite_genres) if self.favorite_genres else [],
-            "total_games": len(self.owned_games) if self.owned_games else 0
+    def serialize(self):
+        return {
+        "username": self.username,
+        "avatar_url": self.avatar_url or self.steam_avatar_url,
+        "bio": self.bio,
+        "created_at": self.created_at.isoformat() if self.created_at else None,
+        "last_login": self.last_login.isoformat() if self.last_login else None,
+        "is_active": self.is_active,
+        "steam_connected": self.is_steam_connected,
+        "steam_username": self.steam_username,
+        "steam_avatar": self.steam_avatar_url,
+        "gaming_style": self.gaming_style,
+        "favorite_genres": json.loads(self.favorite_genres) if self.favorite_genres else [],
+        "total_games": len(self.owned_games) if self.owned_games else 0
         }
 
 class SteamGame(db.Model):
@@ -232,4 +231,3 @@ class GameSession(db.Model):
             "created_at": self.created_at.isoformat(),
             "vote_results": json.loads(self.vote_results) if self.vote_results else {}
         }
->>>>>>> origin/visual-test2
