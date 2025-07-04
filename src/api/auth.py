@@ -1,7 +1,7 @@
 """
 Secure Authentication Routes with Logout & Token Refresh
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from api.models import db, User
 from api.utils import APIException
 from flask_cors import CORS
@@ -12,6 +12,7 @@ from flask_jwt_extended import (
 from werkzeug.security import generate_password_hash, check_password_hash
 import re
 from datetime import datetime, timedelta
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 auth = Blueprint('auth', __name__)
 CORS(auth)
@@ -55,35 +56,35 @@ def register():
         confirm_password = data.get('confirmPassword', '')
         
         # Validate required fields
-        if not email or not username or not password:
-            raise APIException("Email, username, and password are required", status_code=400)
+        #if not email or not username or not password:
+        #    raise APIException("Email, username, and password are required", status_code=400)
         
         # Validate email format
-        if not validate_email(email):
-            raise APIException("Invalid email format", status_code=400)
+        #if not validate_email(email):
+        #    raise APIException("Invalid email format", status_code=400)
         
         # Validate username
-        is_valid_username, username_message = validate_username(username)
-        if not is_valid_username:
-            raise APIException(username_message, status_code=400)
+        #is_valid_username, username_message = validate_username(username)
+        #if not is_valid_username:
+         #   raise APIException(username_message, status_code=400)
         
         # Validate password
-        is_valid_password, password_message = validate_password(password)
-        if not is_valid_password:
-            raise APIException(password_message, status_code=400)
+        #is_valid_password, password_message = validate_password(password)
+        #if not is_valid_password:
+        #    raise APIException(password_message, status_code=400)
         
         # Check password confirmation
         if password != confirm_password:
             raise APIException("Passwords do not match", status_code=400)
         
         # Check if user already exists
-        existing_user_email = User.query.filter_by(email=email).first()
-        if existing_user_email:
-            raise APIException("Email already registered", status_code=409)
+        #existing_user_email = User.query.filter_by(email=email).first()
+        #if existing_user_email:
+        #    raise APIException("Email already registered", status_code=409)
         
-        existing_user_username = User.query.filter_by(username=username).first()
-        if existing_user_username:
-            raise APIException("Username already taken", status_code=409)
+        #existing_user_username = User.query.filter_by(username=username).first()
+        #if existing_user_username:
+        #    raise APIException("Username already taken", status_code=409)
         
         # Create new user
         new_user = User()
@@ -92,10 +93,19 @@ def register():
         new_user.password_hash = generate_password_hash(password)
         new_user.is_active = True
         
-        # Save to database
-        db.session.add(new_user)
-        db.session.commit()
-        
+        try:
+            db.session.add(new_user)
+            db.session.commit()
+        except IntegrityError as e:
+            db.session.rollback()
+        current_app.logger.exception(e)   # prints full DB message
+        # Detect duplicate-key vs. NOT-NULL if you like:
+        return jsonify({"error": "Duplicate email or username"}), 409
+    except ProgrammingError as e:
+        db.session.rollback()
+        current_app.logger.exception(e)
+        return jsonify({"error": "Schema mismatch—run migrations"}), 500
+    
         # Create SECURE tokens (1 hour access + 30 day refresh)
         access_token = create_access_token(
             identity=new_user.id,
@@ -166,7 +176,7 @@ def login():
         
         return jsonify({
             "message": "Login successful",
-            "user": user.serialize(),
+            #"user": user.serialize(),
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_in": 3600  # 1 hour in seconds
@@ -176,6 +186,15 @@ def login():
         return jsonify({"error": e.message}), e.status_code
     except Exception as e:
         return jsonify({"error": "Internal server error"}), 500
+
+    test_user = User(
+        email="testuser@example.com",
+        username="testuser",
+        password_hash=generate_password_hash("TestPass123"),
+        is_active=True
+    )
+    db.session.add(test_user)
+    db.session.commit()
 
 @auth.route('/logout', methods=['POST'])
 @jwt_required()

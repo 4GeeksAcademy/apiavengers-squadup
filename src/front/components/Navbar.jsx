@@ -1,9 +1,9 @@
 import React, { useContext, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-//import { gsap } from 'gsap';
-//import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-//gsap.registerPlugin(ScrollTrigger);
+gsap.registerPlugin(ScrollTrigger);
 
 export const Navbar = () => {
     const [user, setUser] = React.useState(null);

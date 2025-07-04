@@ -3,10 +3,9 @@ Production-Ready JWT Security Configuration
 """
 import os
 
-from flask import Flask, send_from_directory, jsonify
+from flask import Flask, send_from_directory, jsonify, request
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
-from api.routes import api as api_bp          # ← fixed import
 from api.steam_auth import steam_bp
 from flask_swagger import swagger
 from flask_jwt_extended import JWTManager, get_jwt, create_refresh_token
@@ -27,7 +26,7 @@ static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../
 app = Flask(__name__, static_folder=static_file_dir, static_url_path="/")
 
 app.url_map.strict_slashes = False
-CORS(app)
+
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -37,6 +36,7 @@ app.config["JWT_SECRET_KEY"] = os.getenv("SUPER_SECRET_SECRET", "dev-secret")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1) 
 
 jwt = JWTManager(app)
+CORS(app)
 
 # Database
 db_url = os.getenv("DATABASE_URL")
@@ -45,7 +45,6 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 Migrate(app, db, compare_type=True)
-db.init_app(app)
 
 app.config["SERVER_NAME"] = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"
 app.config["PREFERRED_URL_SCHEME"] = "https"
@@ -55,23 +54,21 @@ setup_admin(app)
 setup_commands(app)
 
 # Blueprints
-app.register_blueprint(api_bp, url_prefix="/api")
-app.register_blueprint(steam_bp, url_prefix="/api") 
-app.register_blueprint(genre_bp, url_prefix='/api')
+app.register_blueprint(auth, url_prefix='/api/auth')
+#app.register_blueprint(api_bp, url_prefix="/api")
+app.register_blueprint(steam_bp, url_prefix="/api")
+app.register_blueprint(genre_bp, url_prefix="/api")
+app.register_blueprint(gaming, url_prefix='/api/gaming')
+
 # Enable CORS for your GitHub Codespace frontend
-CORS(app, origins=[
-    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
-    "http://localhost:3000",
-    "https://localhost:3000",
-])
+#CORS(app, origins=[
+#    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
+#    "http://localhost:3000",
+#    "https://localhost:3000",
+#])
 
 # Database configuration
-db_url = os.getenv("DATABASE_URL")
-if db_url is not None:
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace(
-        "postgres://", "postgresql://")
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
+
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -90,8 +87,6 @@ app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)   # 30 days for ref
 app.config['JWT_BLACKLIST_ENABLED'] = True
 app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
 
-# Initialize JWT
-jwt = JWTManager(app)
 
 # ============================================================================
 # SECURE TOKEN BLACKLIST SYSTEM
@@ -224,17 +219,14 @@ def rate_limit():
 # ============================================================================
 # REST OF YOUR APP CONFIGURATION
 # ============================================================================
-
-MIGRATE = Migrate(app, db, compare_type=True)
 db.init_app(app)
+MIGRATE = Migrate(app, db, compare_type=True)
 
-setup_admin(app)
-setup_commands(app)
+
 
 # Register blueprints - MOVED TO CORRECT LOCATION
-app.register_blueprint(api, url_prefix='/api')
-app.register_blueprint(auth, url_prefix='/api/auth')
-app.register_blueprint(gaming, url_prefix='/api/gaming')  # Gaming routes now available!
+#app.register_blueprint(app, url_prefix='/api')
+
 
 # Error handler
 @app.errorhandler(APIException)

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export const Login = () => {
     const [formData, setFormData] = useState({
@@ -10,6 +11,7 @@ export const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
+    const navigate = useNavigate(); 
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -51,7 +53,7 @@ export const Login = () => {
         
         try {
             // Simulate API call - replace with your actual backend URL
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch('https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev/api/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -61,21 +63,24 @@ export const Login = () => {
             
             const data = await response.json();
             
-            if (response.ok) {
-                setSuccessMessage('Login successful! Welcome back!');
-                setFormData({
-                    login: '',
-                    password: ''
-                });
-                // Store token if remember me is checked
-                if (rememberMe) {
-                    localStorage.setItem('token', data.access_token);
-                } else {
-                    sessionStorage.setItem('token', data.access_token);
-                }
+        if (response.ok) {
+            const { access_token, refresh_token, user } = data;
+
+            setSuccessMessage('Login successful! Welcome back!');
+            setFormData({ login: '', password: '' });
+            
+            if (rememberMe) {
+                localStorage.setItem('access_token', access_token);
+                localStorage.setItem('refresh_token', refresh_token);
             } else {
-                setErrors({ submit: data.error || 'Login failed' });
+                sessionStorage.setItem('access_token', access_token);
+                sessionStorage.setItem('refresh_token', refresh_token);
             }
+
+            // Optionally redirect or update app state with `user`
+            navigate('/profile', { replace: true, state: { user } })
+
+        }
         } catch (error) {
             setErrors({ submit: 'Network error. Please try again.' });
         } finally {

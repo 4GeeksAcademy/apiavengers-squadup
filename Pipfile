@@ -6,17 +6,18 @@ name = "pypi"
 [packages]
 flask = "*"
 flask-sqlalchemy = "*"
-flask-migrate = "*"
 flask-jwt-extended = "*"
 flask-cors = "*"
 flask-admin = "*"
 flask-swagger = "*"
 psycopg2-binary = "*"
-python-dotenv = "*"
 gunicorn = "*"
 cloudinary = "*"
 werkzeug = "*"
 requests = "*"
+flask-migrate = "*"
+flask-socketio = "*"
+python-dotenv = "*"
 
 [dev-packages]
 

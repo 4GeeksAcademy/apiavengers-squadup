@@ -13,7 +13,7 @@ user_games = Table(
     Column('user_id', Integer, ForeignKey('user.id'), primary_key=True),
     Column('game_id', Integer, ForeignKey('steam_game.id'), primary_key=True),
     Column('hours_played', Integer, default=0),
-    Column('last_played', DateTime, nullable=True),
+    Column('last_played', DateTime),
     Column('added_at', DateTime, default=datetime.utcnow)
 )
 
@@ -23,14 +23,14 @@ group_members = Table(
     db.Model.metadata,
     Column('user_id', Integer, ForeignKey('user.id'), primary_key=True),
     Column('group_id', Integer, ForeignKey('gaming_group.id'), primary_key=True),
-    Column('joined_at', DateTime, default=datetime.utcnow),
-    Column('role', String(20), default='member')  # member, admin, owner
+    Column('joined_at', DateTime, default=datetime.utcnow),   # fixed
+    Column('role', String(20), default='member')
 )
 
 class User(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
-    username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(80), unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
     avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
     bio: Mapped[str] = mapped_column(Text, nullable=True)
@@ -55,6 +55,7 @@ class User(db.Model):
     owned_games = relationship('SteamGame', secondary=user_games, back_populates='owners')
     groups = relationship('GamingGroup', secondary=group_members, back_populates='members')
     created_groups = relationship('GamingGroup', back_populates='creator')
+    steam = relationship("SteamLink", back_populates="user", uselist=False,cascade="all, delete-orphan")
 
     def serialize(self):
         return {
@@ -91,18 +92,10 @@ class Game(db.Model):
     steam_link   = relationship("SteamLink", back_populates="games")
     def serialize(self):
         return {
-        "username": self.username,
-        "avatar_url": self.avatar_url or self.steam_avatar_url,
-        "bio": self.bio,
-        "created_at": self.created_at.isoformat() if self.created_at else None,
-        "last_login": self.last_login.isoformat() if self.last_login else None,
-        "is_active": self.is_active,
-        "steam_connected": self.is_steam_connected,
-        "steam_username": self.steam_username,
-        "steam_avatar": self.steam_avatar_url,
-        "gaming_style": self.gaming_style,
-        "favorite_genres": json.loads(self.favorite_genres) if self.favorite_genres else [],
-        "total_games": len(self.owned_games) if self.owned_games else 0
+        "id": self.id,
+        "appid": self.appid,
+        "name": self.name,
+        "playtime": self.playtime,
         }
 
 class SteamGame(db.Model):

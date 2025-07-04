@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
-
+/*
 export const loginFetch = async (username, password, dispatch) => {
   try {
 
     const API_URL =
-      "https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev/api/login";
+      "https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev";
 
 
       const response = await fetch(API_URL, {
@@ -81,3 +81,4 @@ export const signOut = async (username, password, dispatch) => {
     }),
   };
 };
+*/

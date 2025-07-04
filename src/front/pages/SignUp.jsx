@@ -86,18 +86,25 @@ export const SignUp = () => {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
             
             const response = await fetch(`${backendUrl}/api/auth/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData)
-            });
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: formData.email,
+                username: formData.username,
+                password: formData.password,
+                confirmPassword: formData.confirmPassword,
+            }),
             
+            });
+            console.log('server response', response.status, data);
+
             const data = await response.json();
             
             if (response.ok) {
                 // Store user data and token
-                localStorage.setItem('token', data.access_token);
+                localStorage.setItem('access_token', data.access_token);
                 dispatch({ 
                     type: 'set_user', 
                     payload: data.user 
