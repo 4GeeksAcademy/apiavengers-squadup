@@ -11,6 +11,7 @@ from flask_jwt_extended import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 import re
+import json
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
@@ -53,7 +54,6 @@ def get_users():
         "id": user.id,
         "email": user.email,
         "username": user.username,
-        "password": user.password_hash
     } for user in users]), 200
 
 
@@ -337,7 +337,7 @@ def profile():
             }), 200
 
         elif request.method == 'PUT':
-            data = request.get_json()
+            data = request.get_json() or {}
 
             # Update allowed fields
             if 'bio' in data:
@@ -345,13 +345,19 @@ def profile():
 
             if 'avatar_url' in data:
                 user.avatar_url = data['avatar_url']
+        
+        user.gaming_style = data.get('gaming_style', user.gaming_style)
 
-            db.session.commit()
+        # favourite genres is an array coming from React
+        if 'favorite_genres' in data:
+            user.favorite_genres = json.dumps(data['favorite_genres'])
+                
+        db.session.commit()
 
-            return jsonify({
-                "message": "Profile updated successfully",
-                "user": user.serialize()
-            }), 200
+        return jsonify({
+            "message": "Profile updated successfully",
+            "user": user.serialize()
+        }), 200
 
     except APIException as e:
         return jsonify({"error": e.message}), e.status_code
