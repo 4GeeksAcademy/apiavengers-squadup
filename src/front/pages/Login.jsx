@@ -53,7 +53,8 @@ export const Login = () => {
         
         try {
             // Simulate API call - replace with your actual backend URL
-            const response = await fetch('https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev/api/auth/login', {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const response = await fetch(`${backendUrl}/api/auth/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -62,7 +63,7 @@ export const Login = () => {
             });
             
             const data = await response.json();
-            
+            console.log('Login response:', data);
         if (response.ok) {
             const { access_token, refresh_token, user } = data;
 
@@ -77,8 +78,7 @@ export const Login = () => {
                 sessionStorage.setItem('refresh_token', refresh_token);
             }
 
-            // Optionally redirect or update app state with `user`
-            navigate('/profile', { replace: true, state: { user } })
+            navigate('/profile', { replace: true, state: user })
 
         }
         } catch (error) {

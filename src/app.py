@@ -3,7 +3,7 @@ Production-Ready JWT Security Configuration
 """
 import os
 
-from flask import Flask, send_from_directory, jsonify, request
+from flask import Flask, send_from_directory, jsonify, request, current_app   
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from api.steam_auth import steam_bp
@@ -32,7 +32,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 
 # JWT
-app.config["JWT_SECRET_KEY"] = os.getenv("SUPER_SECRET_SECRET", "dev-secret")
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1) 
 
 jwt = JWTManager(app)
@@ -76,8 +76,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # PRODUCTION-READY JWT CONFIGURATION
 # ============================================================================
 
-# JWT Secret Key (CRITICAL: Use a strong secret in production)
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', '8f99bd17ee30b628c5a65cb1d8d77eab4661abeee0241682676a6bd8c924ad4f')
 
 # SECURE TOKEN EXPIRATION TIMES
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)    # 1 HOUR (secure)
@@ -134,6 +132,15 @@ def missing_token_callback(error):
         'message': 'Authentication required. Please log in.',
         'code': 'TOKEN_REQUIRED'
     }), 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(err_msg):
+    current_app.logger.warning(f"Invalid token → {err_msg}")
+    return jsonify(
+        error="invalid_token",
+        message=err_msg,
+        code="TOKEN_INVALID"
+    ), 401
 
 @jwt.revoked_token_loader
 def revoked_token_callback(jwt_header, jwt_payload):
@@ -250,4 +257,4 @@ def serve_any_other_file(path):
 
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
-    app.run(host='0.0.0.0', port=PORT, debug=True) 
+    socketio.run(host='0.0.0.0', port=PORT, debug=True) 

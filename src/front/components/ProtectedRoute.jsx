@@ -14,7 +14,7 @@ export const ProtectedRoute = ({ children }) => {
 
     const checkAuth = async () => {
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
             
             if (!token) {
                 setIsAuthenticated(false);
@@ -36,8 +36,8 @@ export const ProtectedRoute = ({ children }) => {
                 setIsAuthenticated(true);
             } else {
                 // Token is invalid, remove it
-                localStorage.removeItem('token');
-                sessionStorage.removeItem('token');
+                localStorage.removeItem('access_token');
+                sessionStorage.removeItem('access_token');
                 setIsAuthenticated(false);
             }
         } catch (error) {

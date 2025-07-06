@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useNavigate } from 'react-router-dom';
 
 // Register GSAP plugins
 gsap.registerPlugin(ScrollTrigger);
@@ -383,6 +384,7 @@ const GamingCard = ({ children, className = "", ...props }) => {
 // Main Home Component with Full GSAP Integration
 export const Home = () => {
   const [activeTab, setActiveTab] = useState('home');
+  const navigate = useNavigate();
   
   return (
     <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
@@ -476,11 +478,9 @@ export const Home = () => {
               Try Demo
             </GamingButton>
           </Link>
-          <Link to="/login">
-            <GamingButton variant="ghost">
+           <GamingButton onClick={()=> navigate('/login')}>
               Sign In
             </GamingButton>
-          </Link>
         </div>
 
         {/* Stats section with animated counters */}

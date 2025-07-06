@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 from flask import Blueprint, current_app, jsonify, redirect, request, url_for
 
 # ---------------------------------------------------------------------- config
-FRONTEND_URL   = os.getenv("FRONTEND_URL", "https://animated-eureka-5grpx4q7wvpgf66g-5173.app.github.dev")
+FRONTEND_URL   = os.getenv("FRONTEND_URL", "https://animated-eureka-5grpx4q7wvpgf66g-3000.app.github.dev")
 STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
 STEAM_API_KEY    = os.getenv("STEAM_API_KEY")
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export const Profile = () => {
     const [user, setUser] = useState(null);
@@ -14,44 +15,57 @@ export const Profile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
+    const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading
+
+   const navigate = useNavigate();   // allow redirects
 
     useEffect(() => {
         loadUserProfile();
     }, []);
 
-    const loadUserProfile = async () => {
-        try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+const loadUserProfile = async () => {
+  const token = localStorage.getItem('access_token') ||
+                sessionStorage.getItem('access_token');
 
-            const response = await fetch(`${backendUrl}/api/auth/profile`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                }
-            });
+  if (!token) {
+    navigate('/login', { replace: true });
+    return;
+  }
 
-            if (response.ok) {
-                const data = await response.json();
-                setUser(data.user);
-                setFormData({
-                    username: data.user.username || '',
-                    email: data.user.email || '',
-                    bio: data.user.bio || '',
-                    avatar_url: data.user.avatar_url || '',
-                    gaming_style: data.user.gaming_style || '',
-                    favorite_genres: data.user.favorite_genres || []
-                });
-            } else {
-                setMessage({ type: 'error', text: 'Failed to load profile' });
-            }
-        } catch (error) {
-            console.error('Error loading profile:', error);
-            setMessage({ type: 'error', text: 'Network error loading profile' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  try {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const res = await fetch(`${backendUrl}/api/auth/profile`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem('access_token');
+        sessionStorage.removeItem('access_token');
+        navigate('/login', { replace: true });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to load profile' });
+      }
+      return;
+    }
+
+    const { user: u } = await res.json();   // ← unify shape
+    setUser(u);
+    setFormData({
+      username:        u.username        ?? '',
+      email:           u.email           ?? '',
+      bio:             u.bio             ?? '',
+      avatar_url:      u.avatar_url      ?? '',
+      gaming_style:    u.gaming_style    ?? '',
+      favorite_genres: u.favorite_genres ?? [],
+    });
+  } catch (err) {
+    console.error(err);
+    setMessage({ type: 'error', text: 'Network error loading profile' });
+  } finally {
+    setIsLoading(false);
+  }
+};
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -71,43 +85,49 @@ export const Profile = () => {
     };
 
     const handleSave = async () => {
-        setIsSaving(true);
-        setMessage({ type: '', text: '' });
+  setIsSaving(true);
+  setMessage({ type: '', text: '' });
 
-        try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+  try {
+    const token = localStorage.getItem('access_token') ||
+                  sessionStorage.getItem('access_token');
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
-            const response = await fetch(`${backendUrl}/api/auth/profile`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    bio: formData.bio,
-                    avatar_url: formData.avatar_url,
-                    gaming_style: formData.gaming_style,
-                    favorite_genres: formData.favorite_genres
-                })
-            });
+    const res = await fetch(`${backendUrl}/api/auth/profile`, {
+      method: 'PUT',                               // or PATCH if your API expects it
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(formData),
+    });
 
-            if (response.ok) {
-                const data = await response.json();
-                setUser(data.user);
-                setIsEditing(false);
-                setMessage({ type: 'success', text: 'Profile updated successfully!' });
-            } else {
-                const data = await response.json();
-                setMessage({ type: 'error', text: data.error || 'Failed to update profile' });
-            }
-        } catch (error) {
-            console.error('Error updating profile:', error);
-            setMessage({ type: 'error', text: 'Network error updating profile' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    if (!res.ok) {
+      const { error } = await res.json();
+      throw new Error(error || 'Failed to update profile');
+    }
+
+    const { user: updated } = await res.json();
+
+    setUser(updated);
+    setFormData({
+      username:        updated.username        ?? '',
+      email:           updated.email           ?? '',
+      bio:             updated.bio             ?? '',
+      avatar_url:      updated.avatar_url      ?? '',
+      gaming_style:    updated.gaming_style    ?? '',
+      favorite_genres: updated.favorite_genres ?? [],
+    });
+
+    setIsEditing(false);
+    setMessage({ type: 'success', text: 'Profile updated successfully!' });
+  } catch (err) {
+    console.error(err);
+    setMessage({ type: 'error', text: err.message });
+  } finally {
+    setIsSaving(false);
+  }
+};
 
     const handleCancel = () => {
         // Reset form data to original user data

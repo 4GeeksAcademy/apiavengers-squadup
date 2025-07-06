@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey,JSON  
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 import json
@@ -34,7 +34,7 @@ class User(db.Model):
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
     avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
     bio: Mapped[str] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=True)
     last_login: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
     
@@ -48,8 +48,12 @@ class User(db.Model):
     
     # Gaming Preferences
     gaming_preferences: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string
-    favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string
+    favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)  # casual, competitive, etc.
+    
+    def favorite_genres_list(self):
+        import json
+        return json.loads(self.favorite_genres or "[]")
     
     # Relationships
     owned_games = relationship('SteamGame', secondary=user_games, back_populates='owners')
@@ -59,10 +63,17 @@ class User(db.Model):
 
     def serialize(self):
         return {
-            "id": self.id,
-            "email": self.email,
-            # do not serialize the password, its a security breach
+            "id":              self.id,
+            "email":           self.email,
+            "username":        self.username,
+            "avatar_url":      self.avatar_url,
+            "bio":             self.bio,
+            "gaming_style":    self.gaming_style,
+            "favorite_genres": json.loads(self.favorite_genres or "[]"),
+            "created_at":      self.created_at.isoformat() if self.created_at else None,
+            "is_steam_connected": self.is_steam_connected,
         }
+    
 # ────────────────────────────────────────────────────────────
 # STEAM ACCOUNT linked to a user
 # ────────────────────────────────────────────────────────────
