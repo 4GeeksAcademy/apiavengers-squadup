@@ -13,8 +13,12 @@ import { router } from "./routes.jsx";
 // Import store provider with correct syntax
 import { StoreProvider } from './hooks/useGlobalReducer.jsx';
 import { BackendURL } from './components/BackendURL.jsx';
+import { bootstrapAuth } from './store/actions';
+import { AuthBootstrap } from './components/AuthBootstrap.jsx';
 
 const Main = () => {
+
+
     // Check if the backend URL is configured in your .env file
     if (!import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACKEND_URL === "") {
         return (
@@ -30,7 +34,9 @@ const Main = () => {
     return (
         <React.StrictMode>
             <StoreProvider>
+              <AuthBootstrap>
                 <RouterProvider router={router} />
+              </AuthBootstrap>
             </StoreProvider>
         </React.StrictMode>
     );

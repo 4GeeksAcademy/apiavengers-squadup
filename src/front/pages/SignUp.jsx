@@ -75,60 +75,58 @@ export const SignUp = () => {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        
-        if (!validateForm()) return;
-        
-        setIsLoading(true);
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            
-            const response = await fetch(`${backendUrl}/api/auth/register`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                email: formData.email,
-                username: formData.username,
-                password: formData.password,
-                confirmPassword: formData.confirmPassword,
-            }),
-            
-            });
-            console.log('server response', response.status, data);
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (!validateForm()) return;
 
-            const data = await response.json();
-            
-            if (response.ok) {
-                // Store user data and token
-                localStorage.setItem('access_token', data.access_token);
-                dispatch({ 
-                    type: 'set_user', 
-                    payload: data.user 
-                });
-                
-                // Show success message and redirect
-                dispatch({
-                    type: 'set_message',
-                    payload: { 
-                        type: 'success', 
-                        text: 'Account created successfully! Welcome to SquadUp!' 
-                    }
-                });
-                
-                navigate('/dashboard');
-            } else {
-                setErrors({ submit: data.error || 'Registration failed' });
-            }
-        } catch (error) {
-            setErrors({ submit: 'Network error. Please try again.' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  setIsLoading(true);
+
+  try {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+    const res = await fetch(`${backendUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email:            formData.email,
+        username:         formData.username,
+        password:         formData.password,
+        confirmPassword:  formData.confirmPassword   // ← backend expects this key
+      })
+    });
+
+    // attempt to parse JSON regardless of status
+    let data = {};
+    try {
+      data = await res.json();
+    } catch { /* ignore if not JSON */ }
+
+    if (res.ok) {
+      const { user, access_token, message } = data;
+
+      // persist token & user
+      localStorage.setItem('access_token', access_token);
+      dispatch({ type: 'set_user', payload: user });
+
+      // show success toast/message
+      dispatch({
+        type: 'set_message',
+        payload: { type: 'success', text: message || 'Account created!' }
+      });
+
+      navigate('/dashboard', { replace: true });
+    } else {
+      // show backend-supplied error, or fallback
+      setErrors({ submit: data.error || data.message || 'Registration failed' });
+    }
+
+  } catch (err) {
+    console.error(err);
+    setErrors({ submit: 'Network error. Please try again.' });
+  } finally {
+    setIsLoading(false);
+  }
+};
 
     return (
         <>

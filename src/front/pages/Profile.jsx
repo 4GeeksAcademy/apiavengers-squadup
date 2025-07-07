@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import authService from '../store/authService.js'
+import useGlobalReducer       from '../hooks/useGlobalReducer';
+import { ACTION_TYPES }       from '../store/store';  
+import { ConnectSteamButton } from "../components/ConnectSteamButton";
 
 export const Profile = () => {
     const [user, setUser] = useState(null);
@@ -15,15 +19,73 @@ export const Profile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading
+    const { user: storeUser, dispatch } = useGlobalReducer();
 
    const navigate = useNavigate();   // allow redirects
+   const backendUrl = authService.getApiUrl();
 
-    useEffect(() => {
-        loadUserProfile();
-    }, []);
+useEffect(() => {
+        let mounted = true;
+
+        const loadProfile = async () => {
+            // ✅ If user is already in global state, skip fetch
+            if (storeUser) {
+                setFormData({
+                           username:        storeUser.username        ?? '',
+                           email:           storeUser.email           ?? '',
+                           bio:             storeUser.bio             ?? '',
+                           avatar_url:      storeUser.avatar_url      ?? '',
+                           gaming_style:    storeUser.gaming_style    ?? '',
+                           favorite_genres: storeUser.favorite_genres ?? [],
+                });
+                setIsLoading(false);
+                return;
+            }
+
+            // ✅ Otherwise fetch from backend
+            try {
+                const res = await authService.makeAuthenticatedRequest(
+                    `${backendUrl}/api/auth/profile`
+                );
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        authService.clearTokens();
+                        navigate('/login', { replace: true });
+                        return;
+                    }
+                    throw new Error('Failed to load profile');
+                }
+
+                const { user: u } = await res.json();
+                if (!mounted) return;
+
+                dispatch({ type: 'set_user', payload: u });
+                setFormData({
+                    username:        u.username        ?? '',
+                    email:           u.email           ?? '',
+                    bio:             u.bio             ?? '',
+                    avatar_url:      u.avatar_url      ?? '',
+                    gaming_style:    u.gaming_style    ?? '',
+                    favorite_genres: u.favorite_genres ?? [],
+                });
+            } catch (err) {
+                console.error(err);
+                if (mounted) setMessage({ type: 'error', text: err.message });
+            } finally {
+                if (mounted) setIsLoading(false);
+            }
+        };
+
+        loadProfile();
+
+        return () => { mounted = false; };
+    }, [backendUrl, navigate, dispatch, storeUser]);
+
+/*
 
 const loadUserProfile = async () => {
+   //Token verification 
   const token = localStorage.getItem('access_token') ||
                 sessionStorage.getItem('access_token');
 
@@ -49,6 +111,24 @@ const loadUserProfile = async () => {
       return;
     }
 
+
+
+try {
+    // GET – no body, no custom headers needed
+    const res = await authService.makeAuthenticatedRequest(
+      `${backendUrl}/api/auth/profile`
+    );
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        authService.clearTokens();
+        navigate('/login', { replace: true });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to load profile' });
+      }
+      return;
+    }
+ 
     const { user: u } = await res.json();   // ← unify shape
     setUser(u);
     setFormData({
@@ -67,27 +147,64 @@ const loadUserProfile = async () => {
   }
 };
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const handleGenreToggle = (genre) => {
-        setFormData(prev => ({
-            ...prev,
-            favorite_genres: prev.favorite_genres.includes(genre)
-                ? prev.favorite_genres.filter(g => g !== genre)
-                : [...prev.favorite_genres, genre]
-        }));
-    };
-
-    const handleSave = async () => {
-  setIsSaving(true);
+*/
+const handleChange = (e) => {
+  const { name, value } = e.target;
+  setFormData(prev => ({
+    ...prev,
+    [name]: value
+  }));
   setMessage({ type: '', text: '' });
+};
 
+const handleGenreToggle = (genre) => {
+  setFormData(prev => {
+    const genres = prev.favorite_genres.includes(genre)
+      ? prev.favorite_genres.filter(g => g !== genre)
+      : [...prev.favorite_genres, genre];
+    return { ...prev, favorite_genres: genres };
+  });
+};
+    const handleSave = async () => {
+    setIsSaving(true);
+    setMessage({ type: '', text: '' });
+
+    try {
+      const res = await authService.makeAuthenticatedRequest(
+        `${backendUrl}/api/auth/profile`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        }
+      );
+
+      if (!res.ok) {
+        const { error } = await res.json();
+        throw new Error(error || 'Failed to update profile');
+      }
+
+      const { user: updated } = await res.json();
+      setUser(updated);
+      setFormData({
+        username:        updated.username        ?? '',
+        email:           updated.email           ?? '',
+        bio:             updated.bio             ?? '',
+        avatar_url:      updated.avatar_url      ?? '',
+        gaming_style:    updated.gaming_style    ?? '',
+        favorite_genres: updated.favorite_genres ?? [],
+      });
+
+      setIsEditing(false);
+      setMessage({ type: 'success', text: 'Profile updated successfully!' });
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+/*
   try {
     const token = localStorage.getItem('access_token') ||
                   sessionStorage.getItem('access_token');
@@ -101,6 +218,21 @@ const loadUserProfile = async () => {
       },
       body: JSON.stringify(formData),
     });
+
+    if (!res.ok) {
+      const { error } = await res.json();
+      throw new Error(error || 'Failed to update profile');
+    }
+
+try {
+    const res = await authService.makeAuthenticatedRequest(
+      `${backendUrl}/api/auth/profile`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      }
+    );
 
     if (!res.ok) {
       const { error } = await res.json();
@@ -128,9 +260,11 @@ const loadUserProfile = async () => {
     setIsSaving(false);
   }
 };
-
+*/
     const handleCancel = () => {
         // Reset form data to original user data
+        if (!user) return;
+
         setFormData({
             username: user.username || '',
             email: user.email || '',
@@ -143,9 +277,8 @@ const loadUserProfile = async () => {
         setMessage({ type: '', text: '' });
     };
 
-    const navigateToDashboard = () => {
-        window.location.href = '/dashboard';
-    };
+      const navigateToDashboard = () => navigate('/dashboard');
+
 
     const handleSteamConnect = () => {
         // Placeholder for Steam connection
@@ -280,14 +413,20 @@ const loadUserProfile = async () => {
                                 </div>
 
                                 {/* Steam Integration */}
-                                {!user?.steam_connected && (
-                                    <button
-                                        onClick={handleSteamConnect}
-                                        className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2"
-                                    >
-                                        <span className="text-lg">🎮</span>
-                                        <span>Connect Steam</span>
-                                    </button>
+                                {!user?.is_steam_connected && (
+                                <div className="w-full">
+                                    <ConnectSteamButton
+                                    className="
+                                        w-full py-3 px-4
+                                        bg-gradient-to-r from-blue-600 to-blue-700
+                                        hover:from-blue-700 hover:to-blue-800
+                                        text-white font-semibold rounded-xl
+                                        transition-all duration-300 transform hover:-translate-y-1
+                                        shadow-lg hover:shadow-blue-500/25
+                                        flex items-center justify-center space-x-2
+                                    "
+                                    />
+                                </div>
                                 )}
                             </div>
                         </div>

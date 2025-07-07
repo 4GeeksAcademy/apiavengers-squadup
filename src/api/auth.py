@@ -14,9 +14,12 @@ import re
 import json
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError, ProgrammingError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 auth = Blueprint('auth', __name__)
 CORS(auth)
+
 
 
 def validate_email(email):
@@ -275,6 +278,7 @@ def refresh_token():
             "error": "Token refresh failed",
             "code": "REFRESH_ERROR"
         }), 401
+
 
 
 @auth.route('/verify', methods=['GET'])

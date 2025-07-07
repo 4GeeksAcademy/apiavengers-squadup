@@ -55,7 +55,6 @@ setup_commands(app)
 
 # Blueprints
 app.register_blueprint(auth, url_prefix='/api/auth')
-#app.register_blueprint(api_bp, url_prefix="/api")
 app.register_blueprint(steam_bp, url_prefix="/api")
 app.register_blueprint(genre_bp, url_prefix="/api")
 app.register_blueprint(gaming, url_prefix='/api/gaming')
@@ -230,9 +229,6 @@ db.init_app(app)
 MIGRATE = Migrate(app, db, compare_type=True)
 
 
-
-# Register blueprints - MOVED TO CORRECT LOCATION
-#app.register_blueprint(app, url_prefix='/api')
 
 
 # Error handler

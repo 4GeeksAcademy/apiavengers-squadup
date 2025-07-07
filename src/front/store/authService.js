@@ -1,8 +1,9 @@
 // src/front/services/authService.js
 // Complete Frontend Authentication Service
 
+
 // ✅ CORRECT: Use import.meta.env for Vite (not process.env)
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://bookish-funicular-9754qgjjg9743pqr7-3001.app.github.dev';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 class AuthService {
     constructor() {
@@ -14,7 +15,37 @@ class AuthService {
         // Setup automatic token refresh
         this.setupTokenRefresh();
     }
+    
+  /** internal latch so multiple components reuse one in-flight verify */
+  #verifyLatch = null;        // Promise | null
+  #verifiedAt  = 0;           // ms epoch
 
+  async checkAuthStatus(force = false) {
+    // local check first – fast
+    if (!this.isAuthenticated()) return false;
+
+    // throttle network hit to once every 30 s unless forced
+    const now = Date.now();
+    if (!force && now - this.#verifiedAt < 30_000) return true;
+
+    // reuse ongoing request
+    if (this.#verifyLatch) return this.#verifyLatch;
+
+    // real network verify
+    this.#verifyLatch = fetch(`${API_BASE_URL}/api/auth/verify`, {
+      headers: { Authorization: `Bearer ${this.getAccessToken()}` },
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        localStorage.setItem('user', JSON.stringify(data.user));
+        this.#verifiedAt = Date.now();
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => { this.#verifyLatch = null; });
+
+    return this.#verifyLatch;
+  }
     // ============================================================================
     // TOKEN MANAGEMENT
     // ============================================================================
@@ -37,11 +68,11 @@ class AuthService {
     }
 
     getAccessToken() {
-        return localStorage.getItem('access_token');
+        return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
     }
 
     getRefreshToken() {
-        return localStorage.getItem('refresh_token');
+        return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
     }
 
     getTokenExpiration() {

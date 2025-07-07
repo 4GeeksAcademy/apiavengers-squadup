@@ -1,15 +1,17 @@
 import { useState } from "react";
+import React from "react";
+import { steamApi } from "../store/steamapi";
 
-export const ConnectSteamButton = () => {
+
+export const ConnectSteamButton = ({ className = "" }) => {
   const [loading, setLoading] = useState(false);
-  const API_BASE = "https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev";
-
-  const handleSteamLogin = () => {
-    window.location.href = `${API_BASE}/api/steam/login`;
-  };
+  const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
   return (
-    <button onClick={handleSteamLogin} className="btn btn-success" disabled={loading}>
+    <button
+      onClick={steamApi.goToSteamLogin}
+      className={className || "btn-coral w-full py-3"}
+    >
       {loading ? "Redirecting to Steam..." : "Log in with Steam"}
     </button>
   );

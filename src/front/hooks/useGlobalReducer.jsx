@@ -1,7 +1,7 @@
 // src/front/hooks/useGlobalReducer.jsx - Fixed exports and imports
 
-import { useContext, useReducer, createContext, useEffect } from "react";
-import storeReducer, { initialStore, ACTION_TYPES } from "../store/store";
+import { useContext, useReducer, createContext } from "react";
+import storeReducer, { initialStore, ACTION_TYPES } from "../store/store"
 
 // Create a context to hold the global state of the application
 const StoreContext = createContext();
@@ -11,52 +11,6 @@ export function StoreProvider({ children }) {
     // Initialize reducer with the initial state
     const [store, dispatch] = useReducer(storeReducer, initialStore());
 
-    // Check for existing authentication on app load
-    useEffect(() => {
-        const checkAuth = async () => {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            
-            if (token) {
-                dispatch({ type: ACTION_TYPES.SET_TOKEN, payload: token });
-                
-                // Verify token with backend
-                try {
-                    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-                    if (backendUrl) {
-                        const response = await fetch(`${backendUrl}/api/auth/verify`, {
-                            headers: {
-                                'Authorization': `Bearer ${token}`,
-                                'Content-Type': 'application/json',
-                            }
-                        });
-
-                        if (response.ok) {
-                            const data = await response.json();
-                            dispatch({ 
-                                type: ACTION_TYPES.LOGIN_SUCCESS, 
-                                payload: { 
-                                    user: data.user, 
-                                    token: token 
-                                } 
-                            });
-                        } else {
-                            // Token is invalid, clear it
-                            localStorage.removeItem('token');
-                            sessionStorage.removeItem('token');
-                            dispatch({ type: ACTION_TYPES.LOGOUT });
-                        }
-                    }
-                } catch (error) {
-                    console.error('Auth verification failed:', error);
-                    // Don't logout on network error, just continue
-                }
-            }
-        };
-
-        checkAuth();
-    }, []);
-
-    // Enhanced store context value with helper functions
     const contextValue = {
         store,
         dispatch,
@@ -73,8 +27,8 @@ export function StoreProvider({ children }) {
             },
             
             logout: () => {
-                localStorage.removeItem('token');
-                sessionStorage.removeItem('token');
+                localStorage.removeItem('access_token');
+                sessionStorage.removeItem('access_token');
                 localStorage.removeItem('user');
                 dispatch({ type: ACTION_TYPES.LOGOUT });
             },

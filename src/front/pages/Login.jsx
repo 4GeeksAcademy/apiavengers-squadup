@@ -1,104 +1,84 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Navigate  } from 'react-router-dom';
+import authService from '../store/authService.js'
+import { logOut } from '../store/actions';
+import useGlobalReducer from '../hooks/useGlobalReducer'
+import { clearAuthError } from '../store/actions'
+
+
+
 
 export const Login = () => {
-    const [formData, setFormData] = useState({
-        login: '', // Can be email or username
-        password: ''
-    });
-    const [errors, setErrors] = useState({});
-    const [isLoading, setIsLoading] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
-    const [rememberMe, setRememberMe] = useState(false);
-    const [successMessage, setSuccessMessage] = useState('');
-    const navigate = useNavigate(); 
+const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReducer();
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({ login: '', password: '' });
+  const [errors,   setErrors]   = useState({});
+  const [showPw, setShowPw] = useState(false);
+  const [loading,  setLoading]  = useState(false);     // single loading flag
+  const [remember, setRemember] = useState(false);
+  const [success,  setSuccess]  = useState('');
+  const navigateToHome = () => navigate('/');
+  const navigateToSignUp = () => navigate('/signup');
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-        
-        // Clear error for this field when user starts typing
-        if (errors[name]) {
-            setErrors(prev => ({
-                ...prev,
-                [name]: ''
-            }));
-        }
-    };
+  /* ───────── if already logged-in, bounce ───────── */
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
-    const validateForm = () => {
-        const newErrors = {};
-        
-        if (!formData.login) {
-            newErrors.login = 'Email or username is required';
-        }
-        
-        if (!formData.password) {
-            newErrors.password = 'Password is required';
-        }
-        
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
+  /* ───────── helpers ───────── */
+  const onChange = e => {
+    const { name, value, checked, type } = e.target;
+    if (type === 'checkbox') setRemember(checked);
+    else {
+      setFormData(f => ({ ...f, [name]: value }));
+      if (errors[name]) setErrors({ ...errors, [name]: null });
+      dispatch(clearAuthError);                        // clear store error
+    }
+  };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        
-        if (!validateForm()) return;
-        
-        setIsLoading(true);
-        
-        try {
-            // Simulate API call - replace with your actual backend URL
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await fetch(`${backendUrl}/api/auth/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData)
-            });
-            
-            const data = await response.json();
-            console.log('Login response:', data);
-        if (response.ok) {
-            const { access_token, refresh_token, user } = data;
+  const validate = () => {
+    const e = {};
+    if (!formData.login)    e.login    = 'Email or username is required';
+    if (!formData.password) e.password = 'Password is required';
+    setErrors(e);
+    return !Object.keys(e).length;
+  };
 
-            setSuccessMessage('Login successful! Welcome back!');
-            setFormData({ login: '', password: '' });
-            
-            if (rememberMe) {
-                localStorage.setItem('access_token', access_token);
-                localStorage.setItem('refresh_token', refresh_token);
-            } else {
-                sessionStorage.setItem('access_token', access_token);
-                sessionStorage.setItem('refresh_token', refresh_token);
-            }
+  /* ───────── submit ───────── */
+  const onSubmit = async e => {
+    e.preventDefault();
+    if (!validate()) return;
 
-            navigate('/profile', { replace: true, state: user })
+    setLoading(true);
+    const { success, user, error } = await authService.login(formData);
 
-        }
-        } catch (error) {
-            setErrors({ submit: 'Network error. Please try again.' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    if (success) {
+      // move tokens to sessionStorage if “Remember me” NOT checked
+      if (!remember) {
+        sessionStorage.setItem('access_token', authService.getAccessToken());
+        sessionStorage.setItem('refresh_token', authService.getRefreshToken());
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('token_expiration');
+      }
 
-    const navigateToSignUp = () => {
-        console.log('Navigate to sign up page');
-    };
+      dispatch({
+        type: 'LOGIN_SUCCESS',
+        payload: { user, token: authService.getAccessToken() }
+      });
 
-    const navigateToHome = () => {
-        console.log('Navigate to home page');
-    };
+      setSuccess('Login successful! Welcome back!');
+      setFormData({ login: '', password: '' });
+      navigate('/profile', { replace: true });
 
-    const handleForgotPassword = () => {
-        console.log('Navigate to forgot password page');
-    };
+
+    } else {
+      setErrors({ submit: error || 'Login failed' });
+    }
+    setLoading(false);
+  };
+
+  const handleForgotPassword = () => {
+  navigate('/forgot-password');
+};
 
     return (
         <>
@@ -162,9 +142,9 @@ export const Login = () => {
                                 </p>
                             </div>
 
-                            {successMessage && (
+                            {success && (
                                 <div className="mb-6 p-4 bg-green-500/20 border border-green-500/30 rounded-xl text-green-300 text-sm">
-                                    {successMessage}
+                                    {success}
                                 </div>
                             )}
 
@@ -185,7 +165,7 @@ export const Login = () => {
                                             type="text"
                                             name="login"
                                             value={formData.login}
-                                            onChange={handleChange}
+                                            onChange={onChange}
                                             className={`w-full px-4 py-3 bg-slate-800/50 border ${
                                                 errors.login 
                                                     ? 'border-red-500/50 focus:border-red-500' 
@@ -206,10 +186,10 @@ export const Login = () => {
                                     </label>
                                     <div className="relative group">
                                         <input
-                                            type={showPassword ? 'text' : 'password'}
+                                            type={showPw ? 'text' : 'password'}
                                             name="password"
                                             value={formData.password}
-                                            onChange={handleChange}
+                                            onChange={onChange}
                                             className={`w-full px-4 py-3 pr-12 bg-slate-800/50 border ${
                                                 errors.password 
                                                     ? 'border-red-500/50 focus:border-red-500' 
@@ -219,10 +199,10 @@ export const Login = () => {
                                         />
                                         <button
                                             type="button"
-                                            onClick={() => setShowPassword(!showPassword)}
+                                            onClick={() => setShowPassword(!showPw)}
                                             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200"
                                         >
-                                            {showPassword ? '👁️' : '👁️‍🗨️'}
+                                            {showPw ? '👁️' : '👁️‍🗨️'}
                                         </button>
                                         {errors.password && (
                                             <p className="mt-1 text-xs text-red-400">{errors.password}</p>
@@ -235,16 +215,16 @@ export const Login = () => {
                                     <label className="flex items-center cursor-pointer group">
                                         <input
                                             type="checkbox"
-                                            checked={rememberMe}
+                                            checked={remember}
                                             onChange={(e) => setRememberMe(e.target.checked)}
                                             className="sr-only"
                                         />
                                         <div className={`w-4 h-4 border-2 rounded flex items-center justify-center mr-2 transition-all duration-200 ${
-                                            rememberMe 
+                                            remember 
                                                 ? 'bg-coral-500 border-coral-500' 
                                                 : 'border-white/40 group-hover:border-white/60'
                                         }`}>
-                                            {rememberMe && <span className="text-white text-xs">✓</span>}
+                                            {remember && <span className="text-white text-xs">✓</span>}
                                         </div>
                                         <span className="text-sm text-white/70 group-hover:text-white/90 transition-colors duration-200">
                                             Remember me
@@ -261,11 +241,11 @@ export const Login = () => {
 
                                 {/* Submit Button */}
                                 <button
-                                    onClick={handleSubmit}
-                                    disabled={isLoading}
+                                    onClick={onSubmit}
+                                    disabled={loading}
                                     className="w-full py-3 px-4 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 focus:outline-none focus:ring-2 focus:ring-coral-500/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none"
                                 >
-                                    {isLoading ? (
+                                    {loading ? (
                                         <div className="flex items-center justify-center">
                                             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
                                             Logging in...

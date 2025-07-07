@@ -18,6 +18,7 @@ requests = "*"
 flask-migrate = "*"
 flask-socketio = "*"
 python-dotenv = "*"
+flask-limiter = "*"
 
 [dev-packages]
 

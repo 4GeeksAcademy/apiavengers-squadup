@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import authService from '../store/authService.js'
+import useGlobalReducer from '../hooks/useGlobalReducer';
+import { Navigate } from 'react-router-dom';
+import { ConnectSteamButton } from "../components/ConnectSteamButton";
 
 export const Dashboard = () => {
     const [user, setUser] = useState(null);
@@ -9,89 +14,89 @@ export const Dashboard = () => {
         winRate: 0
     });
     const [recentSessions, setRecentSessions] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading]               = useState(true);
+    const navigate   = useNavigate();
+    const backendUrl = authService.getApiUrl();
+    const { isAuthenticated } = useGlobalReducer();
+    
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    
+ useEffect(() => {
+    let cancelled = false;
 
-    useEffect(() => {
-        loadDashboardData();
-    }, []);
-
-    const loadDashboardData = async () => {
-        try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-
-            // Load user profile
-            const profileResponse = await fetch(`${backendUrl}/api/auth/profile`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (profileResponse.ok) {
-                const profileData = await profileResponse.json();
-                setUser(profileData.user);
-            }
-
-            // Simulate loading stats and recent sessions
-            // In real implementation, these would be separate API calls
-            setTimeout(() => {
-                setStats({
-                    totalSessions: 12,
-                    totalVotes: 47,
-                    favoriteGame: 'Valorant',
-                    winRate: 73
-                });
-
-                setRecentSessions([
-                    {
-                        id: 1,
-                        gameName: 'Valorant',
-                        participants: ['You', 'Player2', 'Player3'],
-                        winner: 'Valorant',
-                        date: '2024-01-15',
-                        status: 'completed'
-                    },
-                    {
-                        id: 2,
-                        gameName: 'Apex Legends',
-                        participants: ['You', 'GamerTag1'],
-                        winner: 'Apex Legends',
-                        date: '2024-01-14',
-                        status: 'completed'
-                    },
-                    {
-                        id: 3,
-                        gameName: 'CS2',
-                        participants: ['You', 'Friend1', 'Friend2', 'Friend3'],
-                        winner: 'Pending',
-                        date: '2024-01-16',
-                        status: 'active'
-                    }
-                ]);
-
-                setIsLoading(false);
-            }, 1000);
-
-        } catch (error) {
-            console.error('Error loading dashboard data:', error);
-            setIsLoading(false);
+    const fetchAll = async () => {
+      try {
+        /* 1️⃣  profile */
+        const prof = await authService.makeAuthenticatedRequest(
+          `${authService.getApiUrl()}/api/auth/profile`
+        );
+        if (!cancelled && prof.ok) {
+          const { user } = await prof.json();
+          setUser(user);
         }
+
+        /* 2️⃣  stats  – replace with real endpoint when ready */
+        if (!cancelled) {
+          setStats({
+            totalSessions : 12,
+            totalVotes    : 47,
+            favoriteGame  : 'Valorant',
+            winRate       : 73
+          });
+        }
+
+        /* 3️⃣  recent sessions  – replace with real endpoint */
+        if (!cancelled) {
+          setRecentSessions([
+            {
+              id: 1,
+              gameName    : 'Valorant',
+              participants: ['You', 'Player2', 'Player3'],
+              winner      : 'Valorant',
+              date        : '2024-01-15',
+              status      : 'completed'
+            },
+            {
+              id: 2,
+              gameName    : 'Apex Legends',
+              participants: ['You', 'GamerTag1'],
+              winner      : 'Apex Legends',
+              date        : '2024-01-14',
+              status      : 'completed'
+            },
+            {
+              id: 3,
+              gameName    : 'CS2',
+              participants: ['You', 'Friend1', 'Friend2', 'Friend3'],
+              winner      : 'Pending',
+              date        : '2024-01-16',
+              status      : 'active'
+            }
+          ]);
+        }
+      } catch (err) {
+        console.error('Dashboard load failed:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     };
 
-    const navigateToSessions = () => {
-        window.location.href = '/sessions';
-    };
+    fetchAll();
 
-    const navigateToProfile = () => {
-        window.location.href = '/profile';
-    };
+    /* clean-up to avoid setState on unmounted component            */
+    return () => { cancelled = true; };
+  }, []);
+
+
+
+const toSessions = () => navigate('/sessions');
+const toProfile  = () => navigate('/profile');
 
     const createNewSession = () => {
         console.log('Create new session - implement later');
     };
 
-    if (isLoading) {
+    if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
                 <div className="max-w-6xl mx-auto">
@@ -140,13 +145,13 @@ export const Dashboard = () => {
                             </div>
                             <div className="flex items-center space-x-4">
                                 <button
-                                    onClick={createNewSession}
+                                    onClick={toSessions}
                                     className="px-6 py-3 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
                                 >
                                     + New Session
                                 </button>
                                 <button
-                                    onClick={navigateToProfile}
+                                    onClick={toProfile}
                                     className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300"
                                 >
                                     Edit Profile
@@ -220,7 +225,7 @@ export const Dashboard = () => {
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-2xl font-bold text-white">Recent Sessions</h2>
                             <button
-                                onClick={navigateToSessions}
+                                onClick={toSessions}
                                 className="text-coral-400 hover:text-coral-300 font-medium text-sm transition-colors duration-200"
                             >
                                 View All →
@@ -325,11 +330,35 @@ export const Dashboard = () => {
                                         <p className="text-white/70 mb-2">Connect your Steam account</p>
                                         <p className="text-white/50 text-sm">Access your game library and find sessions with games you own</p>
                                     </div>
-                                    
-                                    <button className="w-full p-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2">
-                                        <span className="text-lg">🎮</span>
-                                        <span>Connect Steam Account</span>
-                                    </button>
+                                   {/* Steam Integration */}
+<div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+  <h2 className="text-2xl font-bold text-white mb-6">Steam Integration</h2>
+
+  {user?.is_steam_connected ? (
+    <>
+      {/* already linked */}
+      <div className="flex items-center space-x-3 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">
+        <div className="w-10 h-10 bg-green-500/30 rounded-full flex items-center justify-center">
+          <span className="text-lg">✅</span>
+        </div>
+        <div>
+          <p className="text-green-300 font-medium">Steam Connected</p>
+          <p className="text-green-300/70 text-sm">Your game library is synced</p>
+        </div>
+      </div>
+
+      <button
+        /* TODO: add real handler when ready */
+        className="w-full p-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300"
+      >
+        🔄 Sync Game Library
+      </button>
+    </>
+  ) : (
+    /* not yet linked */
+    <ConnectSteamButton />
+  )}
+</div>
                                 </div>
                             )}
                         </div>

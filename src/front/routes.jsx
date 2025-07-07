@@ -14,6 +14,7 @@ import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Profile } from "./pages/Profile";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { SteamCallback } from "./pages/SteamCallback";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -24,7 +25,8 @@ export const router = createBrowserRouter(
             <Route path="/" element={<Home />} />
             <Route path="/demo" element={<Demo />} />
             <Route path="/single/:theId" element={<Single />} />
-            
+            <Route path= "/steam/callback" element= {<SteamCallback /> }/>
+
             {/* Authentication Routes */}
             <Route path="/signup" element={<SignUp />} />
             <Route path="/login" element={<Login />} />

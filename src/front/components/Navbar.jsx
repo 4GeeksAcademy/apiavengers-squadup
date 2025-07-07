@@ -1,65 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import authService from '../store/authService.js'
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { logOut } from '../store/actions';
+import useGlobalReducer from '../hooks/useGlobalReducer'
+import { bootstrapAuth } from '../store/actions';
 
 gsap.registerPlugin(ScrollTrigger);
 
 export const Navbar = () => {
   const location = useLocation();
   const navigate  = useNavigate();
-  const [user, setUser]                 = useState(null);
-  const [isAuthenticated, setAuth]      = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const authPages  = ['/login', '/signup'];
   const isAuthPage = authPages.includes(location.pathname);
+  const { isAuthenticated, user, dispatch, actions } = useGlobalReducer();
 
   useEffect(() => {
-    if (isAuthPage) {         
-      setAuth(false);
-      setUser(null);
-      return;
-    }
-
-    const token =
-      sessionStorage.getItem('access_token') ||
-      localStorage.getItem('access_token');
-
-    if (!token) {
-      setAuth(false);
-      setUser(null);
-      return;
-    }
-
-    (async () => {
-      try {
-        const res = await fetch(
-          `${import.meta.env.VITE_BACKEND_URL}/api/auth/verify`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) throw new Error('unauthorised');
-        const data = await res.json();
-        setAuth(true);
-        setUser(data.user);
-      } catch {
-        setAuth(false);
-        setUser(null);
-        sessionStorage.removeItem('access_token');
-        localStorage.removeItem('access_token');
-      }
-    })();
-  }, [isAuthPage]);
+    if (!user) dispatch(bootstrapAuth());  
+  }, []);        
 
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('access_token');
-    localStorage.removeItem('access_token');
-    setAuth(false);
-    setUser(null);
-    setShowUserMenu(false);
-    navigate('/');
-  };
+  const handleLogout = async () => {
+  await authService.logout();
+  actions.logout();;
+  setShowUserMenu(false);
+  navigate('/');
+};
 
+  if (authPages.includes(location.pathname)) return null;
 
   if (isAuthPage) return null;
 
@@ -125,7 +95,7 @@ export const Navbar = () => {
 
                 {/* Dropdown */}
                 {showUserMenu && (
-                  <div className="nav-dropdown">
+                  <div className="nav-dropdown z-50">
                     <button className="dropdown-item" onClick={() => navigate('/profile')}>
                       👤 Profile Settings
                     </button>
