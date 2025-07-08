@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import authService from '../store/authService.js'
-import useGlobalReducer       from '../hooks/useGlobalReducer';
-import { ACTION_TYPES }       from '../store/store';  
+import useGlobalReducer from '../hooks/useGlobalReducer';
+import { ACTION_TYPES } from '../store/store';
 import { ConnectSteamButton } from "../components/ConnectSteamButton";
 
 export const Profile = () => {
     const [user, setUser] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
+
     const [formData, setFormData] = useState({
         username: '',
         email: '',
@@ -21,22 +22,23 @@ export const Profile = () => {
     const [message, setMessage] = useState({ type: '', text: '' });
     const { user: storeUser, dispatch } = useGlobalReducer();
 
-   const navigate = useNavigate();   // allow redirects
-   const backendUrl = authService.getApiUrl();
+    const navigate = useNavigate();   // allow redirects
+    const backendUrl = authService.getApiUrl();
 
-useEffect(() => {
+    useEffect(() => {
         let mounted = true;
 
         const loadProfile = async () => {
-            // ✅ If user is already in global state, skip fetch
+            //  If the user is already in global state, skip fetching
             if (storeUser) {
                 setFormData({
-                           username:        storeUser.username        ?? '',
-                           email:           storeUser.email           ?? '',
-                           bio:             storeUser.bio             ?? '',
-                           avatar_url:      storeUser.avatar_url      ?? '',
-                           gaming_style:    storeUser.gaming_style    ?? '',
-                           favorite_genres: storeUser.favorite_genres ?? [],
+                    username: storeUser.username ?? '',
+                    email: storeUser.email ?? '',
+                    bio: storeUser.bio ?? '',
+                    avatar_url: storeUser.avatar_url ?? '',
+                    gaming_style: storeUser.gaming_style ?? '',
+                    favorite_genres: storeUser.favorite_genres ?? [],
+                    created_at: storeUser.created_at ?? ''
                 });
                 setIsLoading(false);
                 return;
@@ -60,14 +62,15 @@ useEffect(() => {
                 const { user: u } = await res.json();
                 if (!mounted) return;
 
-                dispatch({ type: 'set_user', payload: u });
+                dispatch({ type: ACTION_TYPES.SET_USER, payload: u });
                 setFormData({
-                    username:        u.username        ?? '',
-                    email:           u.email           ?? '',
-                    bio:             u.bio             ?? '',
-                    avatar_url:      u.avatar_url      ?? '',
-                    gaming_style:    u.gaming_style    ?? '',
+                    username: u.username ?? '',
+                    email: u.email ?? '',
+                    bio: u.bio ?? '',
+                    avatar_url: u.avatar_url ?? '',
+                    gaming_style: u.gaming_style ?? '',
                     favorite_genres: u.favorite_genres ?? [],
+                    created_at: storeUser.created_at ?? ''
                 });
             } catch (err) {
                 console.error(err);
@@ -82,185 +85,63 @@ useEffect(() => {
         return () => { mounted = false; };
     }, [backendUrl, navigate, dispatch, storeUser]);
 
-/*
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+        setMessage({ type: '', text: '' });
+    };
 
-const loadUserProfile = async () => {
-   //Token verification 
-  const token = localStorage.getItem('access_token') ||
-                sessionStorage.getItem('access_token');
-
-  if (!token) {
-    navigate('/login', { replace: true });
-    return;
-  }
-
-  try {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-    const res = await fetch(`${backendUrl}/api/auth/profile`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        localStorage.removeItem('access_token');
-        sessionStorage.removeItem('access_token');
-        navigate('/login', { replace: true });
-      } else {
-        setMessage({ type: 'error', text: 'Failed to load profile' });
-      }
-      return;
-    }
-
-
-
-try {
-    // GET – no body, no custom headers needed
-    const res = await authService.makeAuthenticatedRequest(
-      `${backendUrl}/api/auth/profile`
-    );
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        authService.clearTokens();
-        navigate('/login', { replace: true });
-      } else {
-        setMessage({ type: 'error', text: 'Failed to load profile' });
-      }
-      return;
-    }
- 
-    const { user: u } = await res.json();   // ← unify shape
-    setUser(u);
-    setFormData({
-      username:        u.username        ?? '',
-      email:           u.email           ?? '',
-      bio:             u.bio             ?? '',
-      avatar_url:      u.avatar_url      ?? '',
-      gaming_style:    u.gaming_style    ?? '',
-      favorite_genres: u.favorite_genres ?? [],
-    });
-  } catch (err) {
-    console.error(err);
-    setMessage({ type: 'error', text: 'Network error loading profile' });
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-*/
-const handleChange = (e) => {
-  const { name, value } = e.target;
-  setFormData(prev => ({
-    ...prev,
-    [name]: value
-  }));
-  setMessage({ type: '', text: '' });
-};
-
-const handleGenreToggle = (genre) => {
-  setFormData(prev => {
-    const genres = prev.favorite_genres.includes(genre)
-      ? prev.favorite_genres.filter(g => g !== genre)
-      : [...prev.favorite_genres, genre];
-    return { ...prev, favorite_genres: genres };
-  });
-};
+    const handleGenreToggle = (genre) => {
+        setFormData(prev => {
+            const genres = prev.favorite_genres.includes(genre)
+                ? prev.favorite_genres.filter(g => g !== genre)
+                : [...prev.favorite_genres, genre];
+            return { ...prev, favorite_genres: genres };
+        });
+    };
     const handleSave = async () => {
-    setIsSaving(true);
-    setMessage({ type: '', text: '' });
+        setIsSaving(true);
+        setMessage({ type: '', text: '' });
 
-    try {
-      const res = await authService.makeAuthenticatedRequest(
-        `${backendUrl}/api/auth/profile`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
+        try {
+            const res = await authService.makeAuthenticatedRequest(
+                `${backendUrl}/api/auth/profile`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData),
+                }
+            );
+
+            if (!res.ok) {
+                const { error } = await res.json();
+                throw new Error(error || 'Failed to update profile');
+            }
+
+            const { user: updated } = await res.json();
+            setUser(updated);
+            setFormData({
+                username: updated.username ?? '',
+                email: updated.email ?? '',
+                bio: updated.bio ?? '',
+                avatar_url: updated.avatar_url ?? '',
+                gaming_style: updated.gaming_style ?? '',
+                favorite_genres: updated.favorite_genres ?? [],
+            });
+
+            setIsEditing(false);
+            setMessage({ type: 'success', text: 'Profile updated successfully!' });
+        } catch (err) {
+            console.error(err);
+            setMessage({ type: 'error', text: err.message });
+        } finally {
+            setIsSaving(false);
         }
-      );
-
-      if (!res.ok) {
-        const { error } = await res.json();
-        throw new Error(error || 'Failed to update profile');
-      }
-
-      const { user: updated } = await res.json();
-      setUser(updated);
-      setFormData({
-        username:        updated.username        ?? '',
-        email:           updated.email           ?? '',
-        bio:             updated.bio             ?? '',
-        avatar_url:      updated.avatar_url      ?? '',
-        gaming_style:    updated.gaming_style    ?? '',
-        favorite_genres: updated.favorite_genres ?? [],
-      });
-
-      setIsEditing(false);
-      setMessage({ type: 'success', text: 'Profile updated successfully!' });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: err.message });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-/*
-  try {
-    const token = localStorage.getItem('access_token') ||
-                  sessionStorage.getItem('access_token');
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-
-    const res = await fetch(`${backendUrl}/api/auth/profile`, {
-      method: 'PUT',                               // or PATCH if your API expects it
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(formData),
-    });
-
-    if (!res.ok) {
-      const { error } = await res.json();
-      throw new Error(error || 'Failed to update profile');
-    }
-
-try {
-    const res = await authService.makeAuthenticatedRequest(
-      `${backendUrl}/api/auth/profile`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      }
-    );
-
-    if (!res.ok) {
-      const { error } = await res.json();
-      throw new Error(error || 'Failed to update profile');
-    }
-
-    const { user: updated } = await res.json();
-
-    setUser(updated);
-    setFormData({
-      username:        updated.username        ?? '',
-      email:           updated.email           ?? '',
-      bio:             updated.bio             ?? '',
-      avatar_url:      updated.avatar_url      ?? '',
-      gaming_style:    updated.gaming_style    ?? '',
-      favorite_genres: updated.favorite_genres ?? [],
-    });
-
-    setIsEditing(false);
-    setMessage({ type: 'success', text: 'Profile updated successfully!' });
-  } catch (err) {
-    console.error(err);
-    setMessage({ type: 'error', text: err.message });
-  } finally {
-    setIsSaving(false);
-  }
-};
-*/
+    };
+   
     const handleCancel = () => {
         // Reset form data to original user data
         if (!user) return;
@@ -277,7 +158,7 @@ try {
         setMessage({ type: '', text: '' });
     };
 
-      const navigateToDashboard = () => navigate('/dashboard');
+    const navigateToDashboard = () => navigate('/dashboard');
 
 
     const handleSteamConnect = () => {
@@ -316,7 +197,7 @@ try {
             {/* Floating Particles Background */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 {[...Array(30)].map((_, i) => (
-                    <div 
+                    <div
                         key={i}
                         className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
                         style={{
@@ -330,7 +211,7 @@ try {
             </div>
 
             <div className="max-w-4xl mx-auto relative z-10">
-                
+
                 {/* Header */}
                 <div className="mb-8">
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
@@ -352,31 +233,30 @@ try {
                 {/* Message Display */}
                 {message.text && (
                     <div className="mb-6">
-                        <div className={`p-4 rounded-xl border ${
-                            message.type === 'success' 
+                        <div className={`p-4 rounded-xl border ${message.type === 'success'
                                 ? 'bg-green-500/20 border-green-500/30 text-green-300'
                                 : message.type === 'error'
-                                ? 'bg-red-500/20 border-red-500/30 text-red-300'
-                                : 'bg-blue-500/20 border-blue-500/30 text-blue-300'
-                        }`}>
+                                    ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                                    : 'bg-blue-500/20 border-blue-500/30 text-blue-300'
+                            }`}>
                             {message.text}
                         </div>
                     </div>
                 )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    
+
                     {/* Profile Overview */}
                     <div className="lg:col-span-1">
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                             <div className="text-center">
-                                
+
                                 {/* Avatar */}
                                 <div className="mb-6">
                                     {user?.avatar_url ? (
-                                        <img 
-                                            src={user.avatar_url} 
-                                            alt="Profile Avatar" 
+                                        <img
+                                            src={user.avatar_url}
+                                            alt="Profile Avatar"
                                             className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"
                                         />
                                     ) : (
@@ -391,7 +271,7 @@ try {
                                 {/* User Info */}
                                 <h2 className="text-2xl font-bold text-white mb-2">{user?.username}</h2>
                                 <p className="text-white/70 mb-4">{user?.email}</p>
-                                
+
                                 {/* Gaming Stats */}
                                 <div className="space-y-3 mb-6">
                                     <div className="flex justify-between items-center">
@@ -400,23 +280,23 @@ try {
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Steam Connected:</span>
-                                        <span className={`font-medium ${user?.steam_connected ? 'text-green-300' : 'text-red-300'}`}>
-                                            {user?.steam_connected ? 'Yes' : 'No'}
+                                        <span className={`font-medium ${storeUser?.is_steam_connected  ? 'text-green-300' : 'text-red-300'}`}>
+                                            {storeUser?.is_steam_connected  ? 'Yes' : 'No'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Member Since:</span>
                                         <span className="text-white font-medium">
-                                            {user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
+                                            {storeUser?.created_at ? new Date(storeUser.created_at).toLocaleDateString() : 'Unknown'}
                                         </span>
                                     </div>
                                 </div>
 
                                 {/* Steam Integration */}
-                                {!user?.is_steam_connected && (
-                                <div className="w-full">
-                                    <ConnectSteamButton
-                                    className="
+                                {!storeUser?.is_steam_connected && (
+                                    <div className="w-full">
+                                        <ConnectSteamButton
+                                            className="
                                         w-full py-3 px-4
                                         bg-gradient-to-r from-blue-600 to-blue-700
                                         hover:from-blue-700 hover:to-blue-800
@@ -425,8 +305,8 @@ try {
                                         shadow-lg hover:shadow-blue-500/25
                                         flex items-center justify-center space-x-2
                                     "
-                                    />
-                                </div>
+                                        />
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -435,7 +315,7 @@ try {
                     {/* Profile Details */}
                     <div className="lg:col-span-2">
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-                            
+
                             {/* Edit Toggle */}
                             <div className="flex items-center justify-between mb-8">
                                 <h3 className="text-2xl font-bold text-white">Profile Details</h3>
@@ -466,7 +346,7 @@ try {
                             </div>
 
                             <div className="space-y-6">
-                                
+
                                 {/* Basic Info */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
@@ -479,7 +359,7 @@ try {
                                         />
                                         <p className="text-xs text-white/50 mt-1">Username cannot be changed</p>
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-white/90 mb-2">Email</label>
                                         <input
@@ -502,11 +382,10 @@ try {
                                         disabled={!isEditing}
                                         rows={4}
                                         placeholder="Tell other gamers about yourself..."
-                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 resize-none transition-all duration-300 ${
-                                            isEditing 
-                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30' 
+                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 resize-none transition-all duration-300 ${isEditing
+                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
                                                 : 'cursor-not-allowed text-white/70'
-                                        }`}
+                                            }`}
                                     />
                                 </div>
 
@@ -520,11 +399,10 @@ try {
                                         onChange={handleChange}
                                         disabled={!isEditing}
                                         placeholder="https://example.com/your-avatar.jpg"
-                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 transition-all duration-300 ${
-                                            isEditing 
-                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30' 
+                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 transition-all duration-300 ${isEditing
+                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
                                                 : 'cursor-not-allowed text-white/70'
-                                        }`}
+                                            }`}
                                     />
                                 </div>
 
@@ -536,11 +414,10 @@ try {
                                         value={formData.gaming_style}
                                         onChange={handleChange}
                                         disabled={!isEditing}
-                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white transition-all duration-300 ${
-                                            isEditing 
-                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30' 
+                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white transition-all duration-300 ${isEditing
+                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
                                                 : 'cursor-not-allowed text-white/70'
-                                        }`}
+                                            }`}
                                     >
                                         <option value="">Select your style</option>
                                         {gamingStyles.map(style => (
@@ -561,11 +438,10 @@ try {
                                                 type="button"
                                                 onClick={() => isEditing && handleGenreToggle(genre)}
                                                 disabled={!isEditing}
-                                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
-                                                    formData.favorite_genres.includes(genre)
+                                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${formData.favorite_genres.includes(genre)
                                                         ? 'bg-coral-500 text-white'
                                                         : 'bg-white/10 text-white/70 hover:bg-white/20'
-                                                } ${!isEditing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                                    } ${!isEditing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                             >
                                                 {genre}
                                             </button>

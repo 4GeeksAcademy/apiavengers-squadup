@@ -17,7 +17,7 @@ export const Dashboard = () => {
   const [loading, setLoading]               = useState(true);
     const navigate   = useNavigate();
     const backendUrl = authService.getApiUrl();
-    const { isAuthenticated } = useGlobalReducer();
+const { user: storeUser, dispatch, isAuthenticated } = useGlobalReducer();
     
     
 useEffect(() => {
@@ -359,9 +359,13 @@ const toProfile  = () => navigate('/profile');
       </button>
     </>
   ) : (
-    <ConnectSteamButton />
-  )}
-</div>
+    <div className="w-full">              
+                            <ConnectSteamButton className="w-full p-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 
+                            hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg 
+                            hover:shadow-blue-500/25 flex items-center justify-center space-x-2"/>
+                            </div>
+                            )}
+                            </div>
                                 </div>
                             )}
                         </div>

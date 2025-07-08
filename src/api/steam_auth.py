@@ -24,7 +24,7 @@ def _build_steam_login_url() -> str:
         "openid.ns":        "http://specs.openid.net/auth/2.0",
         "openid.mode":      "checkid_setup",
         "openid.return_to": return_to,
-        "openid.realm":     base,
+        "openid.realm":     return_to,
         "openid.identity":  "http://specs.openid.net/auth/2.0/identifier_select",
         "openid.claimed_id":"http://specs.openid.net/auth/2.0/identifier_select",
     }
