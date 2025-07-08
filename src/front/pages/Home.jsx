@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -223,6 +223,7 @@ const GamingButton = ({
   ...props 
 }) => {
   const buttonRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const button = buttonRef.current;
@@ -380,9 +381,10 @@ const GamingCard = ({ children, className = "", ...props }) => {
   );
 };
 
-// Main Home Component with Full GSAP Integration
+// Main Home Component with Fixed Navigation
 export const Home = () => {
   const [activeTab, setActiveTab] = useState('home');
+  const navigate = useNavigate();
   
   return (
     <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
@@ -464,7 +466,7 @@ export const Home = () => {
           </GamingCard>
         </div>
 
-        {/* Interactive buttons showcase */}
+        {/* Interactive buttons showcase - FIXED NAVIGATION */}
         <div className="flex flex-wrap justify-center gap-6 mb-12" data-animate="true">
           <Link to="/signup">
             <GamingButton variant="primary">
@@ -505,7 +507,7 @@ export const Home = () => {
           </div>
         </GamingCard>
 
-        {/* Call to Action with GSAP entrance */}
+        {/* Call to Action with GSAP entrance - FIXED NAVIGATION */}
         <div className="text-center mt-16" data-animate="true">
           <GamingCard className="magnetic">
             <h2 className="text-4xl font-bold text-white mb-6">

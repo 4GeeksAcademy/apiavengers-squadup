@@ -2,6 +2,18 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 
+// Import local game images
+import valorantImage from "../assets/img/games/valorant.jpg";
+import apexImage from "../assets/img/games/apex-legends.jpg";
+import rocketLeagueImage from "../assets/img/games/rocket-league.jpg";
+import amongUsImage from "../assets/img/games/among-us.jpg";
+import minecraftImage from "../assets/img/games/minecraft.jpg";
+import cs2Image from "../assets/img/games/cs2.jpg";
+import fallGuysImage from "../assets/img/games/fall-guys.jpg";
+import dbdImage from "../assets/img/games/dead-by-daylight.jpg";
+import overwatchImage from "../assets/img/games/overwatch-2.jpg";
+import phasmophobiaImage from "../assets/img/games/phasmophobia.jpg";
+
 export const Demo = () => {
     const { store, dispatch } = useGlobalReducer();
     const [currentStep, setCurrentStep] = useState(0);
@@ -25,18 +37,108 @@ export const Demo = () => {
         }
     ];
 
-    // Expanded mock game library for the demo user
+    // LOCAL GAME ASSETS - Now using real imported images
     const mockUserLibrary = [
-        { id: 1, name: "Valorant", appId: 1234567, hours: 245, lastPlayed: "2 hours ago", genre: "FPS", multiplayer: true, image: "https://via.placeholder.com/150x60/ff4655/ffffff?text=VAL" },
-        { id: 2, name: "Apex Legends", appId: 1172470, hours: 189, lastPlayed: "1 day ago", genre: "Battle Royale", multiplayer: true, image: "https://via.placeholder.com/150x60/ff6600/ffffff?text=APEX" },
-        { id: 3, name: "Rocket League", appId: 252950, hours: 134, lastPlayed: "3 days ago", genre: "Sports", multiplayer: true, image: "https://via.placeholder.com/150x60/0066cc/ffffff?text=RL" },
-        { id: 4, name: "Among Us", appId: 945360, hours: 56, lastPlayed: "1 week ago", genre: "Social", multiplayer: true, image: "https://via.placeholder.com/150x60/ff0000/ffffff?text=AMONG" },
-        { id: 5, name: "Minecraft", appId: 12345, hours: 312, lastPlayed: "5 days ago", genre: "Sandbox", multiplayer: true, image: "https://via.placeholder.com/150x60/00aa00/ffffff?text=MC" },
-        { id: 6, name: "CS2", appId: 730, hours: 89, lastPlayed: "2 weeks ago", genre: "FPS", multiplayer: true, image: "https://via.placeholder.com/150x60/ff8800/ffffff?text=CS2" },
-        { id: 7, name: "Fall Guys", appId: 1097150, hours: 23, lastPlayed: "1 month ago", genre: "Party", multiplayer: true, image: "https://via.placeholder.com/150x60/ff66ff/ffffff?text=FALL" },
-        { id: 8, name: "Dead by Daylight", appId: 381210, hours: 67, lastPlayed: "2 weeks ago", genre: "Horror", multiplayer: true, image: "https://via.placeholder.com/150x60/660000/ffffff?text=DBD" },
-        { id: 9, name: "Overwatch 2", appId: 2357570, hours: 198, lastPlayed: "4 days ago", genre: "FPS", multiplayer: true, image: "https://via.placeholder.com/150x60/ff9900/ffffff?text=OW2" },
-        { id: 10, name: "Phasmophobia", appId: 739630, hours: 45, lastPlayed: "3 weeks ago", genre: "Horror", multiplayer: true, image: "https://via.placeholder.com/150x60/330066/ffffff?text=PHAS" }
+        { 
+            id: 1, 
+            name: "Valorant", 
+            appId: 1234567, 
+            hours: 245, 
+            lastPlayed: "2 hours ago", 
+            genre: "FPS", 
+            multiplayer: true, 
+            image: valorantImage
+        },
+        { 
+            id: 2, 
+            name: "Apex Legends", 
+            appId: 1172470, 
+            hours: 189, 
+            lastPlayed: "1 day ago", 
+            genre: "Battle Royale", 
+            multiplayer: true, 
+            image: apexImage
+        },
+        { 
+            id: 3, 
+            name: "Rocket League", 
+            appId: 252950, 
+            hours: 134, 
+            lastPlayed: "3 days ago", 
+            genre: "Sports", 
+            multiplayer: true, 
+            image: rocketLeagueImage
+        },
+        { 
+            id: 4, 
+            name: "Among Us", 
+            appId: 945360, 
+            hours: 56, 
+            lastPlayed: "1 week ago", 
+            genre: "Social", 
+            multiplayer: true, 
+            image: amongUsImage
+        },
+        { 
+            id: 5, 
+            name: "Minecraft", 
+            appId: 12345, 
+            hours: 312, 
+            lastPlayed: "5 days ago", 
+            genre: "Sandbox", 
+            multiplayer: true, 
+            image: minecraftImage
+        },
+        { 
+            id: 6, 
+            name: "CS2", 
+            appId: 730, 
+            hours: 89, 
+            lastPlayed: "2 weeks ago", 
+            genre: "FPS", 
+            multiplayer: true, 
+            image: cs2Image
+        },
+        { 
+            id: 7, 
+            name: "Fall Guys", 
+            appId: 1097150, 
+            hours: 23, 
+            lastPlayed: "1 month ago", 
+            genre: "Party", 
+            multiplayer: true, 
+            image: fallGuysImage
+        },
+        { 
+            id: 8, 
+            name: "Dead by Daylight", 
+            appId: 381210, 
+            hours: 67, 
+            lastPlayed: "2 weeks ago", 
+            genre: "Horror", 
+            multiplayer: true, 
+            image: dbdImage
+        },
+        { 
+            id: 9, 
+            name: "Overwatch 2", 
+            appId: 2357570, 
+            hours: 198, 
+            lastPlayed: "4 days ago", 
+            genre: "FPS", 
+            multiplayer: true, 
+            image: overwatchImage
+        },
+        { 
+            id: 10, 
+            name: "Phasmophobia", 
+            appId: 739630, 
+            hours: 45, 
+            lastPlayed: "3 weeks ago", 
+            genre: "Horror", 
+            multiplayer: true, 
+            image: phasmophobiaImage
+        }
     ];
 
     // Mock squad members with different game ownership
@@ -149,6 +251,11 @@ export const Demo = () => {
         }));
     };
 
+    // Helper function for fallback images
+    const getImageWithFallback = (originalImage, gameName) => {
+        return originalImage || `https://via.placeholder.com/150x60/0066cc/ffffff?text=${gameName.slice(0,3).toUpperCase()}`;
+    };
+
     const renderStepContent = () => {
         switch (currentStep) {
             case 0:
@@ -188,6 +295,9 @@ export const Demo = () => {
                                             src={currentUser.avatar} 
                                             alt="Steam Avatar" 
                                             className="w-16 h-16 rounded-full"
+                                            onError={(e) => {
+                                                e.target.src = "https://via.placeholder.com/64x64/ff7f50/ffffff?text=AR";
+                                            }}
                                         />
                                         <div className="text-left">
                                             <h4 className="text-lg font-bold text-white">{currentUser.displayName}</h4>
@@ -212,14 +322,27 @@ export const Demo = () => {
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto scrollbar-hide">
                             {mockUserLibrary.map(game => (
-                                <div key={game.id} className="glass rounded-xl p-4 flex items-center space-x-4">
-                                    <img 
-                                        src={game.image} 
-                                        alt={game.name}
-                                        className="w-16 h-8 rounded object-cover"
-                                    />
+                                <div key={game.id} className="glass rounded-xl p-4 flex items-center space-x-4 hover:bg-white/15 transition-all duration-300">
+                                    <div className="relative group cursor-pointer">
+                                        <img 
+                                            src={game.image} 
+                                            alt={game.name}
+                                            className="w-20 h-12 rounded object-cover flex-shrink-0 transition-all duration-300 transform group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-cyan-500/30 group-active:scale-95"
+                                            onError={(e) => {
+                                                e.target.src = getImageWithFallback(null, game.name);
+                                            }}
+                                            onClick={() => {
+                                                // Optional: Add click sound or feedback
+                                                console.log(`Clicked on ${game.name}`);
+                                            }}
+                                        />
+                                        {/* Hover overlay */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded flex items-end justify-center pb-1">
+                                            <span className="text-white text-xs font-medium">View</span>
+                                        </div>
+                                    </div>
                                     <div className="flex-1">
-                                        <h4 className="text-white font-medium">{game.name}</h4>
+                                        <h4 className="text-white font-medium group-hover:text-cyan-300 transition-colors duration-300">{game.name}</h4>
                                         <p className="text-white/70 text-sm">{game.hours}h played • {game.lastPlayed}</p>
                                         <p className="text-marine-400 text-xs">{game.genre} • Multiplayer</p>
                                     </div>
@@ -311,15 +434,27 @@ export const Demo = () => {
                         <h3 className="text-2xl font-bold text-white mb-6">Common Games Found</h3>
                         <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-hide">
                             {commonGames.map(game => (
-                                <div key={game.id} className="glass rounded-xl p-4 flex items-center justify-between">
+                                <div key={game.id} className="glass rounded-xl p-4 flex items-center justify-between hover:bg-white/15 transition-all duration-300">
                                     <div className="flex items-center space-x-4">
-                                        <img 
-                                            src={game.image} 
-                                            alt={game.name}
-                                            className="w-12 h-6 rounded object-cover"
-                                        />
+                                        <div className="relative group cursor-pointer">
+                                            <img 
+                                                src={game.image} 
+                                                alt={game.name}
+                                                className="w-20 h-12 rounded object-cover flex-shrink-0 transition-all duration-300 transform group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-green-500/30 group-active:scale-95"
+                                                onError={(e) => {
+                                                    e.target.src = getImageWithFallback(null, game.name);
+                                                }}
+                                                onClick={() => {
+                                                    console.log(`Viewing ${game.name} - ${game.coverage}% coverage`);
+                                                }}
+                                            />
+                                            {/* Hover overlay with coverage info */}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded flex items-end justify-center pb-1">
+                                                <span className="text-white text-xs font-medium">{game.coverage}%</span>
+                                            </div>
+                                        </div>
                                         <div>
-                                            <h4 className="text-white font-medium">{game.name}</h4>
+                                            <h4 className="text-white font-medium hover:text-green-300 transition-colors duration-300">{game.name}</h4>
                                             <p className="text-white/70 text-sm">{game.genre} • Multiplayer</p>
                                         </div>
                                     </div>
@@ -355,16 +490,30 @@ export const Demo = () => {
                         
                         <div className="space-y-3">
                             {topGames.map(game => (
-                                <div key={game.id} className="glass rounded-xl p-4">
+                                <div key={game.id} className="glass rounded-xl p-4 hover:bg-white/15 transition-all duration-300">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center space-x-4">
-                                            <img 
-                                                src={game.image} 
-                                                alt={game.name}
-                                                className="w-12 h-6 rounded object-cover"
-                                            />
+                                            <div className="relative group cursor-pointer">
+                                                <img 
+                                                    src={game.image} 
+                                                    alt={game.name}
+                                                    className="w-20 h-12 rounded object-cover flex-shrink-0 transition-all duration-300 transform group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-coral-500/30 group-active:scale-95"
+                                                    onError={(e) => {
+                                                        e.target.src = getImageWithFallback(null, game.name);
+                                                    }}
+                                                    onClick={() => {
+                                                        console.log(`Ready to vote for ${game.name}!`);
+                                                    }}
+                                                />
+                                                {/* Hover overlay with vote count */}
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded flex items-end justify-center pb-1">
+                                                    <span className="text-white text-xs font-medium">
+                                                        {votingResults[game.id] || 0} votes
+                                                    </span>
+                                                </div>
+                                            </div>
                                             <div>
-                                                <h4 className="text-white font-medium">{game.name}</h4>
+                                                <h4 className="text-white font-medium hover:text-coral-300 transition-colors duration-300">{game.name}</h4>
                                                 <p className="text-white/70 text-sm">{game.coverage}% coverage</p>
                                             </div>
                                         </div>
