@@ -46,6 +46,7 @@ class User(db.Model):
     is_steam_connected: Mapped[bool] = mapped_column(Boolean(), default=False)
     steam_library_synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     
+    
     # Gaming Preferences
     gaming_preferences: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string
     favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)
@@ -72,6 +73,8 @@ class User(db.Model):
             "favorite_genres": json.loads(self.favorite_genres or "[]"),
             "created_at":      self.created_at.isoformat() if self.created_at else None,
             "is_steam_connected": self.is_steam_connected,
+            "total_games":     len(self.steam.games) if self.steam and self.steam.games else 0,  # 👈 this line
+
         }
     
 # ────────────────────────────────────────────────────────────

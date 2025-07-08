@@ -38,7 +38,8 @@ export const Profile = () => {
                     avatar_url: storeUser.avatar_url ?? '',
                     gaming_style: storeUser.gaming_style ?? '',
                     favorite_genres: storeUser.favorite_genres ?? [],
-                    created_at: storeUser.created_at ?? ''
+                    created_at: storeUser.created_at ?? '',
+                    total_games: storeUser.total_games || 0
                 });
                 setIsLoading(false);
                 return;
@@ -70,7 +71,8 @@ export const Profile = () => {
                     avatar_url: u.avatar_url ?? '',
                     gaming_style: u.gaming_style ?? '',
                     favorite_genres: u.favorite_genres ?? [],
-                    created_at: storeUser.created_at ?? ''
+                    created_at: storeUser.created_at ?? '',
+                    total_games: u.total_games || 0
                 });
             } catch (err) {
                 console.error(err);
@@ -130,6 +132,7 @@ export const Profile = () => {
                 avatar_url: updated.avatar_url ?? '',
                 gaming_style: updated.gaming_style ?? '',
                 favorite_genres: updated.favorite_genres ?? [],
+                total_games: updated.total_games || 0
             });
 
             setIsEditing(false);
@@ -276,7 +279,7 @@ export const Profile = () => {
                                 <div className="space-y-3 mb-6">
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Total Games:</span>
-                                        <span className="text-white font-medium">{user?.total_games || 0}</span>
+                                        <span className="text-white font-medium">{storeUser?.total_games || 0}</span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Steam Connected:</span>
