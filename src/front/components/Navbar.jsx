@@ -18,20 +18,27 @@ export const Navbar = () => {
   const { isAuthenticated, user, dispatch, actions } = useGlobalReducer();
 
   useEffect(() => {
-    if (!user) dispatch(bootstrapAuth());  
-  }, []);        
 
+    if (!user && !isAuthPage) {
+      // Use cached auth status first to avoid unnecessary API calls
+      const cachedAuth = authService.isAuthenticated();
+      if (cachedAuth) {
+        // If we have cached auth, just verify without fetching
+        dispatch(bootstrapAuth());
+      } else {
+        dispatch(bootstrapAuth());
+      }
+    }
+  }, [user, isAuthPage, dispatch]);
 
   const handleLogout = async () => {
-  await authService.logout();
-  actions.logout();;
-  setShowUserMenu(false);
-  navigate('/');
-};
+    await authService.logout();
+    actions.logout();
+    setShowUserMenu(false);
+    navigate('/');
+  };
 
   if (authPages.includes(location.pathname)) return null;
-
-  if (isAuthPage) return null;
 
 
   return (

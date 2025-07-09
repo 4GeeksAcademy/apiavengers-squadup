@@ -22,14 +22,14 @@ export const Profile = () => {
     const [message, setMessage] = useState({ type: '', text: '' });
     const { user: storeUser, dispatch } = useGlobalReducer();
 
-    const navigate = useNavigate();   // allow redirects
+    const navigate = useNavigate();  
     const backendUrl = authService.getApiUrl();
 
     useEffect(() => {
         let mounted = true;
 
         const loadProfile = async () => {
-            //  If the user is already in global state, skip fetching
+            // If the user is already in global state, use it
             if (storeUser) {
                 setFormData({
                     username: storeUser.username ?? '',
@@ -41,11 +41,31 @@ export const Profile = () => {
                     created_at: storeUser.created_at ?? '',
                     total_games: storeUser.total_games || 0
                 });
+                setUser(storeUser); // Set local user state
                 setIsLoading(false);
                 return;
             }
 
-            // ✅ Otherwise fetch from backend
+            // Check if we have cached user data in localStorage
+            const cachedUser = authService.getCurrentUser();
+            if (cachedUser) {
+                setFormData({
+                    username: cachedUser.username ?? '',
+                    email: cachedUser.email ?? '',
+                    bio: cachedUser.bio ?? '',
+                    avatar_url: cachedUser.avatar_url ?? '',
+                    gaming_style: cachedUser.gaming_style ?? '',
+                    favorite_genres: cachedUser.favorite_genres ?? [],
+                    created_at: cachedUser.created_at ?? '',
+                    total_games: cachedUser.total_games || 0
+                });
+                setUser(cachedUser);
+                dispatch({ type: ACTION_TYPES.SET_USER, payload: cachedUser });
+                setIsLoading(false);
+                return;
+            }
+
+            // Only fetch from backend if we don't have any cached data
             try {
                 const res = await authService.makeAuthenticatedRequest(
                     `${backendUrl}/api/auth/profile`
@@ -64,6 +84,7 @@ export const Profile = () => {
                 if (!mounted) return;
 
                 dispatch({ type: ACTION_TYPES.SET_USER, payload: u });
+                setUser(u);
                 setFormData({
                     username: u.username ?? '',
                     email: u.email ?? '',
@@ -71,7 +92,7 @@ export const Profile = () => {
                     avatar_url: u.avatar_url ?? '',
                     gaming_style: u.gaming_style ?? '',
                     favorite_genres: u.favorite_genres ?? [],
-                    created_at: storeUser.created_at ?? '',
+                    created_at: u.created_at ?? '',
                     total_games: u.total_games || 0
                 });
             } catch (err) {

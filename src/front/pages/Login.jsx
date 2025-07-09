@@ -1,84 +1,82 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Navigate  } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import authService from '../store/authService.js'
 import { logOut } from '../store/actions';
 import useGlobalReducer from '../hooks/useGlobalReducer'
 import { clearAuthError } from '../store/actions'
-
-
-
+import { ACTION_TYPES } from '../store/store';
 
 export const Login = () => {
-const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReducer();
-  const navigate = useNavigate();
-  const [formData, setFormData] = useState({ login: '', password: '' });
-  const [errors,   setErrors]   = useState({});
-  const [showPw, setShowPw] = useState(false);
-  const [loading,  setLoading]  = useState(false);     // single loading flag
-  const [remember, setRemember] = useState(false);
-  const [success,  setSuccess]  = useState('');
-  const navigateToHome = () => navigate('/');
-  const navigateToSignUp = () => navigate('/signup');
+    const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReducer();
+    const navigate = useNavigate();
+    const [formData, setFormData] = useState({ login: '', password: '' });
+    const [errors, setErrors] = useState({});
+    const [showPw, setShowPw] = useState(false);
+    const [loading, setLoading] = useState(false);     // single loading flag
+    const [remember, setRemember] = useState(false);
+    const [success, setSuccess] = useState('');
+    const navigateToHome = () => navigate('/');
+    const navigateToSignUp = () => navigate('/signup');
 
-  /* ───────── if already logged-in, bounce ───────── */
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+    /* ───────── if already logged-in, bounce ───────── */
+    if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
-  /* ───────── helpers ───────── */
-  const onChange = e => {
-    const { name, value, checked, type } = e.target;
-    if (type === 'checkbox') setRemember(checked);
-    else {
-      setFormData(f => ({ ...f, [name]: value }));
-      if (errors[name]) setErrors({ ...errors, [name]: null });
-      dispatch(clearAuthError);                        // clear store error
-    }
-  };
+    /* ───────── helpers ───────── */
+    const onChange = e => {
+        const { name, value, checked, type } = e.target;
+        if (type === 'checkbox') setRemember(checked);
+        else {
+            setFormData(f => ({ ...f, [name]: value }));
+            if (errors[name]) setErrors({ ...errors, [name]: null });
+            dispatch(clearAuthError);                        // clear store error
+        }
+    };
 
-  const validate = () => {
-    const e = {};
-    if (!formData.login)    e.login    = 'Email or username is required';
-    if (!formData.password) e.password = 'Password is required';
-    setErrors(e);
-    return !Object.keys(e).length;
-  };
+    const validate = () => {
+        const e = {};
+        if (!formData.login) e.login = 'Email or username is required';
+        if (!formData.password) e.password = 'Password is required';
+        setErrors(e);
+        return !Object.keys(e).length;
+    };
 
-  /* ───────── submit ───────── */
-  const onSubmit = async e => {
-    e.preventDefault();
-    if (!validate()) return;
+    /* ───────── submit ───────── */
+    const onSubmit = async e => {
+        e.preventDefault();
+        if (!validate()) return;
 
-    setLoading(true);
-    const { success, user, error } = await authService.login(formData);
+        setLoading(true);
+        const { success, user, error } = await authService.login(formData);
 
-    if (success) {
-      // move tokens to sessionStorage if “Remember me” NOT checked
-      if (!remember) {
-        sessionStorage.setItem('access_token', authService.getAccessToken());
-        sessionStorage.setItem('refresh_token', authService.getRefreshToken());
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('token_expiration');
-      }
+        if (success) {
+            // move tokens to sessionStorage if "Remember me" NOT checked
+            if (!remember) {
+                sessionStorage.setItem('access_token', authService.getAccessToken());
+                sessionStorage.setItem('refresh_token', authService.getRefreshToken());
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('token_expiration');
+            }
 
-      dispatch({
-        type: 'LOGIN_SUCCESS',
-        payload: { user, token: authService.getAccessToken() }
-      });
+            dispatch({
+                type: ACTION_TYPES.LOGIN_SUCCESS,
+                payload: { user, token: authService.getAccessToken() }
+            });
 
-      setSuccess('Login successful! Welcome back!');
-      setFormData({ login: '', password: '' });
-      navigate('/profile', { replace: true });
+            setSuccess('Login successful! Welcome back!');
+            setFormData({ login: '', password: '' });
+            navigate('/profile', { replace: true });
 
 
-    } else {
-      setErrors({ submit: error || 'Login failed' });
-    }
-    setLoading(false);
-  };
+        } else {
+            setErrors({ submit: error || 'Login failed' });
+        }
+        setLoading(false);
+    };
 
-  const handleForgotPassword = () => {
-  navigate('/forgot-password');
-};
+    const handleForgotPassword = () => {
+        navigate('/forgot-password');
+    };
 
     return (
         <>
@@ -89,11 +87,11 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(138,43,226,0.15),transparent_50%)]"></div>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,191,255,0.1),transparent_50%)]"></div>
                 </div>
-                
+
                 {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     {[...Array(40)].map((_, i) => (
-                        <div 
+                        <div
                             key={i}
                             className="absolute w-1 h-1 bg-white rounded-full opacity-30 animate-pulse"
                             style={{
@@ -118,7 +116,7 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                                     SquadUp
                                 </span>
                             </button>
-                            <button 
+                            <button
                                 onClick={navigateToSignUp}
                                 className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
                             >
@@ -166,11 +164,10 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                                             name="login"
                                             value={formData.login}
                                             onChange={onChange}
-                                            className={`w-full px-4 py-3 bg-slate-800/50 border ${
-                                                errors.login 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
+                                            className={`w-full px-4 py-3 bg-slate-800/50 border ${errors.login
+                                                    ? 'border-red-500/50 focus:border-red-500'
                                                     : 'border-white/20 focus:border-coral-500'
-                                            } rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-slate-800/70`}
+                                                } rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-slate-800/70`}
                                             placeholder="Enter your email or username"
                                         />
                                         {errors.login && (
@@ -190,16 +187,15 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                                             name="password"
                                             value={formData.password}
                                             onChange={onChange}
-                                            className={`w-full px-4 py-3 pr-12 bg-slate-800/50 border ${
-                                                errors.password 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
+                                            className={`w-full px-4 py-3 pr-12 bg-slate-800/50 border ${errors.password
+                                                    ? 'border-red-500/50 focus:border-red-500'
                                                     : 'border-white/20 focus:border-coral-500'
-                                            } rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-slate-800/70`}
+                                                } rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-slate-800/70`}
                                             placeholder="Enter your password"
                                         />
                                         <button
                                             type="button"
-                                            onClick={() => setShowPassword(!showPw)}
+                                            onClick={() => setShowPw(!showPw)}
                                             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200"
                                         >
                                             {showPw ? '👁️' : '👁️‍🗨️'}
@@ -216,14 +212,13 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                                         <input
                                             type="checkbox"
                                             checked={remember}
-                                            onChange={(e) => setRememberMe(e.target.checked)}
+                                            onChange={(e) => setRemember(e.target.checked)}
                                             className="sr-only"
                                         />
-                                        <div className={`w-4 h-4 border-2 rounded flex items-center justify-center mr-2 transition-all duration-200 ${
-                                            remember 
-                                                ? 'bg-coral-500 border-coral-500' 
+                                        <div className={`w-4 h-4 border-2 rounded flex items-center justify-center mr-2 transition-all duration-200 ${remember
+                                                ? 'bg-coral-500 border-coral-500'
                                                 : 'border-white/40 group-hover:border-white/60'
-                                        }`}>
+                                            }`}>
                                             {remember && <span className="text-white text-xs">✓</span>}
                                         </div>
                                         <span className="text-sm text-white/70 group-hover:text-white/90 transition-colors duration-200">
@@ -269,7 +264,7 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                                     <span className="text-lg">🎮</span>
                                     <span className="group-hover:text-blue-300 transition-colors duration-300">Continue with Steam</span>
                                 </button>
-                                
+
                                 <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group">
                                     <span className="text-lg">🎵</span>
                                     <span className="group-hover:text-purple-300 transition-colors duration-300">Continue with Discord</span>
@@ -279,7 +274,7 @@ const { isAuthenticated, error: authError, actions, dispatch } = useGlobalReduce
                             {/* Sign Up Link */}
                             <p className="mt-6 text-center text-white/70 text-sm">
                                 Need an account?{' '}
-                                <button 
+                                <button
                                     onClick={navigateToSignUp}
                                     className="text-coral-400 hover:text-coral-300 font-medium transition-colors duration-300 hover:underline"
                                 >

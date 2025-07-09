@@ -3,10 +3,12 @@ from urllib.parse import urlencode
 from flask import Blueprint, current_app, jsonify, redirect, request, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api.models import User, db
+
 # ---------------------------------------------------------------------- config
-FRONTEND_URL   = os.getenv("FRONTEND_URL", "https://animated-eureka-5grpx4q7wvpgf66g-3000.app.github.dev")
+# Use VITE_BACKEND_URL for frontend URL (since that's what your frontend uses)
+FRONTEND_URL = os.getenv("VITE_BACKEND_URL", "http://localhost:3000").replace("3001", "3000")
 STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
-STEAM_API_KEY    = os.getenv("STEAM_API_KEY")
+STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
 if not STEAM_API_KEY:
     raise RuntimeError("STEAM_API_KEY env var not set")
@@ -15,9 +17,13 @@ steam_bp = Blueprint("steam", __name__)
 
 # ------------------------------------------------------------- helper builders
 def _build_steam_login_url() -> str:
-    # 1️⃣ Use the exact Codespaces host
-    host = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"
-    base = f"https://{host}"
+    # Use the current request's host for the return URL
+    if request.headers.get('Host'):
+        base = f"http://{request.headers.get('Host')}"
+    else:
+        # Fallback to environment variable
+        base = os.getenv("VITE_BACKEND_URL", "http://localhost:3001")
+    
     return_to = f"{base}/api/steam/authorize"
 
     params = {
@@ -56,6 +62,15 @@ def _get_owned_games(steamid: str) -> dict:
     return requests.get(url, timeout=10).json().get("response", {})
 
 # --------------------------------------------------------------------- routes
+@steam_bp.route("/steam/test", methods=["GET"])
+def steam_test():
+    """Test endpoint to verify Steam auth is working"""
+    return jsonify({
+        "message": "Steam auth test endpoint working",
+        "steam_api_key": "configured" if STEAM_API_KEY else "missing",
+        "frontend_url": FRONTEND_URL
+    }), 200
+
 @steam_bp.route("/steam/login", methods=["GET"])
 def steam_login():
     return redirect(_build_steam_login_url())
@@ -79,31 +94,9 @@ def authorize():
         json_payload = json.dumps(payload)
         b64_payload = base64.urlsafe_b64encode(json_payload.encode()).decode()
 
+        # Use the correct frontend URL for redirect
         return redirect(f"{FRONTEND_URL}/steam/callback?d={b64_payload}")
     
     except Exception as err:
         current_app.logger.exception(err)
         return jsonify({"msg": "Failed to fetch Steam data"}), 500
-
-
-@steam_bp.route("/gaming/steam/connect", methods=["POST"])
-@jwt_required()
-def connect_steam():
-    from api.models import User, db 
-
-    data = request.get_json()
-    steam_id = data.get("steam_id")
-    user_id = get_jwt_identity()
-
-    if not user_id or not steam_id:
-        return jsonify({ "msg": "Missing user or Steam ID" }), 400
-
-    user = db.session.get(User, user_id)
-    if not user:
-        return jsonify({ "msg": "User not found" }), 404
-
-    user.steam_id = steam_id
-    user.is_steam_connected = True
-    db.session.commit()
-
-    return jsonify({ "msg": "Steam linked successfully!" }), 200

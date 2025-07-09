@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
+import { ACTION_TYPES } from '../store/store';
 
 export const SignUp = () => {
     const [formData, setFormData] = useState({
@@ -13,7 +14,7 @@ export const SignUp = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    
+
     const { dispatch } = useGlobalReducer();
     const navigate = useNavigate();
 
@@ -23,7 +24,7 @@ export const SignUp = () => {
             ...prev,
             [name]: value
         }));
-        
+
         // Clear error for this field when user starts typing
         if (errors[name]) {
             setErrors(prev => ({
@@ -35,7 +36,7 @@ export const SignUp = () => {
 
     const validateForm = () => {
         const newErrors = {};
-        
+
         // Email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!formData.email) {
@@ -43,7 +44,7 @@ export const SignUp = () => {
         } else if (!emailRegex.test(formData.email)) {
             newErrors.email = 'Please enter a valid email';
         }
-        
+
         // Username validation
         if (!formData.username) {
             newErrors.username = 'Username is required';
@@ -54,7 +55,7 @@ export const SignUp = () => {
         } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
             newErrors.username = 'Username can only contain letters, numbers, and underscores';
         }
-        
+
         // Password validation
         if (!formData.password) {
             newErrors.password = 'Password is required';
@@ -63,70 +64,81 @@ export const SignUp = () => {
         } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
             newErrors.password = 'Password must contain uppercase, lowercase, and number';
         }
-        
+
         // Confirm password validation
         if (!formData.confirmPassword) {
             newErrors.confirmPassword = 'Please confirm your password';
         } else if (formData.password !== formData.confirmPassword) {
             newErrors.confirmPassword = 'Passwords do not match';
         }
-        
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!validateForm()) return;
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!validateForm()) return;
 
-  setIsLoading(true);
+        setIsLoading(true);
 
-  try {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
-    const res = await fetch(`${backendUrl}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email:            formData.email,
-        username:         formData.username,
-        password:         formData.password,
-        confirmPassword:  formData.confirmPassword   // ← backend expects this key
-      })
-    });
+            const res = await fetch(`${backendUrl}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: formData.email,
+                    username: formData.username,
+                    password: formData.password,
+                    confirmPassword: formData.confirmPassword   // ← backend expects this key
+                })
+            });
 
-    // attempt to parse JSON regardless of status
-    let data = {};
-    try {
-      data = await res.json();
-    } catch { /* ignore if not JSON */ }
+            // attempt to parse JSON regardless of status
+            let data = {};
+            try {
+                data = await res.json();
+            } catch { /* ignore if not JSON */ }
 
-    if (res.ok) {
-      const { user, access_token, message } = data;
+            if (res.ok) {
+                const { user, access_token, refresh_token, message } = data;
 
-      // persist token & user
-      localStorage.setItem('access_token', access_token);
-      dispatch({ type: 'set_user', payload: user });
+                // persist token & user
+                localStorage.setItem('access_token', access_token);
+                if (refresh_token) {
+                    localStorage.setItem('refresh_token', refresh_token);
+                }
+                dispatch({
+                    type: ACTION_TYPES.LOGIN_SUCCESS,
+                    payload: {
+                    user: user,
+                    token: access_token
+                }
+            });
 
-      // show success toast/message
-      dispatch({
-        type: 'set_message',
-        payload: { type: 'success', text: message || 'Account created!' }
-      });
 
-      navigate('/dashboard', { replace: true });
-    } else {
-      // show backend-supplied error, or fallback
-      setErrors({ submit: data.error || data.message || 'Registration failed' });
-    }
+                // show success toast/message
+                dispatch({
+                    type: 'set_message',
+                    payload: { type: 'success', text: message || 'Account created!' }
+                });
 
-  } catch (err) {
-    console.error(err);
-    setErrors({ submit: 'Network error. Please try again.' });
-  } finally {
-    setIsLoading(false);
-  }
-};
+                
+                navigate('/dashboard', { replace: true });
+            } else {
+                // show backend-supplied error, or fallback
+                setErrors({ submit: data.error || data.message || 'Registration failed' });
+            }
+
+        } catch (err) {
+            console.error(err);
+            setErrors({ submit: 'Network error. Please try again.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <>
@@ -137,11 +149,11 @@ const handleSubmit = async (e) => {
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(138,43,226,0.1),transparent_50%)]"></div>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(0,191,255,0.1),transparent_50%)]"></div>
                 </div>
-                
+
                 {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     {[...Array(50)].map((_, i) => (
-                        <div 
+                        <div
                             key={i}
                             className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
                             style={{
@@ -166,8 +178,8 @@ const handleSubmit = async (e) => {
                                     SquadUp
                                 </span>
                             </Link>
-                            <Link 
-                                to="/login" 
+                            <Link
+                                to="/login"
                                 className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
                             >
                                 Already have an account?
@@ -208,11 +220,10 @@ const handleSubmit = async (e) => {
                                             name="email"
                                             value={formData.email}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 bg-white/5 border ${
-                                                errors.email 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            className={`w-full px-4 py-3 bg-white/5 border ${errors.email
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Enter your email"
                                         />
                                         {errors.email && (
@@ -232,11 +243,10 @@ const handleSubmit = async (e) => {
                                             name="username"
                                             value={formData.username}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 bg-white/5 border ${
-                                                errors.username 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            className={`w-full px-4 py-3 bg-white/5 border ${errors.username
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Choose a username"
                                         />
                                         {errors.username && (
@@ -256,11 +266,10 @@ const handleSubmit = async (e) => {
                                             name="password"
                                             value={formData.password}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${
-                                                errors.password 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${errors.password
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Create a password"
                                         />
                                         <button
@@ -287,11 +296,10 @@ const handleSubmit = async (e) => {
                                             name="confirmPassword"
                                             value={formData.confirmPassword}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${
-                                                errors.confirmPassword 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${errors.confirmPassword
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Confirm your password"
                                         />
                                         <button
@@ -340,8 +348,8 @@ const handleSubmit = async (e) => {
                             {/* Login Link */}
                             <p className="mt-6 text-center text-white/70 text-sm">
                                 Already have an account?{' '}
-                                <Link 
-                                    to="/login" 
+                                <Link
+                                    to="/login"
                                     className="text-coral-400 hover:text-coral-300 font-medium transition-colors duration-300 hover:underline"
                                 >
                                     Sign in

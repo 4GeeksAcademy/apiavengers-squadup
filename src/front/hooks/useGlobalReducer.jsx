@@ -1,7 +1,8 @@
-// src/front/hooks/useGlobalReducer.jsx - Fixed exports and imports
+// src/front/hooks/useGlobalReducer.jsx - Optimized for 429 Prevention
 
-import { useContext, useReducer, createContext } from "react";
+import { useContext, useReducer, createContext, useMemo } from "react";
 import storeReducer, { initialStore, ACTION_TYPES } from "../store/store"
+import authService from "../store/authService.js";
 
 // Create a context to hold the global state of the application
 const StoreContext = createContext();
@@ -11,13 +12,14 @@ export function StoreProvider({ children }) {
     // Initialize reducer with the initial state
     const [store, dispatch] = useReducer(storeReducer, initialStore());
 
-    const contextValue = {
+    // Memoize context value to prevent unnecessary re-renders
+    const contextValue = useMemo(() => ({
         store,
         dispatch,
         
         // Helper functions for common actions
         actions: {
-            // Authentication helpers
+            // Authentication helpers - optimized
             login: (user, token) => {
                 localStorage.setItem('token', token);
                 dispatch({ 
@@ -27,9 +29,8 @@ export function StoreProvider({ children }) {
             },
             
             logout: () => {
-                localStorage.removeItem('access_token');
-                sessionStorage.removeItem('access_token');
-                localStorage.removeItem('user');
+                // Use authService to ensure proper cleanup
+                authService.clearTokens();
                 dispatch({ type: ACTION_TYPES.LOGOUT });
             },
             
@@ -77,7 +78,7 @@ export function StoreProvider({ children }) {
                 });
             }
         }
-    };
+    }), [store, dispatch]);
 
     return (
         <StoreContext.Provider value={contextValue}>
@@ -96,7 +97,8 @@ function useGlobalReducer() {
     
     const { store, dispatch, actions } = context;
     
-    return { 
+    // Memoize the return value to prevent unnecessary re-renders
+    return useMemo(() => ({ 
         store, 
         dispatch, 
         actions,
@@ -107,7 +109,7 @@ function useGlobalReducer() {
         isLoading: store.authLoading,
         error: store.authError,
         message: store.message
-    };
+    }), [store, dispatch, actions]);
 }
 
 // Export as default

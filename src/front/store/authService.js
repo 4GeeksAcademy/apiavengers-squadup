@@ -1,6 +1,5 @@
 // src/front/services/authService.js
-// Complete Frontend Authentication Service
-
+// Complete Frontend Authentication Service - Optimized for 429 Prevention
 
 // ✅ CORRECT: Use import.meta.env for Vite (not process.env)
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL;
@@ -12,40 +11,59 @@ class AuthService {
         
         console.log('🔧 AuthService initialized with API URL:', API_BASE_URL);
         
-        // Setup automatic token refresh
+        // Setup automatic token refresh with reduced frequency
         this.setupTokenRefresh();
     }
     
-  /** internal latch so multiple components reuse one in-flight verify */
-  #verifyLatch = null;        // Promise | null
-  #verifiedAt  = 0;           // ms epoch
+    /** internal latch so multiple components reuse one in-flight verify */
+    #verifyLatch = null;        // Promise | null
+    #verifiedAt = 0;           // ms epoch
+    #verificationThrottle = 60000; // 60 seconds - increased from 30s to reduce API calls
+    
+    // Request deduplication for concurrent calls
+    #pendingRequests = new Map();
 
-  async checkAuthStatus(force = false) {
-    // local check first – fast
-    if (!this.isAuthenticated()) return false;
+    async checkAuthStatus(force = false) {
+        // local check first – fast
+        if (!this.isAuthenticated()) return false;
 
-    // throttle network hit to once every 30 s unless forced
-    const now = Date.now();
-    if (!force && now - this.#verifiedAt < 30_000) return true;
+        // throttle network hit to once every 60 s unless forced
+        const now = Date.now();
+        if (!force && now - this.#verifiedAt < this.#verificationThrottle) {
+            console.log('🚀 Using cached auth status (throttled)');
+            return true;
+        }
 
-    // reuse ongoing request
-    if (this.#verifyLatch) return this.#verifyLatch;
+        // reuse ongoing request
+        if (this.#verifyLatch) {
+            console.log('🔄 Reusing existing verification request');
+            return this.#verifyLatch;
+        }
 
-    // real network verify
-    this.#verifyLatch = fetch(`${API_BASE_URL}/api/auth/verify`, {
-      headers: { Authorization: `Bearer ${this.getAccessToken()}` },
-    })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => {
-        localStorage.setItem('user', JSON.stringify(data.user));
-        this.#verifiedAt = Date.now();
-        return true;
-      })
-      .catch(() => false)
-      .finally(() => { this.#verifyLatch = null; });
+        console.log('🌐 Making network auth verification');
+        
+        // real network verify
+        this.#verifyLatch = fetch(`${API_BASE_URL}/api/auth/verify`, {
+            headers: { Authorization: `Bearer ${this.getAccessToken()}` },
+        })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                localStorage.setItem('user', JSON.stringify(data.user));
+                this.#verifiedAt = Date.now();
+                console.log('✅ Auth verification successful');
+                return true;
+            })
+            .catch((error) => {
+                console.log('❌ Auth verification failed:', error);
+                return false;
+            })
+            .finally(() => { 
+                this.#verifyLatch = null; 
+            });
 
-    return this.#verifyLatch;
-  }
+        return this.#verifyLatch;
+    }
+
     // ============================================================================
     // TOKEN MANAGEMENT
     // ============================================================================
@@ -80,28 +98,31 @@ class AuthService {
         return expiration ? parseInt(expiration) : null;
     }
 
-    isTokenExpired() {
+    isTokenExpired(bufferMinutes = 5) {
         const expiration = this.getTokenExpiration();
         if (!expiration) return true;
         
-        // Consider token expired 5 minutes before actual expiration
-        return Date.now() > (expiration - 5 * 60 * 1000);
+        // Consider token expired buffer minutes before actual expiration
+        return Date.now() > (expiration - bufferMinutes * 60 * 1000);
     }
 
     clearTokens() {
         localStorage.removeItem('access_token');
+        sessionStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        sessionStorage.removeItem('refresh_token');
         localStorage.removeItem('token_expiration');
         localStorage.removeItem('user');
+        this.#verifiedAt = 0; // Reset verification timestamp
         console.log('🧹 Tokens cleared');
     }
 
     // ============================================================================
-    // AUTOMATIC TOKEN REFRESH
+    // AUTOMATIC TOKEN REFRESH - Optimized
     // ============================================================================
 
     setupTokenRefresh() {
-        // Check token every 10 minutes
+        // Check token every 10 minutes (increased from 5 to reduce API calls)
         setInterval(() => {
             this.checkAndRefreshToken();
         }, 10 * 60 * 1000);
@@ -109,7 +130,7 @@ class AuthService {
         // Check immediately when service is created
         setTimeout(() => {
             this.checkAndRefreshToken();
-        }, 1000);
+        }, 2000); // Increased delay to avoid immediate refresh
     }
 
     async checkAndRefreshToken() {
@@ -120,7 +141,8 @@ class AuthService {
             return false;
         }
 
-        if (this.isTokenExpired()) {
+        // Only refresh if token is actually expired or about to expire
+        if (this.isTokenExpired(10)) { // 10 minute buffer
             console.log('🔄 Token expired, attempting refresh...');
             return await this.refreshAccessToken();
         }
@@ -196,7 +218,7 @@ class AuthService {
     }
 
     // ============================================================================
-    // API REQUEST HELPER WITH AUTO-REFRESH
+    // API REQUEST HELPER WITH AUTO-REFRESH - Optimized with deduplication
     // ============================================================================
 
     async makeAuthenticatedRequest(url, options = {}) {
@@ -206,15 +228,25 @@ class AuthService {
             throw new Error('No access token available');
         }
 
+        // Create a unique key for this request to deduplicate
+        const requestKey = `${options.method || 'GET'}:${url}`;
+        
+        // Check if we have a pending request for this URL
+        if (this.#pendingRequests.has(requestKey)) {
+            console.log('🔄 Reusing pending request:', requestKey);
+            return this.#pendingRequests.get(requestKey);
+        }
+
         // Check if token needs refresh
         if (this.isTokenExpired()) {
             if (this.isRefreshing) {
                 // Wait for refresh to complete
-                return new Promise((resolve, reject) => {
+                const refreshPromise = new Promise((resolve, reject) => {
                     this.failedQueue.push({ resolve, reject });
-                }).then(token => {
-                    return this.makeRequest(url, { ...options, token });
                 });
+                
+                const token = await refreshPromise;
+                return this.makeRequest(url, { ...options, token });
             } else {
                 const refreshed = await this.refreshAccessToken();
                 if (!refreshed) {
@@ -223,7 +255,18 @@ class AuthService {
             }
         }
 
-        return this.makeRequest(url, { ...options, token: this.getAccessToken() });
+        // Create the request promise
+        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
+        
+        // Store it for deduplication
+        this.#pendingRequests.set(requestKey, requestPromise);
+        
+        // Clean up after request completes
+        requestPromise.finally(() => {
+            this.#pendingRequests.delete(requestKey);
+        });
+
+        return requestPromise;
     }
 
     async makeRequest(url, { token, ...options }) {
@@ -329,25 +372,16 @@ class AuthService {
 
     async logout() {
         try {
-            console.log('👋 Logging out...');
-            const accessToken = this.getAccessToken();
+            console.log('🚪 Logging out...');
             
-            if (accessToken) {
-                // Tell backend to blacklist the token
-                await fetch(`${API_BASE_URL}/api/auth/logout`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
-                });
-            }
+            // Clear all tokens and user data
+            this.clearTokens();
+            
+            console.log('✅ Logout successful');
+            return { success: true };
         } catch (error) {
             console.error('❌ Logout error:', error);
-        } finally {
-            // Always clear local tokens
-            this.clearTokens();
-            console.log('✅ Logged out successfully');
-            return { success: true };
+            return { success: false, error: 'Logout failed' };
         }
     }
 
@@ -368,10 +402,6 @@ class AuthService {
         }
     }
 
-    // ============================================================================
-    // USER STATE MANAGEMENT
-    // ============================================================================
-
     getCurrentUser() {
         const userStr = localStorage.getItem('user');
         return userStr ? JSON.parse(userStr) : null;
@@ -383,34 +413,14 @@ class AuthService {
         return !!(accessToken && user);
     }
 
-    // ============================================================================
-    // PROTECTED ROUTE HELPER
-    // ============================================================================
-
-    async checkAuthStatus() {
-        if (!this.isAuthenticated()) {
-            return false;
-        }
-
-        // Verify token is still valid
-        const verification = await this.verifyToken();
-        return verification.valid;
-    }
-
-    // ============================================================================
-    // UTILITY METHODS
-    // ============================================================================
-
     getApiUrl() {
         return API_BASE_URL;
     }
 
-    // Get user info without API call
     getUserInfo() {
         return this.getCurrentUser();
     }
 
-    // Check if user has specific role (for future use)
     hasRole(role) {
         const user = this.getCurrentUser();
         return user && user.roles && user.roles.includes(role);

@@ -41,6 +41,9 @@ export const ACTION_TYPES = {
     LOGOUT: 'logout',
     LOGIN_SUCCESS: 'login_success',
     
+    // Steam actions
+    STEAM_LINKED: 'steamLinked',
+    
     // Message actions
     SET_MESSAGE: 'set_message',
     CLEAR_MESSAGE: 'clear_message'
@@ -116,6 +119,20 @@ const storeReducer = (state, action) => {
                 token: null,
                 isAuthenticated: false,
                 authError: null
+            };
+
+        // Steam actions
+        case ACTION_TYPES.STEAM_LINKED:
+            return {
+                ...state,
+                steamLinked: action.payload,
+                user: {
+                    ...state.user,
+                    is_steam_connected: true,
+                    steam_id: action.payload.steamid,
+                    steam_avatar_url: action.payload.profile.avatarfull,
+                    steam_username: action.payload.profile.personaname
+                }
             };
 
         // Message actions
