@@ -15,10 +15,9 @@ class AuthService {
         this.setupTokenRefresh();
     }
     
-    /** internal latch so multiple components reuse one in-flight verify */
-    #verifyLatch = null;        // Promise | null
-    #verifiedAt = 0;           // ms epoch
-    #verificationThrottle = 60000; // 60 seconds - increased from 30s to reduce API calls
+    #verifyLatch = null; 
+    #verifiedAt = 0;       
+    #verificationThrottle = 60000; 
     
     // Request deduplication for concurrent calls
     #pendingRequests = new Map();

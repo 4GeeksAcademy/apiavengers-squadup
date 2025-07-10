@@ -49,7 +49,7 @@ export const ProtectedRoute = ({ children }) => {
     };
 
     // If were already authed.... use it
-    if (isAuthenticated && authService.getCurrentUser()) {
+    if (isAuthenticated && authService.getCurrentUser() && authService.getAccessToken()) {
       setAllowed(true);
       setChecking(false);
     } else {

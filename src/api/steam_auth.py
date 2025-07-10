@@ -6,7 +6,7 @@ from api.models import User, db
 
 # ---------------------------------------------------------------------- config
 # Use VITE_BACKEND_URL for frontend URL (since that's what your frontend uses)
-FRONTEND_URL = os.getenv("VITE_BACKEND_URL", "http://localhost:3000").replace("3001", "3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
@@ -100,3 +100,23 @@ def authorize():
     except Exception as err:
         current_app.logger.exception(err)
         return jsonify({"msg": "Failed to fetch Steam data"}), 500
+
+@steam_bp.route("/steam/disconnect", methods=["POST"])
+@jwt_required()
+def disconnect_steam():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    # Clear all Steam-related fields
+    user.steam_id = None
+    user.steam_profile = None
+    user.steam_avatar_url = None 
+    user.steam_username = None 
+    user.is_steam_connected = False 
+
+    db.session.commit()
+
+    return jsonify({"msg": "Steam account disconnected"}), 200

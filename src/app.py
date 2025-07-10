@@ -14,11 +14,16 @@ from datetime import timedelta
 from api.utils import APIException, generate_sitemap
 from api.models import db
 from api.auth import auth
+from api.steam_auth import steam_bp
 from api.gaming import gaming  # Import gaming blueprint
 from api.admin import setup_admin
 from api.commands import setup_commands
 from api.genre_routes import genre_bp
 from werkzeug.middleware.proxy_fix import ProxyFix
+from dotenv import load_dotenv
+
+load_dotenv()
+SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
 
 ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
 static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../dist")

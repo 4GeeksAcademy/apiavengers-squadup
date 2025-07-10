@@ -15,10 +15,10 @@ gunicorn = "*"
 cloudinary = "*"
 werkzeug = "*"
 requests = "*"
-flask-migrate = "*"
 flask-socketio = "*"
 python-dotenv = "*"
 flask-limiter = "*"
+flask-migrate = "*"
 
 [dev-packages]
 

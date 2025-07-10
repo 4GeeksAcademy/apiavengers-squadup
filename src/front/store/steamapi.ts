@@ -10,39 +10,52 @@ export const steamApi = {
   },
 
   /** POST /gaming/steam/connect after callback */
-  async connectSteam(steamid: string) {
-    try {
-      // Try authenticated request first
-      const accessToken = authService.getAccessToken();
-      if (accessToken) {
-        return authService.makeAuthenticatedRequest(
-          `${API}/api/gaming/steam/connect`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ steam_id: steamid }),
-          }
-        );
-      } else {
-        // Fallback: make request without authentication
-        console.warn("⚠️ No access token available, making unauthenticated request");
-        return fetch(`${API}/api/gaming/steam/connect`, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            // Try to get token from sessionStorage as fallback
-            ...(sessionStorage.getItem('access_token') && {
-              'Authorization': `Bearer ${sessionStorage.getItem('access_token')}`
-            })
-          },
-          body: JSON.stringify({ steam_id: steamid }),
-        });
-      }
-    } catch (error) {
-      console.error("❌ Steam connect error:", error);
-      throw error;
+  /** POST /gaming/steam/connect after callback */
+async connectSteam(steamid: string) {
+  try {
+    const url = `${API}/api/gaming/steam/connect`;
+    const body = JSON.stringify({ steam_id: steamid });
+
+    // Prefer access token from authService
+    let accessToken = authService.getAccessToken();
+
+    // If unavailable, try to get it from sessionStorage
+    if (!accessToken) {
+      accessToken = sessionStorage.getItem("access_token");
+      console.warn("⚠️ No access token from authService, using fallback token from sessionStorage");
     }
-  },
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    } else {
+      console.warn("⚠️ Proceeding without Authorization header");
+    }
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body,
+    });
+
+    // Safely try to parse the JSON response
+    const json = await res.json().catch(() => null);
+
+    return {
+      ok: res.ok,
+      status: res.status,
+      statusText: res.statusText,
+      body: json,
+    };
+  } catch (error) {
+    console.error("❌ Steam connect error:", error);
+    throw error;
+  }
+} , 
+
 
   /** POST /gaming/steam/sync-library (1st sync, or manual re-sync) */
   async syncLibrary() {

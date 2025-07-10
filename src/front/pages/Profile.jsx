@@ -22,7 +22,7 @@ export const Profile = () => {
     const [message, setMessage] = useState({ type: '', text: '' });
     const { user: storeUser, dispatch } = useGlobalReducer();
 
-    const navigate = useNavigate();  
+    const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
 
     useEffect(() => {
@@ -93,7 +93,8 @@ export const Profile = () => {
                     gaming_style: u.gaming_style ?? '',
                     favorite_genres: u.favorite_genres ?? [],
                     created_at: u.created_at ?? '',
-                    total_games: u.total_games || 0
+                    total_games: u.total_games || 0,
+                    created_at: u.created_at || ''
                 });
             } catch (err) {
                 console.error(err);
@@ -165,7 +166,7 @@ export const Profile = () => {
             setIsSaving(false);
         }
     };
-   
+
     const handleCancel = () => {
         // Reset form data to original user data
         if (!user) return;
@@ -200,6 +201,60 @@ export const Profile = () => {
     const gamingStyles = [
         'Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'
     ];
+
+    const handleDisconnectSteam = async () => {
+  try {
+    const accessToken = authService.getAccessToken();
+    const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("Steam disconnect failed");
+    }
+
+    // ✅ Clear Steam info from global state
+    dispatch({
+      type: ACTION_TYPES.SET_USER,
+      payload: {
+        steam_id: 'none',
+        is_steam_connected: false,
+        steam_avatar_url: 'none',
+        steam_username: 'none',
+        steamlinked: false
+      },
+    });
+
+  } catch (err) {
+    console.error("❌ Failed to disconnect Steam:", err);
+    alert("Failed to disconnect Steam.");
+  }
+  const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+  },
+});
+
+if (!res.ok) throw new Error("Steam disconnect failed");
+
+const userRes = await fetch(`${backendUrl}/api/me`, {
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+  },
+});
+
+if (!userRes.ok) throw new Error("Failed to refresh user");
+
+const updatedUser = await userRes.json();
+
+dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
+};
 
     if (isLoading) {
         return (
@@ -258,10 +313,10 @@ export const Profile = () => {
                 {message.text && (
                     <div className="mb-6">
                         <div className={`p-4 rounded-xl border ${message.type === 'success'
-                                ? 'bg-green-500/20 border-green-500/30 text-green-300'
-                                : message.type === 'error'
-                                    ? 'bg-red-500/20 border-red-500/30 text-red-300'
-                                    : 'bg-blue-500/20 border-blue-500/30 text-blue-300'
+                            ? 'bg-green-500/20 border-green-500/30 text-green-300'
+                            : message.type === 'error'
+                                ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                                : 'bg-blue-500/20 border-blue-500/30 text-blue-300'
                             }`}>
                             {message.text}
                         </div>
@@ -304,8 +359,8 @@ export const Profile = () => {
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Steam Connected:</span>
-                                        <span className={`font-medium ${storeUser?.is_steam_connected  ? 'text-green-300' : 'text-red-300'}`}>
-                                            {storeUser?.is_steam_connected  ? 'Yes' : 'No'}
+                                        <span className={`font-medium ${storeUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
+                                            {storeUser?.is_steam_connected ? 'Yes' : 'No'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -330,8 +385,27 @@ export const Profile = () => {
                                         flex items-center justify-center space-x-2
                                     "
                                         />
+
                                     </div>
                                 )}
+                                {storeUser?.is_steam_connected && (
+                                    <div className="text-white/70 text-sm mb-4">
+                                        <p>Steam ID: {storeUser?.steam_id || 'Not found'}</p>
+                                        <p>Steam Profile: <a href={storeUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{storeUser?.steam_profile_url || 'Not available'}</a></p>
+                                    </div>
+                                )}
+
+                                {/* Disconnect Button */}
+                                <div className="mt-6">
+                                    {storeUser?.is_steam_connected && (
+                                        <button
+                                            onClick={handleDisconnectSteam}
+                                            className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all duration-300"
+                                        >
+                                            Disconnect Steam
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -407,8 +481,8 @@ export const Profile = () => {
                                         rows={4}
                                         placeholder="Tell other gamers about yourself..."
                                         className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 resize-none transition-all duration-300 ${isEditing
-                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
-                                                : 'cursor-not-allowed text-white/70'
+                                            ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
+                                            : 'cursor-not-allowed text-white/70'
                                             }`}
                                     />
                                 </div>
@@ -424,8 +498,8 @@ export const Profile = () => {
                                         disabled={!isEditing}
                                         placeholder="https://example.com/your-avatar.jpg"
                                         className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 transition-all duration-300 ${isEditing
-                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
-                                                : 'cursor-not-allowed text-white/70'
+                                            ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
+                                            : 'cursor-not-allowed text-white/70'
                                             }`}
                                     />
                                 </div>
@@ -439,8 +513,8 @@ export const Profile = () => {
                                         onChange={handleChange}
                                         disabled={!isEditing}
                                         className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white transition-all duration-300 ${isEditing
-                                                ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
-                                                : 'cursor-not-allowed text-white/70'
+                                            ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
+                                            : 'cursor-not-allowed text-white/70'
                                             }`}
                                     >
                                         <option value="">Select your style</option>
@@ -463,8 +537,8 @@ export const Profile = () => {
                                                 onClick={() => isEditing && handleGenreToggle(genre)}
                                                 disabled={!isEditing}
                                                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${formData.favorite_genres.includes(genre)
-                                                        ? 'bg-coral-500 text-white'
-                                                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                                                    ? 'bg-coral-500 text-white'
+                                                    : 'bg-white/10 text-white/70 hover:bg-white/20'
                                                     } ${!isEditing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                             >
                                                 {genre}

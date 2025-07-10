@@ -74,20 +74,20 @@ export const SteamCallback = () => {
         
         console.log("🔍 Steam connect response:", res.status, res.statusText);
         
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
-          console.error("❌ Backend connect failed:", res.status, errorData);
-          
-          // If it's an authentication error, redirect to login
-          if (res.status === 401) {
-            console.log("🔄 Authentication expired, redirecting to login...");
-            authService.clearTokens();
-            navigate('/login', { replace: true });
-            return;
-          }
-          
-          throw new Error(errorData.msg || `Backend connection failed (${res.status})`);
+
+      if (!res.ok) {
+        console.error("❌ Backend connect failed:", res.status, res.body);
+
+        if (res.status === 401) {
+          console.log("🔄 Authentication expired, redirecting to login...");
+          authService.clearTokens();
+          navigate("/login", { replace: true });
+          return;
         }
+
+        throw new Error(res.body?.msg || `Steam connection failed (${res.status})`);
+      }
+
         
         console.log("✅ Steam account connected successfully");
 

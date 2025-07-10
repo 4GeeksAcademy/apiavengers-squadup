@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store';
+import authService from '../store/authService';
 
 export const SignUp = () => {
     const [formData, setFormData] = useState({
@@ -113,11 +114,17 @@ export const SignUp = () => {
                 dispatch({
                     type: ACTION_TYPES.LOGIN_SUCCESS,
                     payload: {
-                    user: user,
-                    token: access_token
-                }
-            });
+                        user: user,
+                        token: access_token
+                    }
+                });
 
+                setFormData({
+                    email: '',
+                    username: '',
+                    password: '',
+                    confirmPassword: ''
+                });
 
                 // show success toast/message
                 dispatch({
@@ -125,8 +132,11 @@ export const SignUp = () => {
                     payload: { type: 'success', text: message || 'Account created!' }
                 });
 
-                
-                navigate('/dashboard', { replace: true });
+
+                setTimeout(() => {
+                    navigate('/login', { replace: true });
+                }, 500);
+
             } else {
                 // show backend-supplied error, or fallback
                 setErrors({ submit: data.error || data.message || 'Registration failed' });
@@ -220,6 +230,7 @@ export const SignUp = () => {
                                             name="email"
                                             value={formData.email}
                                             onChange={handleChange}
+                                            disabled={isLoading}
                                             className={`w-full px-4 py-3 bg-white/5 border ${errors.email
                                                 ? 'border-red-500/50 focus:border-red-500'
                                                 : 'border-white/20 focus:border-coral-500'
@@ -243,6 +254,7 @@ export const SignUp = () => {
                                             name="username"
                                             value={formData.username}
                                             onChange={handleChange}
+                                            disabled={isLoading}
                                             className={`w-full px-4 py-3 bg-white/5 border ${errors.username
                                                 ? 'border-red-500/50 focus:border-red-500'
                                                 : 'border-white/20 focus:border-coral-500'
@@ -266,6 +278,7 @@ export const SignUp = () => {
                                             name="password"
                                             value={formData.password}
                                             onChange={handleChange}
+                                            disabled={isLoading}
                                             className={`w-full px-4 py-3 pr-12 bg-white/5 border ${errors.password
                                                 ? 'border-red-500/50 focus:border-red-500'
                                                 : 'border-white/20 focus:border-coral-500'
@@ -296,6 +309,7 @@ export const SignUp = () => {
                                             name="confirmPassword"
                                             value={formData.confirmPassword}
                                             onChange={handleChange}
+                                            disabled={isLoading}
                                             className={`w-full px-4 py-3 pr-12 bg-white/5 border ${errors.confirmPassword
                                                 ? 'border-red-500/50 focus:border-red-500'
                                                 : 'border-white/20 focus:border-coral-500'
@@ -305,6 +319,7 @@ export const SignUp = () => {
                                         <button
                                             type="button"
                                             onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                            disabled={isLoading}
                                             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200"
                                         >
                                             {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
@@ -343,6 +358,7 @@ export const SignUp = () => {
                             <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group">
                                 <span className="text-lg">🎮</span>
                                 <span className="group-hover:text-blue-300 transition-colors duration-300">Connect with Steam</span>
+                                disabled={isLoading}
                             </button>
 
                             {/* Login Link */}
