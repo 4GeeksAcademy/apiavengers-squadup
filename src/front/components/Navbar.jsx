@@ -1,5 +1,5 @@
 import React, { useContext, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom'; // Added useNavigate
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -10,6 +10,7 @@ export const Navbar = () => {
     const [isAuthenticated, setIsAuthenticated] = React.useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const location = useLocation();
+    const navigate = useNavigate(); // Add navigate hook
 
     // Check if we're on auth pages where we don't want to show the navbar
     const authPages = ['/login', '/signup'];
@@ -36,27 +37,27 @@ export const Navbar = () => {
         setUser(null);
         setIsAuthenticated(false);
         setShowUserMenu(false);
-        window.location.href = '/';
+        navigate('/'); // Fixed: Use navigate instead of window.location.href
     };
 
     const navigateToProfile = () => {
-        window.location.href = '/profile';
+        navigate('/profile'); // Fixed: Use navigate instead of window.location.href
     };
 
     const navigateToLogin = () => {
-        window.location.href = '/login';
+        navigate('/login'); // Fixed: Use navigate instead of window.location.href
     };
 
     const navigateToSignUp = () => {
-        window.location.href = '/signup';
+        navigate('/signup'); // Fixed: Use navigate instead of window.location.href
     };
 
     const navigateToHome = () => {
-        window.location.href = '/';
+        navigate('/'); // Fixed: Use navigate instead of window.location.href
     };
 
     const navigateToDashboard = () => {
-        window.location.href = '/dashboard';
+        navigate('/dashboard'); // Fixed: Use navigate instead of window.location.href
     };
 
     return (
