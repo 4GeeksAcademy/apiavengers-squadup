@@ -1,4 +1,4 @@
-// src/front/routes.jsx - Fixed with correct file imports
+// src/front/routes.jsx - Fixed with Hash Router for SPA routing
 
 import {
     createBrowserRouter,

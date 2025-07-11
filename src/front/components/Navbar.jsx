@@ -37,27 +37,40 @@ export const Navbar = () => {
         setUser(null);
         setIsAuthenticated(false);
         setShowUserMenu(false);
-        navigate('/');
+        navigate('/'); // Use navigate instead of window.location
     };
 
     const navigateToProfile = () => {
-        navigate('/profile');
+        navigate('/profile'); // Use navigate instead of window.location
     };
 
     const navigateToLogin = () => {
-        navigate('/login');
+        navigate('/login'); // Use navigate instead of window.location
     };
 
     const navigateToSignUp = () => {
-        navigate('/signup');
+        navigate('/signup'); // Use navigate instead of window.location
     };
 
     const navigateToHome = () => {
-        navigate('/');
+        navigate('/'); // Use navigate instead of window.location
     };
 
     const navigateToDashboard = () => {
-        navigate('/dashboard');
+        navigate('/dashboard'); // Use navigate instead of window.location
+    };
+
+    const navigateToFindGames = () => {
+        navigate('/sessions'); // Use navigate instead of window.location
+    };
+
+    const navigateToFriends = () => {
+        navigate('/friends'); // Use navigate instead of window.location
+    };
+
+    const navigateToAbout = () => {
+        // You can create an about page or scroll to about section
+        console.log('About page - to be implemented');
     };
 
     return (
@@ -91,11 +104,13 @@ export const Navbar = () => {
                                     Dashboard
                                 </button>
                                 <button 
+                                    onClick={navigateToFindGames}
                                     className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                                 >
                                     Find Games
                                 </button>
                                 <button 
+                                    onClick={navigateToFriends}
                                     className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                                 >
                                     Friends
@@ -103,6 +118,7 @@ export const Navbar = () => {
                             </>
                         ) : (
                             <button 
+                                onClick={navigateToAbout}
                                 className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
                             >
                                 About
@@ -158,10 +174,10 @@ export const Navbar = () => {
                                                 <span>Dashboard</span>
                                             </span>
                                         </button>
-                                        <button className="dropdown-item">
+                                        <button className="dropdown-item" onClick={navigateToFindGames}>
                                             <span className="flex items-center space-x-2">
                                                 <span>🎮</span>
-                                                <span>Gaming Preferences</span>
+                                                <span>Find Games</span>
                                             </span>
                                         </button>
                                         <button className="dropdown-item">

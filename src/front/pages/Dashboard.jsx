@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export const Dashboard = () => {
+    const navigate = useNavigate(); // Add React Router navigation
     const [user, setUser] = useState(null);
     const [stats, setStats] = useState({
         totalSessions: 0,
@@ -79,16 +81,22 @@ export const Dashboard = () => {
         }
     };
 
+    // Fixed navigation functions using React Router
     const navigateToSessions = () => {
-        window.location.href = '/sessions';
+        navigate('/sessions');
     };
 
     const navigateToProfile = () => {
-        window.location.href = '/profile';
+        navigate('/profile');
+    };
+
+    const navigateToFriends = () => {
+        navigate('/friends');
     };
 
     const createNewSession = () => {
         console.log('Create new session - implement later');
+        // navigate('/sessions/new'); // Future implementation
     };
 
     if (isLoading) {
@@ -284,12 +292,18 @@ export const Dashboard = () => {
                                     🎯 Create New Session
                                 </button>
                                 
-                                <button className="w-full p-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2">
+                                <button 
+                                    onClick={navigateToFriends}
+                                    className="w-full p-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2"
+                                >
                                     <span>👥</span>
                                     <span>Find Friends</span>
                                 </button>
                                 
-                                <button className="w-full p-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2">
+                                <button 
+                                    onClick={navigateToSessions}
+                                    className="w-full p-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2"
+                                >
                                     <span>🔍</span>
                                     <span>Browse Public Sessions</span>
                                 </button>
