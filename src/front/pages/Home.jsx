@@ -213,13 +213,14 @@ const GamingAnimations = ({ children, className = "" }) => {
   );
 };
 
-// Enhanced Gaming Button Component with GSAP
+// Enhanced Gaming Button Component with GSAP and Navigation
 const GamingButton = ({ 
   children, 
   variant = "primary", 
   className = "", 
   onClick,
   disabled = false,
+  to,
   ...props 
 }) => {
   const buttonRef = useRef(null);
@@ -290,6 +291,18 @@ const GamingButton = ({
     }
   };
 
+  const handleButtonClick = (e) => {
+    // Execute the GSAP animation first
+    if (onClick) {
+      onClick(e);
+    }
+    
+    // Navigate if 'to' prop is provided
+    if (to && !disabled) {
+      navigate(to);
+    }
+  };
+
   return (
     <button
       ref={buttonRef}
@@ -300,7 +313,7 @@ const GamingButton = ({
         ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
         ${className}
       `}
-      onClick={onClick}
+      onClick={handleButtonClick}
       disabled={disabled}
       {...props}
     >
@@ -384,7 +397,6 @@ const GamingCard = ({ children, className = "", ...props }) => {
 // Main Home Component with Fixed Navigation
 export const Home = () => {
   const [activeTab, setActiveTab] = useState('home');
-  const navigate = useNavigate();
   
   return (
     <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
@@ -468,21 +480,15 @@ export const Home = () => {
 
         {/* Interactive buttons showcase - FIXED NAVIGATION */}
         <div className="flex flex-wrap justify-center gap-6 mb-12" data-animate="true">
-          <Link to="/signup">
-            <GamingButton variant="primary">
-              Start Gaming
-            </GamingButton>
-          </Link>
-          <Link to="/demo">
-            <GamingButton variant="neon">
-              Try Demo
-            </GamingButton>
-          </Link>
-          <Link to="/login">
-            <GamingButton variant="ghost">
-              Sign In
-            </GamingButton>
-          </Link>
+          <GamingButton variant="primary" to="/signup">
+            Start Gaming
+          </GamingButton>
+          <GamingButton variant="neon" to="/demo">
+            Try Demo
+          </GamingButton>
+          <GamingButton variant="ghost" to="/login">
+            Sign In
+          </GamingButton>
         </div>
 
         {/* Stats section with animated counters */}
@@ -518,16 +524,12 @@ export const Home = () => {
               create groups, and vote on what to play next!
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/signup">
-                <GamingButton variant="primary" className="text-lg px-12 py-4">
-                  Get Started Free
-                </GamingButton>
-              </Link>
-              <Link to="/demo">
-                <GamingButton variant="ghost" className="text-lg px-12 py-4">
-                  Watch Demo
-                </GamingButton>
-              </Link>
+              <GamingButton variant="primary" className="text-lg px-12 py-4" to="/signup">
+                Get Started Free
+              </GamingButton>
+              <GamingButton variant="ghost" className="text-lg px-12 py-4" to="/demo">
+                Watch Demo
+              </GamingButton>
             </div>
           </GamingCard>
         </div>
