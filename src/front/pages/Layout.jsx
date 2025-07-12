@@ -3,6 +3,7 @@ import React from "react";
 import { Outlet } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
+import { AccessibilityToggle } from "../components/AccessibilityToggle"; // ✅ 1. Import the new component
 
 export const Layout = () => {
     return (
@@ -18,6 +19,9 @@ export const Layout = () => {
             
             {/* Footer */}
             <Footer />
+
+            {/* ✅ 2. Add the Accessibility Toggle component here. It will be fixed to the viewport. */}
+            <AccessibilityToggle />
         </div>
     );
 };

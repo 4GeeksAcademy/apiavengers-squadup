@@ -1,59 +1,50 @@
 import React, { useEffect, useState } from 'react';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-
-gsap.registerPlugin(ScrollTrigger);
+import { Navigate } from 'react-router-dom'; // ✅ Import Navigate for proper redirection
 
 export const ProtectedRoute = ({ children }) => {
-    const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading
+    const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading state
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
+        const checkAuth = async () => {
+            try {
+                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+                
+                if (!token) {
+                    setIsAuthenticated(false);
+                    return; // Exit early
+                }
+
+                // Verify token with the backend
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                const response = await fetch(`${backendUrl}/api/auth/verify`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (response.ok) {
+                    setIsAuthenticated(true);
+                } else {
+                    // Token is invalid, so remove it
+                    localStorage.removeItem('token');
+                    sessionStorage.removeItem('token');
+                    setIsAuthenticated(false);
+                }
+            } catch (error) {
+                console.error('Auth verification failed:', error);
+                setIsAuthenticated(false);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
         checkAuth();
     }, []);
 
-    const checkAuth = async () => {
-        try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            
-            if (!token) {
-                setIsAuthenticated(false);
-                setIsLoading(false);
-                return;
-            }
-
-            // Verify token with backend
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await fetch(`${backendUrl}/api/auth/verify`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (response.ok) {
-                setIsAuthenticated(true);
-            } else {
-                // Token is invalid, remove it
-                localStorage.removeItem('token');
-                sessionStorage.removeItem('token');
-                setIsAuthenticated(false);
-            }
-        } catch (error) {
-            console.error('Auth verification failed:', error);
-            setIsAuthenticated(false);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const redirectToLogin = () => {
-        // In actual implementation, use react-router navigation
-        window.location.href = '/login';
-    };
-
-    // Show loading spinner while checking authentication
+    // While checking authentication, show a loading indicator
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900">
@@ -65,12 +56,12 @@ export const ProtectedRoute = ({ children }) => {
         );
     }
 
-    // Redirect to login if not authenticated
+    // ✅ FIXED: If not authenticated, redirect using the Navigate component
     if (!isAuthenticated) {
-        redirectToLogin();
-        return null;
+        // This handles redirection within the React Router ecosystem without a full page reload.
+        return <Navigate to="/login" replace />;
     }
 
-    // Render protected content if authenticated
+    // If authenticated, render the protected content
     return children;
 };

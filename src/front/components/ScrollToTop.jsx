@@ -1,30 +1,26 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useLocation } from "react-router-dom"; // ✅ Import the useLocation hook
 import PropTypes from "prop-types";
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
-gsap.registerPlugin(ScrollTrigger);
+// This component scrolls the window to the top on every route change.
+// This version uses hooks to be self-contained and is the modern standard for React Router v6.
+const ScrollToTop = ({ children }) => {
+    // ✅ Get the pathname from the current location
+    const { pathname } = useLocation();
 
-// This component allows the scroll to go to the beginning when changing the view,
-// otherwise it would remain in the position of the previous view. 
-// Investigate more about this React behavior :D 
-
-const ScrollToTop = ({ location, children }) => {
-    const prevLocation = useRef(location);
-
+    // ✅ The effect now runs automatically whenever the pathname changes
     useEffect(() => {
-        if (location !== prevLocation.current) {
-            window.scrollTo(0, 0);
-        }
-        prevLocation.current = location;
-    }, [location]);
+        // This will scroll the window to the top of the page
+        window.scrollTo(0, 0);
+    }, [pathname]); // The dependency array ensures this effect runs only when the pathname changes
 
+    // The component simply renders its children
     return children;
 };
 
 export default ScrollToTop;
 
+// ✅ Updated PropTypes to remove the location requirement
 ScrollToTop.propTypes = {
-    location: PropTypes.object,
-    children: PropTypes.any
+    children: PropTypes.any.isRequired
 };

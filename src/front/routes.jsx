@@ -1,74 +1,39 @@
-// src/front/routes.jsx - Fixed with Hash Router for SPA routing
+import React from "react";
+import { createBrowserRouter, createRoutesFromElements, Route } from "react-router-dom";
 
-import {
-    createBrowserRouter,
-    createRoutesFromElements,
-    Route,
-} from "react-router-dom";
+// Import your page components
 import { Layout } from "./pages/Layout";
 import { Home } from "./pages/Home";
-import { Single } from "./pages/Single";
-import { Demo } from "./pages/Demo";
 import { SignUp } from "./pages/SignUp";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
+import { Demo } from "./pages/Demo";
+import { Single } from "./pages/Single";
 import { Profile } from "./pages/Profile";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
-        // Root Route: All navigation will start from here
-        <Route path="/" element={<Layout />} errorElement={<h1>Not found!</h1>}>
+        <Route errorElement={<h1>Something went wrong! A custom error page would be better.</h1>}>
             
-            {/* Public Routes */}
-            <Route path="/" element={<Home />} />
-            <Route path="/demo" element={<Demo />} />
-            <Route path="/single/:theId" element={<Single />} />
-            
-            {/* Authentication Routes */}
-            <Route path="/signup" element={<SignUp />} />
+            {/* Routes with the main Navbar and Footer */}
+            <Route element={<Layout />}>
+                <Route path="/" element={<Home />} />
+                <Route path="/demo" element={<Demo />} />
+                <Route path="/single/:theId" element={<Single />} />
+                
+                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                
+                {/* Add other protected routes that use the main layout here */}
+                <Route path="/sessions" element={<ProtectedRoute><div>Sessions Page</div></ProtectedRoute>} />
+                <Route path="/friends" element={<ProtectedRoute><div>Friends Page</div></ProtectedRoute>} />
+            </Route>
+
+            {/* Standalone routes without the main Navbar/Footer */}
             <Route path="/login" element={<Login />} />
-            
-            {/* Protected Routes - Require Authentication */}
-            <Route path="/dashboard" element={
-                <ProtectedRoute>
-                    <Dashboard />
-                </ProtectedRoute>
-            } />
-            
-            <Route path="/profile" element={
-                <ProtectedRoute>
-                    <Profile />
-                </ProtectedRoute>
-            } />
-            
-            {/* Gaming Routes - Future implementation */}
-            <Route path="/sessions" element={
-                <ProtectedRoute>
-                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
-                        <div className="max-w-4xl mx-auto">
-                            <div className="glass rounded-3xl p-8 text-center">
-                                <h1 className="text-3xl font-bold text-white mb-4">Gaming Sessions</h1>
-                                <p className="text-white/70">Coming soon! This will show all your gaming sessions.</p>
-                            </div>
-                        </div>
-                    </div>
-                </ProtectedRoute>
-            } />
-            
-            <Route path="/friends" element={
-                <ProtectedRoute>
-                    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
-                        <div className="max-w-4xl mx-auto">
-                            <div className="glass rounded-3xl p-8 text-center">
-                                <h1 className="text-3xl font-bold text-white mb-4">Friends</h1>
-                                <p className="text-white/70">Coming soon! This will show your gaming friends.</p>
-                            </div>
-                        </div>
-                    </div>
-                </ProtectedRoute>
-            } />
-            
+            <Route path="/signup" element={<SignUp />} />
+
         </Route>
     )
 );

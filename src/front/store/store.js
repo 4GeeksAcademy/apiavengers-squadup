@@ -1,4 +1,4 @@
-// src/front/store/store.js - Fixed reducer pattern
+// src/front/store/store.js - Updated with Accessibility Feature
 
 // Initial state function
 export const initialStore = () => ({
@@ -9,6 +9,8 @@ export const initialStore = () => ({
     isAuthenticated: false,
     authLoading: false,
     authError: null,
+    // ✅ 1. Add animation state here
+    animationsEnabled: true, 
     // Demo data for existing functionality
     todos: [
         {
@@ -43,12 +45,24 @@ export const ACTION_TYPES = {
     
     // Message actions
     SET_MESSAGE: 'set_message',
-    CLEAR_MESSAGE: 'clear_message'
+    CLEAR_MESSAGE: 'clear_message',
+
+    // ✅ 2. Add the new action type
+    TOGGLE_ANIMATIONS: 'toggle_animations'
 };
 
 // Main reducer function
 const storeReducer = (state, action) => {
     switch (action.type) {
+        // ✅ 3. Add the new case for toggling animations
+        case ACTION_TYPES.TOGGLE_ANIMATIONS:
+            return {
+                ...state,
+                animationsEnabled: !state.animationsEnabled
+            };
+            
+        // --- Existing Actions ---
+        
         // Demo actions
         case ACTION_TYPES.SET_HELLO:
             return {

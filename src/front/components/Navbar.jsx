@@ -1,7 +1,8 @@
-import React, { useContext, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { GamingLink } from './GamingAnimations'; // ✅ Import the new GamingLink component
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -12,20 +13,16 @@ export const Navbar = () => {
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Check if we're on auth pages where we don't want to show the navbar
     const authPages = ['/login', '/signup'];
     const isAuthPage = authPages.includes(location.pathname);
 
-    // Don't render navbar on auth pages
     if (isAuthPage) {
         return null;
     }
 
-    // Check authentication status on component mount
     React.useEffect(() => {
         const token = localStorage.getItem('token') || sessionStorage.getItem('token');
         if (token) {
-            // In real implementation, verify token and get user data
             setIsAuthenticated(true);
             setUser({ username: 'Player1', avatar_url: null });
         }
@@ -37,40 +34,7 @@ export const Navbar = () => {
         setUser(null);
         setIsAuthenticated(false);
         setShowUserMenu(false);
-        navigate('/'); // Use navigate instead of window.location
-    };
-
-    const navigateToProfile = () => {
-        navigate('/profile'); // Use navigate instead of window.location
-    };
-
-    const navigateToLogin = () => {
-        navigate('/login'); // Use navigate instead of window.location
-    };
-
-    const navigateToSignUp = () => {
-        navigate('/signup'); // Use navigate instead of window.location
-    };
-
-    const navigateToHome = () => {
-        navigate('/'); // Use navigate instead of window.location
-    };
-
-    const navigateToDashboard = () => {
-        navigate('/dashboard'); // Use navigate instead of window.location
-    };
-
-    const navigateToFindGames = () => {
-        navigate('/sessions'); // Use navigate instead of window.location
-    };
-
-    const navigateToFriends = () => {
-        navigate('/friends'); // Use navigate instead of window.location
-    };
-
-    const navigateToAbout = () => {
-        // You can create an about page or scroll to about section
-        console.log('About page - to be implemented');
+        navigate('/');
     };
 
     return (
@@ -78,9 +42,8 @@ export const Navbar = () => {
             <div className="navbar-glass">
                 <div className="flex justify-between items-center">
                     
-                    {/* Logo and Brand */}
-                    <button 
-                        onClick={navigateToHome}
+                    <Link 
+                        to="/"
                         className="flex items-center space-x-3 group"
                     >
                         <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
@@ -89,57 +52,37 @@ export const Navbar = () => {
                         <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
                             SquadUp
                         </span>
-                    </button>
+                    </Link>
 
-                    {/* Navigation Links and User Menu */}
                     <div className="flex items-center space-x-6">
                         
-                        {/* Navigation Links - Show different links based on auth status */}
                         {isAuthenticated ? (
                             <>
-                                <button 
-                                    onClick={navigateToDashboard}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
-                                >
+                                <Link to="/dashboard" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
                                     Dashboard
-                                </button>
-                                <button 
-                                    onClick={navigateToFindGames}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
-                                >
+                                </Link>
+                                <Link to="/sessions" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
                                     Find Games
-                                </button>
-                                <button 
-                                    onClick={navigateToFriends}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
-                                >
+                                </Link>
+                                <Link to="/friends" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
                                     Friends
-                                </button>
+                                </Link>
                             </>
                         ) : (
-                            <button 
-                                onClick={navigateToAbout}
-                                className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
-                            >
-                                About
-                            </button>
+                            <Link to="/demo" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
+                                Demo
+                            </Link>
                         )}
 
-                        {/* User Menu or Auth Buttons */}
                         {isAuthenticated ? (
                             <div className="flex items-center space-x-4">
-                                {/* User Avatar and Menu */}
                                 <div className="relative">
                                     <button 
                                         onClick={() => setShowUserMenu(!showUserMenu)}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
                                     >
                                         {user?.avatar_url ? (
-                                            <img 
-                                                src={user.avatar_url} 
-                                                alt="Avatar" 
-                                                className="w-8 h-8 rounded-full"
-                                            />
+                                            <img src={user.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full" />
                                         ) : (
                                             <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center">
                                                 <span className="text-white font-bold text-sm">
@@ -150,74 +93,49 @@ export const Navbar = () => {
                                         <span className="text-white font-medium hidden sm:block">
                                             {user?.username || 'User'}
                                         </span>
-                                        <svg 
-                                            className={`w-4 h-4 text-white/60 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`}
-                                            fill="none" 
-                                            stroke="currentColor" 
-                                            viewBox="0 0 24 24"
-                                        >
+                                        <svg className={`w-4 h-4 text-white/60 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
                                     
-                                    {/* Dropdown menu */}
                                     <div className={`nav-dropdown ${showUserMenu ? 'active' : ''}`}>
-                                        <button className="dropdown-item" onClick={navigateToProfile}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>👤</span>
-                                                <span>Profile Settings</span>
-                                            </span>
-                                        </button>
-                                        <button className="dropdown-item" onClick={navigateToDashboard}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>📊</span>
-                                                <span>Dashboard</span>
-                                            </span>
-                                        </button>
-                                        <button className="dropdown-item" onClick={navigateToFindGames}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>🎮</span>
-                                                <span>Find Games</span>
-                                            </span>
-                                        </button>
+                                        <Link to="/profile" className="dropdown-item">
+                                            <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
+                                        </Link>
+                                        <Link to="/dashboard" className="dropdown-item">
+                                            <span className="flex items-center space-x-2"><span>📊</span><span>Dashboard</span></span>
+                                        </Link>
+                                        <Link to="/sessions" className="dropdown-item">
+                                            <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
+                                        </Link>
                                         <button className="dropdown-item">
-                                            <span className="flex items-center space-x-2">
-                                                <span>🔗</span>
-                                                <span>Steam Integration</span>
-                                            </span>
+                                            <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
                                         </button>
                                         <hr className="my-2 border-white/20" />
                                         <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>🚪</span>
-                                                <span>Logout</span>
-                                            </span>
+                                            <span className="flex items-center space-x-2"><span>🚪</span><span>Logout</span></span>
                                         </button>
                                     </div>
                                 </div>
                             </div>
                         ) : (
-                            /* Auth Buttons for non-authenticated users */
                             <div className="flex items-center space-x-3">
-                                <button
-                                    onClick={navigateToLogin}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
-                                >
+                                <Link to="/login" className="text-white/80 hover:text-white transition-colors duration-300 font-medium">
                                     Login
-                                </button>
-                                <button
-                                    onClick={navigateToSignUp}
-                                    className="btn-coral"
+                                </Link>
+                                {/* ✅ FIXED: Replaced standard Link with GamingLink for animated navigation */}
+                                <GamingLink
+                                    to="/signup"
+                                    variant="primary" // Matches the coral/orange theme for primary actions
                                 >
                                     Sign Up
-                                </button>
+                                </GamingLink>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Click outside to close dropdown */}
             {showUserMenu && (
                 <div 
                     className="fixed inset-0 z-40" 

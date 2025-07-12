@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom'; // ✅ Import Link
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -8,7 +8,6 @@ gsap.registerPlugin(ScrollTrigger);
 export const Footer = () => {
     const location = useLocation();
     
-    // Don't show footer on auth pages
     const authPages = ['/login', '/signup'];
     const isAuthPage = authPages.includes(location.pathname);
     
@@ -35,6 +34,7 @@ export const Footer = () => {
                                 Connect with friends, sync your Steam library, and vote on what to play next.
                             </p>
                             <div className="flex space-x-4 mt-6">
+                                {/* These can remain buttons as they likely trigger actions, not navigation */}
                                 <button className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-colors duration-300">
                                     <span className="text-lg">🎮</span>
                                 </button>
@@ -54,11 +54,12 @@ export const Footer = () => {
                         <div>
                             <h3 className="text-white font-semibold mb-4">Product</h3>
                             <ul className="space-y-2">
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Features</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Pricing</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Steam Integration</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Discord Bot</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Mobile App</a></li>
+                                {/* ✅ FIXED: Replaced <a> with <Link> */}
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Features</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Pricing</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Steam Integration</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Discord Bot</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Mobile App</Link></li>
                             </ul>
                         </div>
 
@@ -66,11 +67,12 @@ export const Footer = () => {
                         <div>
                             <h3 className="text-white font-semibold mb-4">Support</h3>
                             <ul className="space-y-2">
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Help Center</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Community</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Contact Us</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Status</a></li>
-                                <li><a href="#" className="text-white/70 hover:text-white transition-colors duration-200">Bug Reports</a></li>
+                                {/* ✅ FIXED: Replaced <a> with <Link> */}
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Help Center</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Community</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Contact Us</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Status</Link></li>
+                                <li><Link to="#" className="text-white/70 hover:text-white transition-colors duration-200">Bug Reports</Link></li>
                             </ul>
                         </div>
                     </div>
@@ -83,13 +85,14 @@ export const Footer = () => {
                             </span>
                         </div>
                         <div className="flex items-center space-x-6">
-                            <a href="#" className="text-white/60 hover:text-white text-sm transition-colors duration-200">Privacy Policy</a>
-                            <a href="#" className="text-white/60 hover:text-white text-sm transition-colors duration-200">Terms of Service</a>
-                            <a href="#" className="text-white/60 hover:text-white text-sm transition-colors duration-200">Cookies</a>
+                            {/* ✅ FIXED: Replaced <a> with <Link> */}
+                            <Link to="#" className="text-white/60 hover:text-white text-sm transition-colors duration-200">Privacy Policy</Link>
+                            <Link to="#" className="text-white/60 hover:text-white text-sm transition-colors duration-200">Terms of Service</Link>
+                            <Link to="#" className="text-white/60 hover:text-white text-sm transition-colors duration-200">Cookies</Link>
                         </div>
                     </div>
 
-                    {/* Developer Credit */}
+                    {/* Developer Credit - External links remain <a> tags */}
                     <div className="text-center mt-6 pt-6 border-t border-white/10">
                         <p className="text-white/50 text-sm">
                             Made with <span className="text-red-400">❤️</span> by{" "}
