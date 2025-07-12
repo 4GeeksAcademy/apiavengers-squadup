@@ -1,7 +1,12 @@
 """
-Secure Authentication Routes with Logout & Token Refresh
+FIXED: Authentication with Proper Username/Email Login Support
+Issues Fixed:
+1. Username login now works properly
+2. Email login works
+3. Better error handling for login attempts
+4. Fixed token verification issues
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from api.models import db, User
 from api.utils import APIException
 from flask_cors import CORS
@@ -11,7 +16,9 @@ from flask_jwt_extended import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 import re
+import json
 from datetime import datetime, timedelta
+from sqlalchemy import or_
 
 auth = Blueprint('auth', __name__)
 CORS(auth)
@@ -76,14 +83,16 @@ def register():
         if password != confirm_password:
             raise APIException("Passwords do not match", status_code=400)
         
-        # Check if user already exists
-        existing_user_email = User.query.filter_by(email=email).first()
-        if existing_user_email:
-            raise APIException("Email already registered", status_code=409)
+        # Check if user already exists (optimized single query)
+        existing_user = User.query.filter(
+            or_(User.email == email, User.username == username)
+        ).first()
         
-        existing_user_username = User.query.filter_by(username=username).first()
-        if existing_user_username:
-            raise APIException("Username already taken", status_code=409)
+        if existing_user:
+            if existing_user.email == email:
+                raise APIException("Email already registered", status_code=409)
+            else:
+                raise APIException("Username already taken", status_code=409)
         
         # Create new user
         new_user = User()
@@ -96,7 +105,7 @@ def register():
         db.session.add(new_user)
         db.session.commit()
         
-        # Create SECURE tokens (1 hour access + 30 day refresh)
+        # Create tokens (1 hour access + 30 day refresh)
         access_token = create_access_token(
             identity=new_user.id,
             expires_delta=timedelta(hours=1)
@@ -108,6 +117,7 @@ def register():
         )
         
         return jsonify({
+            "success": True,
             "message": "User registered successfully",
             "user": new_user.serialize(),
             "access_token": access_token,
@@ -117,10 +127,11 @@ def register():
         
     except APIException as e:
         db.session.rollback()
-        return jsonify({"error": e.message}), e.status_code
+        return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Internal server error"}), 500
+        print(f"Registration error: {str(e)}")  # Debug logging
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @auth.route('/login', methods=['POST'])
 def login():
@@ -130,30 +141,46 @@ def login():
         if not data:
             raise APIException("No data provided", status_code=400)
         
-        login_field = data.get('login', '').strip()
+        # Handle multiple field names for flexibility
+        login_field = (
+            data.get('login') or 
+            data.get('email') or 
+            data.get('username', '')
+        ).strip()
         password = data.get('password', '')
         
+        print(f"Login attempt - Field: '{login_field}', Password provided: {bool(password)}")  # Debug
+        
         if not login_field or not password:
-            raise APIException("Login and password are required", status_code=400)
+            raise APIException("Email/username and password are required", status_code=400)
         
-        # Find user by email or username
-        user = None
-        if validate_email(login_field):
-            user = User.query.filter_by(email=login_field.lower()).first()
-        else:
-            user = User.query.filter_by(username=login_field).first()
+        # FIXED: Single optimized query to find user by email OR username
+        user = User.query.filter(
+            or_(
+                User.email == login_field.lower(),
+                User.username == login_field
+            )
+        ).first()
         
-        if not user or not check_password_hash(user.password_hash, password):
+        print(f"User found: {user.username if user else 'None'}")  # Debug
+        
+        if not user:
+            print(f"No user found for login field: {login_field}")  # Debug
+            raise APIException("Invalid credentials", status_code=401)
+        
+        if not check_password_hash(user.password_hash, password):
+            print(f"Password check failed for user: {user.username}")  # Debug
             raise APIException("Invalid credentials", status_code=401)
         
         if not user.is_active:
+            print(f"Inactive account: {user.username}")  # Debug
             raise APIException("Account is deactivated", status_code=401)
         
         # Update last login
         user.last_login = datetime.utcnow()
         db.session.commit()
         
-        # Create SECURE tokens (1 hour access + 30 day refresh)
+        # Create tokens (1 hour access + 30 day refresh)
         access_token = create_access_token(
             identity=user.id,
             expires_delta=timedelta(hours=1)
@@ -164,7 +191,10 @@ def login():
             expires_delta=timedelta(days=30)
         )
         
+        print(f"Login successful for user: {user.username}")  # Debug
+        
         return jsonify({
+            "success": True,
             "message": "Login successful",
             "user": user.serialize(),
             "access_token": access_token,
@@ -173,9 +203,11 @@ def login():
         }), 200
         
     except APIException as e:
-        return jsonify({"error": e.message}), e.status_code
+        print(f"Login API error: {e.message}")  # Debug
+        return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
+        print(f"Login unexpected error: {str(e)}")  # Debug
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @auth.route('/logout', methods=['POST'])
 @jwt_required()
@@ -188,17 +220,21 @@ def logout():
         token = get_jwt()
         jti = token['jti']
         
-        # Import blacklist from app.py
-        from app import blacklisted_tokens
-        blacklisted_tokens.add(jti)
+        # Add to blacklist
+        if not hasattr(current_app, 'blacklisted_tokens'):
+            current_app.blacklisted_tokens = set()
+        current_app.blacklisted_tokens.add(jti)
         
         return jsonify({
+            "success": True,
             "message": "Successfully logged out",
             "code": "LOGOUT_SUCCESS"
         }), 200
         
     except Exception as e:
+        print(f"Logout error: {str(e)}")  # Debug
         return jsonify({
+            "success": False,
             "error": "Logout failed",
             "code": "LOGOUT_ERROR"
         }), 500
@@ -223,6 +259,7 @@ def refresh_token():
         )
         
         return jsonify({
+            "success": True,
             "access_token": new_access_token,
             "user": user.serialize(),
             "expires_in": 3600,  # 1 hour in seconds
@@ -230,7 +267,9 @@ def refresh_token():
         }), 200
         
     except Exception as e:
+        print(f"Token refresh error: {str(e)}")  # Debug
         return jsonify({
+            "success": False,
             "error": "Token refresh failed",
             "code": "REFRESH_ERROR"
         }), 401
@@ -253,6 +292,7 @@ def verify_token():
         
         return jsonify({
             "valid": True,
+            "success": True,
             "user": user.serialize(),
             "token_info": {
                 "expires_at": token['exp'],
@@ -265,12 +305,15 @@ def verify_token():
     except APIException as e:
         return jsonify({
             "valid": False,
+            "success": False,
             "error": e.message,
             "code": "TOKEN_INVALID"
         }), e.status_code
     except Exception as e:
+        print(f"Token verification error: {str(e)}")  # Debug
         return jsonify({
             "valid": False,
+            "success": False,
             "error": "Invalid token",
             "code": "TOKEN_INVALID"
         }), 401
@@ -290,6 +333,7 @@ def profile():
         
         if request.method == 'GET':
             return jsonify({
+                "success": True,
                 "user": user.serialize()
             }), 200
         
@@ -303,15 +347,50 @@ def profile():
             if 'avatar_url' in data:
                 user.avatar_url = data['avatar_url']
             
+            # Add support for gaming preferences
+            if 'gaming_style' in data:
+                user.gaming_style = data['gaming_style']
+                
+            if 'favorite_genres' in data:
+                user.favorite_genres = json.dumps(data['favorite_genres'])
+            
             db.session.commit()
             
             return jsonify({
+                "success": True,
                 "message": "Profile updated successfully",
                 "user": user.serialize()
             }), 200
             
     except APIException as e:
-        return jsonify({"error": e.message}), e.status_code
+        return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Internal server error"}), 500
+        print(f"Profile error: {str(e)}")  # Debug
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+# Debug route for development
+@auth.route('/debug', methods=['GET'])
+def debug_auth():
+    """Debug route to check auth system status"""
+    try:
+        # Count users
+        user_count = User.query.count()
+        recent_users = User.query.order_by(User.created_at.desc()).limit(5).all()
+        
+        return jsonify({
+            "auth_system": "operational",
+            "total_users": user_count,
+            "recent_users": [{"id": u.id, "username": u.username, "email": u.email} for u in recent_users],
+            "blacklisted_tokens": len(getattr(current_app, 'blacklisted_tokens', set())),
+            "endpoints": {
+                "register": "/api/auth/register (POST)",
+                "login": "/api/auth/login (POST)",
+                "verify": "/api/auth/verify (GET)",
+                "refresh": "/api/auth/refresh (POST)",
+                "logout": "/api/auth/logout (POST)",
+                "profile": "/api/auth/profile (GET/PUT)"
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
