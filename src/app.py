@@ -1,11 +1,9 @@
 """
-Production-Ready JWT Security Configuration
-Bugs Fixed:
-1. Blacklist token management simplified
-2. Rate limiting improved
-3. Error handling enhanced
-4. Import issues resolved
+FIXED CORS Configuration for GitHub Codespaces
+==============================================
+Replace the CORS configuration in your src/app.py
 """
+
 import os
 from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
@@ -29,15 +27,40 @@ static_file_dir = os.path.join(os.path.dirname(
 app = Flask(__name__)
 app.url_map.strict_slashes = False
 
-# Enhanced CORS configuration
-CORS(app, origins=[
-    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
+# ============================================================================
+# FIXED CORS CONFIGURATION FOR GITHUB CODESPACES
+# ============================================================================
+
+# Get Codespace environment variables
+CODESPACE_NAME = os.getenv('CODESPACE_NAME')
+GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')
+
+# Build allowed origins list
+allowed_origins = [
     "http://localhost:3000",
     "https://localhost:3000",
     "http://127.0.0.1:3000",
-], supports_credentials=True, 
-   allow_headers=["Content-Type", "Authorization"],
-   methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    "https://127.0.0.1:3000",
+    "http://localhost:3001",
+    "https://localhost:3001"
+]
+
+# Add GitHub Codespaces URLs if available
+if CODESPACE_NAME and GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:
+    codespace_frontend = f"https://{CODESPACE_NAME}-3000.{GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+    codespace_backend = f"https://{CODESPACE_NAME}-3001.{GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+    allowed_origins.extend([codespace_frontend, codespace_backend])
+    print(f"🌐 Added Codespace origins: {codespace_frontend}, {codespace_backend}")
+
+# Apply CORS configuration
+CORS(app, 
+     origins=allowed_origins,
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     expose_headers=["Content-Type", "Authorization"])
+
+print(f"🔧 CORS configured with origins: {allowed_origins}")
 
 # Database configuration
 db_url = os.getenv("DATABASE_URL")
@@ -60,10 +83,6 @@ app.config['JWT_BLACKLIST_ENABLED'] = True
 app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
 
 jwt = JWTManager(app)
-
-# ============================================================================
-# SIMPLIFIED TOKEN BLACKLIST SYSTEM
-# ============================================================================
 
 # Initialize blacklist on app
 app.blacklisted_tokens = set()
@@ -119,7 +138,7 @@ def token_not_fresh_callback(jwt_header, jwt_payload):
     }), 401
 
 # ============================================================================
-# SECURITY HEADERS
+# SECURITY HEADERS WITH CORS COMPATIBILITY
 # ============================================================================
 
 @app.after_request
@@ -129,6 +148,13 @@ def after_request(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # CORS headers for preflight requests
+    if request.method == 'OPTIONS':
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Access-Control-Allow-Credentials'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
     
     if ENV == "production":
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -229,29 +255,20 @@ def serve_any_other_file(path):
     return response
 
 # ============================================================================
-# DEBUG ROUTE (Development Only)
+# CORS DEBUG ROUTE
 # ============================================================================
 
-@app.route('/debug/auth', methods=['GET'])
-def debug_auth():
-    """Debug route to check auth system status"""
-    if ENV == "production":
-        return jsonify({"error": "Debug routes disabled in production"}), 404
-    
+@app.route('/debug/cors', methods=['GET', 'OPTIONS'])
+def debug_cors():
+    """Debug route to check CORS configuration"""
     return jsonify({
-        "auth_system": "operational",
-        "jwt_secret_configured": bool(app.config.get('JWT_SECRET_KEY')),
-        "database_connected": bool(db.engine),
-        "blacklisted_tokens_count": len(app.blacklisted_tokens),
-        "rate_limit_entries": len(rate_limit_storage),
-        "endpoints": {
-            "register": "/api/auth/register (POST)",
-            "login": "/api/auth/login (POST)",
-            "verify": "/api/auth/verify (GET)",
-            "refresh": "/api/auth/refresh (POST)",
-            "logout": "/api/auth/logout (POST)",
-            "profile": "/api/auth/profile (GET/PUT)"
-        }
+        "cors_debug": True,
+        "request_origin": request.headers.get('Origin'),
+        "allowed_origins": allowed_origins,
+        "request_method": request.method,
+        "codespace_name": CODESPACE_NAME,
+        "forwarding_domain": GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN,
+        "headers": dict(request.headers)
     })
 
 if __name__ == '__main__':

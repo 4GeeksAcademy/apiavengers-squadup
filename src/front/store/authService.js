@@ -1,11 +1,9 @@
 /**
- * PRODUCTION-READY FRONTEND AUTHENTICATION SERVICE
- * ================================================
- * Complete token lifecycle management for SquadUp
- * - Automatic token refresh
- * - Persistent authentication
- * - Performance optimized
- * - Error recovery
+ * FIXED: Frontend AuthService with Defensive Response Handling
+ * ============================================================
+ * - Handles both old and new response formats
+ * - Better error handling and logging
+ * - Defensive token extraction
  */
 
 class AuthService {
@@ -34,9 +32,6 @@ class AuthService {
         
         // Setup automatic token refresh
         this.setupAutoRefresh();
-        
-        // Setup axios interceptors
-        this.setupAxiosInterceptors();
         
         console.log('🔐 AuthService initialized');
     }
@@ -85,7 +80,9 @@ class AuthService {
         const storage = remember ? localStorage : sessionStorage;
         
         storage.setItem(this.tokenKey, accessToken);
-        storage.setItem(this.refreshTokenKey, refreshToken);
+        if (refreshToken) {
+            storage.setItem(this.refreshTokenKey, refreshToken);
+        }
         storage.setItem(this.userKey, JSON.stringify(user));
         
         // Setup automatic refresh based on token expiration
@@ -165,18 +162,28 @@ class AuthService {
             if (response.ok) {
                 const data = await response.json();
                 
+                // FIXED: Defensive token extraction
+                let newAccessToken;
+                if (data.tokens && data.tokens.access_token) {
+                    newAccessToken = data.tokens.access_token;
+                } else if (data.access_token) {
+                    newAccessToken = data.access_token;
+                } else {
+                    throw new Error('No access token in refresh response');
+                }
+                
                 // Update access token
                 const storage = localStorage.getItem(this.tokenKey) ? localStorage : sessionStorage;
-                storage.setItem(this.tokenKey, data.tokens.access_token);
+                storage.setItem(this.tokenKey, newAccessToken);
                 
                 // Schedule next refresh
-                this.scheduleTokenRefresh(data.tokens.access_token);
+                this.scheduleTokenRefresh(newAccessToken);
                 
                 // Process any queued requests
-                this.processQueue(null, data.tokens.access_token);
+                this.processQueue(null, newAccessToken);
                 
                 console.log('🔄 Token refreshed silently');
-                return data.tokens.access_token;
+                return newAccessToken;
             } else {
                 throw new Error('Token refresh failed');
             }
@@ -233,57 +240,13 @@ class AuthService {
     }
 
     // ============================================================================
-    // AXIOS INTERCEPTORS SETUP
-    // ============================================================================
-
-    setupAxiosInterceptors() {
-        // Note: This assumes you're using axios. If not, adapt for fetch.
-        if (typeof window !== 'undefined' && window.axios) {
-            // Request interceptor - add auth header
-            window.axios.interceptors.request.use(
-                (config) => {
-                    const token = this.getAccessToken();
-                    if (token) {
-                        config.headers.Authorization = `Bearer ${token}`;
-                    }
-                    return config;
-                },
-                (error) => Promise.reject(error)
-            );
-
-            // Response interceptor - handle token refresh
-            window.axios.interceptors.response.use(
-                (response) => response,
-                async (error) => {
-                    const originalRequest = error.config;
-
-                    if (error.response?.status === 401 && !originalRequest._retry) {
-                        originalRequest._retry = true;
-
-                        try {
-                            const newToken = await this.refreshTokenSilently();
-                            originalRequest.headers.Authorization = `Bearer ${newToken}`;
-                            return window.axios(originalRequest);
-                        } catch (refreshError) {
-                            // Refresh failed, redirect to login
-                            this.clearAuth();
-                            window.location.href = '/login';
-                            return Promise.reject(refreshError);
-                        }
-                    }
-
-                    return Promise.reject(error);
-                }
-            );
-        }
-    }
-
-    // ============================================================================
     // AUTHENTICATION METHODS
     // ============================================================================
 
     async login(credentials, remember = false) {
         try {
+            console.log('🔐 Attempting login with:', { login: credentials.email || credentials.login });
+            
             const response = await fetch(`${this.apiUrl}/api/auth/login`, {
                 method: 'POST',
                 headers: {
@@ -296,14 +259,33 @@ class AuthService {
             });
 
             const data = await response.json();
+            
+            console.log('📥 Login response:', { 
+                status: response.status, 
+                success: data.success,
+                hasTokens: !!(data.tokens || data.access_token),
+                user: data.user?.username
+            });
 
             if (response.ok && data.success) {
-                this.setTokens(
-                    data.tokens.access_token,
-                    data.tokens.refresh_token,
-                    data.user,
-                    remember
-                );
+                // FIXED: Defensive token extraction - handle both formats
+                let accessToken, refreshToken;
+                
+                if (data.tokens) {
+                    // New format: tokens in 'tokens' object
+                    accessToken = data.tokens.access_token;
+                    refreshToken = data.tokens.refresh_token;
+                } else {
+                    // Old format: tokens directly in response
+                    accessToken = data.access_token;
+                    refreshToken = data.refresh_token;
+                }
+                
+                if (!accessToken) {
+                    throw new Error('No access token received from server');
+                }
+
+                this.setTokens(accessToken, refreshToken, data.user, remember);
 
                 console.log('✅ Login successful');
                 return { success: true, user: data.user };
@@ -313,12 +295,14 @@ class AuthService {
             }
         } catch (error) {
             console.error('❌ Login error:', error);
-            return { success: false, error: 'Network error occurred' };
+            return { success: false, error: error.message || 'Network error occurred' };
         }
     }
 
     async register(userData, remember = false) {
         try {
+            console.log('🚀 Attempting registration for:', userData.username);
+            
             const response = await fetch(`${this.apiUrl}/api/auth/register`, {
                 method: 'POST',
                 headers: {
@@ -328,14 +312,33 @@ class AuthService {
             });
 
             const data = await response.json();
+            
+            console.log('📥 Registration response:', { 
+                status: response.status, 
+                success: data.success,
+                hasTokens: !!(data.tokens || data.access_token),
+                user: data.user?.username
+            });
 
             if (response.ok && data.success) {
-                this.setTokens(
-                    data.tokens.access_token,
-                    data.tokens.refresh_token,
-                    data.user,
-                    remember
-                );
+                // FIXED: Defensive token extraction - handle both formats
+                let accessToken, refreshToken;
+                
+                if (data.tokens) {
+                    // New format: tokens in 'tokens' object
+                    accessToken = data.tokens.access_token;
+                    refreshToken = data.tokens.refresh_token;
+                } else {
+                    // Old format: tokens directly in response
+                    accessToken = data.access_token;
+                    refreshToken = data.refresh_token;
+                }
+                
+                if (!accessToken) {
+                    throw new Error('No access token received from server');
+                }
+
+                this.setTokens(accessToken, refreshToken, data.user, remember);
 
                 console.log('✅ Registration successful');
                 return { success: true, user: data.user };
@@ -345,7 +348,7 @@ class AuthService {
             }
         } catch (error) {
             console.error('❌ Registration error:', error);
-            return { success: false, error: 'Network error occurred' };
+            return { success: false, error: error.message || 'Network error occurred' };
         }
     }
 

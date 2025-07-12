@@ -1,10 +1,9 @@
 """
-FIXED: Authentication with Proper Username/Email Login Support
+FIXED: Authentication with Proper Response Format
 Issues Fixed:
-1. Username login now works properly
-2. Email login works
-3. Better error handling for login attempts
-4. Fixed token verification issues
+1. Frontend expects tokens in 'tokens' object but backend returns them directly
+2. Response format standardized between login and register
+3. Token structure matches frontend expectations
 """
 from flask import Blueprint, request, jsonify, current_app
 from api.models import db, User
@@ -83,7 +82,7 @@ def register():
         if password != confirm_password:
             raise APIException("Passwords do not match", status_code=400)
         
-        # Check if user already exists (optimized single query)
+        # Check if user already exists
         existing_user = User.query.filter(
             or_(User.email == email, User.username == username)
         ).first()
@@ -116,12 +115,15 @@ def register():
             expires_delta=timedelta(days=30)
         )
         
+        # FIXED: Return tokens in 'tokens' object to match frontend expectations
         return jsonify({
             "success": True,
             "message": "User registered successfully",
             "user": new_user.serialize(),
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "tokens": {
+                "access_token": access_token,
+                "refresh_token": refresh_token
+            },
             "expires_in": 3600  # 1 hour in seconds
         }), 201
         
@@ -130,7 +132,7 @@ def register():
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        print(f"Registration error: {str(e)}")  # Debug logging
+        print(f"Registration error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @auth.route('/login', methods=['POST'])
@@ -149,12 +151,12 @@ def login():
         ).strip()
         password = data.get('password', '')
         
-        print(f"Login attempt - Field: '{login_field}', Password provided: {bool(password)}")  # Debug
+        print(f"Login attempt - Field: '{login_field}', Password provided: {bool(password)}")
         
         if not login_field or not password:
             raise APIException("Email/username and password are required", status_code=400)
         
-        # FIXED: Single optimized query to find user by email OR username
+        # Find user by email OR username
         user = User.query.filter(
             or_(
                 User.email == login_field.lower(),
@@ -162,18 +164,18 @@ def login():
             )
         ).first()
         
-        print(f"User found: {user.username if user else 'None'}")  # Debug
+        print(f"User found: {user.username if user else 'None'}")
         
         if not user:
-            print(f"No user found for login field: {login_field}")  # Debug
+            print(f"No user found for login field: {login_field}")
             raise APIException("Invalid credentials", status_code=401)
         
         if not check_password_hash(user.password_hash, password):
-            print(f"Password check failed for user: {user.username}")  # Debug
+            print(f"Password check failed for user: {user.username}")
             raise APIException("Invalid credentials", status_code=401)
         
         if not user.is_active:
-            print(f"Inactive account: {user.username}")  # Debug
+            print(f"Inactive account: {user.username}")
             raise APIException("Account is deactivated", status_code=401)
         
         # Update last login
@@ -191,22 +193,25 @@ def login():
             expires_delta=timedelta(days=30)
         )
         
-        print(f"Login successful for user: {user.username}")  # Debug
+        print(f"Login successful for user: {user.username}")
         
+        # FIXED: Return tokens in 'tokens' object to match frontend expectations
         return jsonify({
             "success": True,
             "message": "Login successful",
             "user": user.serialize(),
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "tokens": {
+                "access_token": access_token,
+                "refresh_token": refresh_token
+            },
             "expires_in": 3600  # 1 hour in seconds
         }), 200
         
     except APIException as e:
-        print(f"Login API error: {e.message}")  # Debug
+        print(f"Login API error: {e.message}")
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"Login unexpected error: {str(e)}")  # Debug
+        print(f"Login unexpected error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @auth.route('/logout', methods=['POST'])
@@ -232,7 +237,7 @@ def logout():
         }), 200
         
     except Exception as e:
-        print(f"Logout error: {str(e)}")  # Debug
+        print(f"Logout error: {str(e)}")
         return jsonify({
             "success": False,
             "error": "Logout failed",
@@ -258,16 +263,19 @@ def refresh_token():
             expires_delta=timedelta(hours=1)
         )
         
+        # FIXED: Return tokens in 'tokens' object to match frontend expectations
         return jsonify({
             "success": True,
-            "access_token": new_access_token,
+            "tokens": {
+                "access_token": new_access_token
+            },
             "user": user.serialize(),
             "expires_in": 3600,  # 1 hour in seconds
             "code": "TOKEN_REFRESHED"
         }), 200
         
     except Exception as e:
-        print(f"Token refresh error: {str(e)}")  # Debug
+        print(f"Token refresh error: {str(e)}")
         return jsonify({
             "success": False,
             "error": "Token refresh failed",
@@ -310,7 +318,7 @@ def verify_token():
             "code": "TOKEN_INVALID"
         }), e.status_code
     except Exception as e:
-        print(f"Token verification error: {str(e)}")  # Debug
+        print(f"Token verification error: {str(e)}")
         return jsonify({
             "valid": False,
             "success": False,
@@ -366,7 +374,7 @@ def profile():
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        print(f"Profile error: {str(e)}")  # Debug
+        print(f"Profile error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 # Debug route for development
@@ -390,7 +398,8 @@ def debug_auth():
                 "refresh": "/api/auth/refresh (POST)",
                 "logout": "/api/auth/logout (POST)",
                 "profile": "/api/auth/profile (GET/PUT)"
-            }
+            },
+            "response_format_note": "All auth endpoints now return tokens in 'tokens' object"
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

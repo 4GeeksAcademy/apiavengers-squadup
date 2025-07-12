@@ -4,7 +4,7 @@ import authService from '../store/authService';
 
 export const Login = () => {
     const [formData, setFormData] = useState({
-        login: '', // Changed from 'email' to 'login' to support both email and username
+        login: '',
         password: '',
         remember: false
     });
@@ -15,13 +15,21 @@ export const Login = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Redirect if already authenticated
+    // FIXED: Remove conflicting auth check that causes loops
     useEffect(() => {
-        if (authService.isAuthenticated()) {
-            const intendedPath = location.state?.from?.pathname || '/dashboard';
-            navigate(intendedPath, { replace: true });
-        }
-    }, [navigate, location]);
+        // Only redirect if we're definitely authenticated AND not in a loading state
+        const checkExistingAuth = () => {
+            if (authService.isAuthenticated() && !isLoading) {
+                console.log('🔄 Already authenticated, redirecting...');
+                const intendedPath = location.state?.from?.pathname || '/dashboard';
+                navigate(intendedPath, { replace: true });
+            }
+        };
+
+        // Only run this check once on mount, not on every render
+        const timer = setTimeout(checkExistingAuth, 100);
+        return () => clearTimeout(timer);
+    }, []); // Empty dependency array - only run once
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -42,14 +50,12 @@ export const Login = () => {
     const validateForm = () => {
         const newErrors = {};
         
-        // Login field validation (email or username)
         if (!formData.login) {
             newErrors.login = 'Email or username is required';
         } else if (formData.login.length < 3) {
             newErrors.login = 'Email or username must be at least 3 characters';
         }
         
-        // Password validation
         if (!formData.password) {
             newErrors.password = 'Password is required';
         }
@@ -67,21 +73,21 @@ export const Login = () => {
         setErrors({});
         
         try {
-            console.log('🔐 Attempting login with:', { login: formData.login });
+            console.log('🔐 Starting login process...');
             
             const result = await authService.login({
-                login: formData.login, // Send as 'login' field to support both email and username
+                login: formData.login,
                 password: formData.password
             }, formData.remember);
             
             if (result.success) {
                 console.log('✅ Login successful, redirecting...');
                 
-                // Redirect to intended page or dashboard
+                // FIXED: Immediate redirect without delay to prevent race conditions
                 const intendedPath = location.state?.from?.pathname || '/dashboard';
                 navigate(intendedPath, { replace: true });
             } else {
-                // Handle specific error cases with user-friendly messages
+                // Handle specific error cases
                 let errorMessage = result.error || 'Login failed';
                 
                 if (errorMessage.includes('Invalid credentials')) {
@@ -95,10 +101,6 @@ export const Login = () => {
                 } else if (errorMessage.includes('Account is deactivated')) {
                     setErrors({ 
                         submit: 'Your account has been deactivated. Please contact support for assistance.' 
-                    });
-                } else if (errorMessage.includes('required')) {
-                    setErrors({ 
-                        submit: 'Please enter both your email/username and password.' 
                     });
                 } else {
                     setErrors({ submit: errorMessage });
@@ -117,12 +119,10 @@ export const Login = () => {
     };
 
     const handleForgotPassword = () => {
-        // TODO: Implement forgot password functionality
         alert('Forgot password functionality will be implemented soon!');
     };
 
     const handleSteamLogin = () => {
-        // TODO: Implement Steam OAuth
         alert('Steam login will be available soon!');
     };
 
@@ -130,8 +130,8 @@ export const Login = () => {
     const handleDemoLogin = () => {
         if (import.meta.env.DEV) {
             setFormData({
-                login: 'demo@squadup.com', // Can be email or username
-                password: 'DemoPassword123',
+                login: 'potatosalad3',
+                password: 'Potato123!',
                 remember: false
             });
         }
@@ -222,7 +222,7 @@ export const Login = () => {
                             )}
 
                             <form onSubmit={handleSubmit} className="space-y-6">
-                                {/* Login Field (Email or Username) */}
+                                {/* Login Field */}
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-white/90">
                                         Email or Username
@@ -246,9 +246,6 @@ export const Login = () => {
                                             <p className="mt-1 text-xs text-red-400">{errors.login}</p>
                                         )}
                                     </div>
-                                    <p className="text-xs text-white/50">
-                                        You can use either your email address or username to sign in
-                                    </p>
                                 </div>
 
                                 {/* Password Field */}
@@ -360,9 +357,9 @@ export const Login = () => {
                                     <div className="flex items-center space-x-2">
                                         <span>🚀</span>
                                         <div>
-                                            <strong>Dev Mode:</strong> Click "Demo" to auto-fill test credentials.
+                                            <strong>Dev Mode:</strong> Click "Demo" to auto-fill working credentials.
                                             <br />
-                                            <strong>Login Support:</strong> Use either email or username to sign in.
+                                            <strong>Test User:</strong> potatosalad3 / Potato123!
                                         </div>
                                     </div>
                                 </div>
@@ -379,38 +376,11 @@ export const Login = () => {
                 </div>
             </div>
 
-            {/* Loading Overlay */}
-            {isLoading && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="bg-white/10 border border-white/20 rounded-2xl p-8 text-center">
-                        <div className="w-12 h-12 border-3 border-white/30 border-t-coral-500 rounded-full animate-spin mx-auto mb-4"></div>
-                        <p className="text-white font-medium">Authenticating...</p>
-                        <p className="text-white/70 text-sm mt-1">Verifying your credentials</p>
-                    </div>
-                </div>
-            )}
-
             {/* Custom Styles */}
             <style>{`
-                @keyframes float {
-                    0%, 100% { transform: translateY(0px); }
-                    50% { transform: translateY(-20px); }
-                }
-                .animate-float {
-                    animation: float 6s ease-in-out infinite;
-                }
-                
-                /* Custom checkbox styling */
                 input[type="checkbox"]:checked {
                     background-color: #ff7f50;
                     border-color: #ff7f50;
-                }
-                
-                /* Focus ring for accessibility */
-                input:focus,
-                button:focus {
-                    outline: 2px solid #ff7f50;
-                    outline-offset: 2px;
                 }
             `}</style>
         </>
