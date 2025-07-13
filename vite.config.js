@@ -1,39 +1,21 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    host: '0.0.0.0', // Allow external connections
-    strictPort: true,
+    host: '0.0.0.0', // This is crucial to allow external connections in Codespaces
+
+    // This hmr block is the key to fixing the refresh loop
     hmr: {
-      port: 3000,
-      host: 'localhost'
-    },
-    // Fix for GitHub Codespaces
-    origin: `https://${process.env.CODESPACE_NAME}-3000.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`,
-    cors: {
-      origin: [
-        `https://${process.env.CODESPACE_NAME}-3000.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`,
-        `https://${process.env.CODESPACE_NAME}-3001.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`,
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3001'
-      ],
-      credentials: true
+      // These settings tell the Vite client in the browser how to connect to the server
+      protocol: 'wss', // Use secure web sockets
+      host: `${process.env.CODESPACE_NAME}-3000.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`,
+      // The client port needs to be 443, the standard port for HTTPS/WSS traffic.
+      // GitHub's proxy will then route it internally to port 3000.
+      clientPort: 443
     }
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true
-  },
-  css: {
-    postcss: './postcss.config.js'
-  },
-  define: {
-    // Fix for process.env in browser
-    'process.env': process.env
   }
 })

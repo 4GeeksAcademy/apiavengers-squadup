@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import useGlobalReducer from '../hooks/useGlobalReducer';
+// REVISED: We no longer need useGlobalReducer here for auth.
+// Instead, we import the centralized authService which handles everything.
+import authService from '../store/authService';
 
 export const SignUp = () => {
+    // --- All of your state hooks are perfect and remain unchanged. ---
     const [formData, setFormData] = useState({
         email: '',
         username: '',
@@ -14,115 +17,67 @@ export const SignUp = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     
-    const { dispatch } = useGlobalReducer();
     const navigate = useNavigate();
 
+    // --- The handleChange and validateForm functions are perfect and remain unchanged. ---
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-        
-        // Clear error for this field when user starts typing
-        if (errors[name]) {
-            setErrors(prev => ({
-                ...prev,
-                [name]: ''
-            }));
-        }
+        setFormData(prev => ({ ...prev, [name]: value }));
+        if (errors[name]) { setErrors(prev => ({ ...prev, [name]: '' })); }
     };
 
     const validateForm = () => {
         const newErrors = {};
-        
-        // Email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!formData.email) {
-            newErrors.email = 'Email is required';
-        } else if (!emailRegex.test(formData.email)) {
-            newErrors.email = 'Please enter a valid email';
-        }
-        
-        // Username validation
-        if (!formData.username) {
-            newErrors.username = 'Username is required';
-        } else if (formData.username.length < 3) {
-            newErrors.username = 'Username must be at least 3 characters';
-        } else if (formData.username.length > 20) {
-            newErrors.username = 'Username must be less than 20 characters';
-        } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-            newErrors.username = 'Username can only contain letters, numbers, and underscores';
-        }
-        
-        // Password validation
-        if (!formData.password) {
-            newErrors.password = 'Password is required';
-        } else if (formData.password.length < 8) {
-            newErrors.password = 'Password must be at least 8 characters';
-        } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
-            newErrors.password = 'Password must contain uppercase, lowercase, and number';
-        }
-        
-        // Confirm password validation
-        if (!formData.confirmPassword) {
-            newErrors.confirmPassword = 'Please confirm your password';
-        } else if (formData.password !== formData.confirmPassword) {
-            newErrors.confirmPassword = 'Passwords do not match';
-        }
-        
+        if (!formData.email) newErrors.email = 'Email is required';
+        else if (!emailRegex.test(formData.email)) newErrors.email = 'Please enter a valid email';
+        if (!formData.username) newErrors.username = 'Username is required';
+        else if (formData.username.length < 3) newErrors.username = 'Username must be at least 3 characters';
+        else if (formData.username.length > 20) newErrors.username = 'Username must be less than 20 characters';
+        else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) newErrors.username = 'Username can only contain letters, numbers, and underscores';
+        if (!formData.password) newErrors.password = 'Password is required';
+        else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+        else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) newErrors.password = 'Password must contain uppercase, lowercase, and number';
+        if (!formData.confirmPassword) newErrors.confirmPassword = 'Please confirm your password';
+        else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
+    // --- REVISED: The handleSubmit function is now much cleaner and uses the authService ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         
+        // Use the same robust validation
         if (!validateForm()) return;
         
         setIsLoading(true);
+        setErrors({}); // Clear previous submission errors
+
+        // Call the centralized authService. It handles fetch, storing tokens, AND dispatching to the store.
+        const result = await authService.register({
+            email: formData.email,
+            username: formData.username,
+            password: formData.password,
+            confirmPassword: formData.confirmPassword // The backend validates this
+        });
         
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            
-            const response = await fetch(`${backendUrl}/api/auth/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData)
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok) {
-                // Store user data and token
-                localStorage.setItem('token', data.access_token);
-                dispatch({ 
-                    type: 'set_user', 
-                    payload: data.user 
-                });
-                
-                // Show success message and redirect
-                dispatch({
-                    type: 'set_message',
-                    payload: { 
-                        type: 'success', 
-                        text: 'Account created successfully! Welcome to SquadUp!' 
-                    }
-                });
-                
-                navigate('/dashboard');
-            } else {
-                setErrors({ submit: data.error || 'Registration failed' });
-            }
-        } catch (error) {
-            setErrors({ submit: 'Network error. Please try again.' });
-        } finally {
-            setIsLoading(false);
+        setIsLoading(false);
+        
+        if (result.success) {
+            // On success, navigate to the dashboard. The service already updated the global state.
+            console.log("SignUp Component: Registration successful, navigating...");
+            navigate('/dashboard'); 
+        } else {
+            // On failure, the service gives us a clean error message to display.
+            setErrors({ submit: result.error || 'An unknown error occurred.' });
         }
     };
 
+
+    // --- NO CHANGES BELOW THIS LINE ---
+    // The entire JSX structure, including all class names, styles, and animations,
+    // has been preserved exactly as you provided it.
     return (
         <>
             <div className="min-h-screen relative overflow-hidden">

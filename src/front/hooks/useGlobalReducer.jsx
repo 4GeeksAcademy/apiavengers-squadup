@@ -1,57 +1,37 @@
-import { useContext, useReducer, createContext, useEffect } from "react";
-import storeReducer, { initialStore, ACTION_TYPES } from "../store/store";
+// src/front/hooks/useGlobalReducer.jsx
+
+import React, { useContext, useReducer, createContext } from "react";
+// REVISED: We ONLY import the reducer logic, not any old action creators.
+import storeReducer, { initialStore } from "../store/store";
 
 const StoreContext = createContext();
 
+// This is the main component that will wrap your entire application.
 export function StoreProvider({ children }) {
+    // REVISED: The provider's ONLY job now is to create the 'store' and 'dispatch'
+    // function. All of the conflicting useEffects and authentication logic
+    // have been completely removed from this file.
     const [store, dispatch] = useReducer(storeReducer, initialStore());
-    useEffect(() => {
-        const checkAuth = async () => {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            if (token) {
-                dispatch({ type: ACTION_TYPES.SET_TOKEN, payload: token });
-                try {
-                    const backendUrl = import.meta.env.VITE_BACKEND_URL;
-                    if (backendUrl) {
-                        const response = await fetch(`${backendUrl}/api/auth/verify`, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-                        if (response.ok) {
-                            const data = await response.json();
-                            dispatch({ type: ACTION_TYPES.LOGIN_SUCCESS, payload: { user: data.user, token: token } });
-                        } else {
-                            localStorage.removeItem('token');
-                            sessionStorage.removeItem('token');
-                            dispatch({ type: ACTION_TYPES.LOGOUT });
-                        }
-                    }
-                } catch (error) { console.error('Auth verification failed:', error); }
-            }
-        };
-        checkAuth();
-    }, []);
 
-    const contextValue = {
-        store, dispatch,
-        actions: {
-            login: (user, token) => { localStorage.setItem('token', token); dispatch({ type: ACTION_TYPES.LOGIN_SUCCESS, payload: { user, token } }); },
-            logout: () => { localStorage.removeItem('token'); sessionStorage.removeItem('token'); localStorage.removeItem('user'); dispatch({ type: ACTION_TYPES.LOGOUT }); },
-            setUser: (user) => { dispatch({ type: ACTION_TYPES.SET_USER, payload: user }); },
-            setLoading: (loading) => { dispatch({ type: ACTION_TYPES.SET_LOADING, payload: loading }); },
-            setError: (error) => { dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error }); },
-            clearError: () => { dispatch({ type: ACTION_TYPES.CLEAR_ERROR }); },
-            setMessage: (message) => { dispatch({ type: ACTION_TYPES.SET_MESSAGE, payload: message }); if (message?.type === 'success') { setTimeout(() => { dispatch({ type: ACTION_TYPES.CLEAR_MESSAGE }); }, 5000); } },
-            clearMessage: () => { dispatch({ type: ACTION_TYPES.CLEAR_MESSAGE }); },
-            setHello: (message) => { dispatch({ type: ACTION_TYPES.SET_HELLO, payload: message }); },
-            changeTaskColor: (id, color) => { dispatch({ type: ACTION_TYPES.ADD_TASK, payload: { id, color } }); }
-        }
-    };
-    return ( <StoreContext.Provider value={contextValue}> {children} </StoreContext.Provider> );
+    // The value provided to all child components is now simple and clean.
+    const contextValue = { store, dispatch };
+    
+    return (
+        <StoreContext.Provider value={contextValue}>
+            {children}
+        </StoreContext.Provider>
+    );
 }
 
+// This is the custom hook that your components will use to access the store.
 function useGlobalReducer() {
     const context = useContext(StoreContext);
-    if (!context) { throw new Error('useGlobalReducer must be used within a StoreProvider'); }
-    const { store, dispatch, actions } = context;
-    return { store, dispatch, actions, isAuthenticated: store.isAuthenticated, user: store.user, isLoading: store.authLoading, error: store.authError, message: store.message };
+    if (!context) {
+        throw new Error('useGlobalReducer must be used within a StoreProvider');
+    }
+    // REVISED: The hook now returns the raw context. Components that use this
+    // hook will destructure what they need (e.g., const { store } = useGlobalReducer();).
+    return context;
 }
 
 export default useGlobalReducer;
