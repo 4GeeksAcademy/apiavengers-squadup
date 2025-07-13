@@ -5,21 +5,33 @@ from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 import json
-# Import Werkzeug security helpers
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
-# --- (Association tables: user_games, group_members are unchanged) ---
-user_games = Table('user_games', db.Model.metadata, Column('user_id', Integer, ForeignKey('user.id'), primary_key=True), Column('game_id', Integer, ForeignKey('steam_game.id'), primary_key=True), Column('hours_played', Integer, default=0), Column('last_played', DateTime, nullable=True), Column('added_at', DateTime, default=datetime.utcnow))
-group_members = Table('group_members', db.Model.metadata, Column('user_id', Integer, ForeignKey('user.id'), primary_key=True), Column('group_id', Integer, ForeignKey('gaming_group.id'), primary_key=True), Column('joined_at', DateTime, default=datetime.utcnow), Column('role', String(20), default='member'))
+user_games = Table(
+    'user_games',
+    db.Model.metadata,
+    Column('user_id', Integer, ForeignKey('user.id'), primary_key=True),
+    Column('game_id', Integer, ForeignKey('steam_game.id'), primary_key=True),
+    Column('hours_played', Integer, default=0),
+    Column('last_played', DateTime, nullable=True),
+    Column('added_at', DateTime, default=datetime.utcnow)
+)
 
+group_members = Table(
+    'group_members',
+    db.Model.metadata,
+    Column('user_id', Integer, ForeignKey('user.id'), primary_key=True),
+    Column('group_id', Integer, ForeignKey('gaming_group.id'), primary_key=True),
+    Column('joined_at', DateTime, default=datetime.utcnow),
+    Column('role', String(20), default='member')
+)
 
 class User(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
-    # REFINED: Increased length to 256 for future-proof hash storage
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
     bio: Mapped[str] = mapped_column(Text, nullable=True)
@@ -27,7 +39,6 @@ class User(db.Model):
     last_login: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
 
-    # --- (Steam Integration and Gaming Preferences are unchanged) ---
     steam_id: Mapped[str] = mapped_column(String(17), nullable=True, unique=True)
     steam_username: Mapped[str] = mapped_column(String(100), nullable=True)
     steam_avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
@@ -37,23 +48,18 @@ class User(db.Model):
     gaming_preferences: Mapped[str] = mapped_column(Text, nullable=True)
     favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
-    
-    # --- (Relationships are unchanged) ---
+
     owned_games = relationship('SteamGame', secondary=user_games, back_populates='owners')
     groups = relationship('GamingGroup', secondary=group_members, back_populates='members')
     created_groups = relationship('GamingGroup', back_populates='creator')
 
-    # REFINED: Added password helper methods to the User model
     def set_password(self, password):
-        """Creates a hashed password."""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
-        """Checks a password against the stored hash."""
         return check_password_hash(self.password_hash, password)
 
     def serialize(self):
-        # This serialization method is well-defined and does not need changes.
         return {
             "id": self.id,
             "email": self.email,
@@ -71,7 +77,6 @@ class User(db.Model):
             "total_games": len(self.owned_games) if self.owned_games else 0
         }
 
-# --- (The rest of your models: SteamGame, GamingGroup, GameSession are well-defined and do not need changes) ---
 class SteamGame(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     steam_appid: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
@@ -92,8 +97,26 @@ class SteamGame(db.Model):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     owners = relationship('User', secondary=user_games, back_populates='owned_games')
+
     def serialize(self):
-        return {"id": self.id, "steam_appid": self.steam_appid, "name": self.name, "short_description": self.short_description, "header_image": self.header_image, "website": self.website, "genres": json.loads(self.genres) if self.genres else [], "categories": json.loads(self.categories) if self.categories else [], "tags": json.loads(self.tags) if self.tags else [], "multiplayer": self.multiplayer, "co_op": self.co_op, "max_players": self.max_players, "min_players": self.min_players, "price": self.price, "release_date": self.release_date.isoformat() if self.release_date else None, "owner_count": len(self.owners) if self.owners else 0}
+        return {
+            "id": self.id,
+            "steam_appid": self.steam_appid,
+            "name": self.name,
+            "short_description": self.short_description,
+            "header_image": self.header_image,
+            "website": self.website,
+            "genres": json.loads(self.genres) if self.genres else [],
+            "categories": json.loads(self.categories) if self.categories else [],
+            "tags": json.loads(self.tags) if self.tags else [],
+            "multiplayer": self.multiplayer,
+            "co_op": self.co_op,
+            "max_players": self.max_players,
+            "min_players": self.min_players,
+            "price": self.price,
+            "release_date": self.release_date.isoformat() if self.release_date else None,
+            "owner_count": len(self.owners) if self.owners else 0
+        }
 
 class GamingGroup(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -109,8 +132,22 @@ class GamingGroup(db.Model):
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
     creator = relationship('User', back_populates='created_groups')
     members = relationship('User', secondary=group_members, back_populates='groups')
+
     def serialize(self):
-        return {"id": self.id, "name": self.name, "description": self.description, "created_at": self.created_at.isoformat(), "is_public": self.is_public, "max_members": self.max_members, "current_members": len(self.members), "invite_code": self.invite_code, "creator": self.creator.serialize() if self.creator else None, "members": [member.serialize() for member in self.members] if self.members else [], "preferred_genres": json.loads(self.preferred_genres) if self.preferred_genres else [], "gaming_style": self.gaming_style}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "created_at": self.created_at.isoformat(),
+            "is_public": self.is_public,
+            "max_members": self.max_members,
+            "current_members": len(self.members),
+            "invite_code": self.invite_code,
+            "creator": self.creator.serialize() if self.creator else None,
+            "members": [member.serialize() for member in self.members] if self.members else [],
+            "preferred_genres": json.loads(self.preferred_genres) if self.preferred_genres else [],
+            "gaming_style": self.gaming_style
+        }
 
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -126,5 +163,17 @@ class GameSession(db.Model):
     vote_results: Mapped[str] = mapped_column(Text, nullable=True)
     group = relationship('GamingGroup')
     game = relationship('SteamGame')
+
     def serialize(self):
-        return {"id": self.id, "group_id": self.group_id, "game": self.game.serialize() if self.game else None, "session_name": self.session_name, "description": self.description, "scheduled_time": self.scheduled_time.isoformat() if self.scheduled_time else None, "duration_minutes": self.duration_minutes, "status": self.status, "created_at": self.created_at.isoformat(), "vote_results": json.loads(self.vote_results) if self.vote_results else {}}
+        return {
+            "id": self.id,
+            "group_id": self.group_id,
+            "game": self.game.serialize() if self.game else None,
+            "session_name": self.session_name,
+            "description": self.description,
+            "scheduled_time": self.scheduled_time.isoformat() if self.scheduled_time else None,
+            "duration_minutes": self.duration_minutes,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "vote_results": json.loads(self.vote_results) if self.vote_results else {}
+        }

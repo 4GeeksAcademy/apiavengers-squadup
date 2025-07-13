@@ -1,7 +1,5 @@
-"""
-Steam Web API Integration Service
-Handles all Steam API interactions and data processing
-"""
+# src/api/steam_service.py
+
 import requests
 import json
 import os
@@ -15,14 +13,14 @@ class SteamService:
         self.api_key = os.getenv('STEAM_API_KEY')
         self.base_url = 'https://api.steampowered.com'
         
-        # Don't raise error if Steam API key is missing - just log it
         if not self.api_key:
             print("⚠️  STEAM_API_KEY not found in environment variables")
             print("   Steam integration will be disabled until API key is provided")
             print("   Get your Steam API key from: https://steamcommunity.com/dev/apikey")
+        else:
+            print(f"✅ Steam API key loaded successfully (ends with ...{self.api_key[-4:]})")
     
     def _check_api_key(self):
-        """Check if Steam API key is available"""
         if not self.api_key:
             raise APIException(
                 "Steam integration is not configured. Please contact administrator.", 
@@ -30,7 +28,6 @@ class SteamService:
             )
     
     def get_user_profile(self, steam_id: str) -> Dict:
-        """Get Steam user profile information"""
         self._check_api_key()
         
         url = f"{self.base_url}/ISteamUser/GetPlayerSummaries/v0002/"
@@ -53,7 +50,6 @@ class SteamService:
             raise APIException(f"Steam API error: {str(e)}", status_code=500)
     
     def get_user_games(self, steam_id: str) -> List[Dict]:
-        """Get user's owned games from Steam"""
         self._check_api_key()
         
         url = f"{self.base_url}/IPlayerService/GetOwnedGames/v0001/"
@@ -79,7 +75,6 @@ class SteamService:
             raise APIException(f"Steam API error: {str(e)}", status_code=500)
     
     def get_game_details(self, app_id: int) -> Dict:
-        """Get detailed game information from Steam Store API"""
         url = f"https://store.steampowered.com/api/appdetails"
         params = {
             'appids': app_id,
@@ -101,12 +96,9 @@ class SteamService:
             return {}
     
     def connect_user_steam(self, user_id: int, steam_id: str) -> bool:
-        """Connect a user's account to their Steam profile"""
         try:
-            # Get Steam profile info
             profile = self.get_user_profile(steam_id)
             
-            # Update user record
             user = User.query.get(user_id)
             if not user:
                 raise APIException("User not found", status_code=404)
@@ -125,13 +117,11 @@ class SteamService:
             raise APIException(f"Failed to connect Steam account: {str(e)}", status_code=500)
     
     def sync_user_library(self, user_id: int) -> Tuple[int, int]:
-        """Sync user's Steam library to database"""
         user = User.query.get(user_id)
         if not user or not user.steam_id:
             raise APIException("User not found or Steam not connected", status_code=404)
         
         try:
-            # Get user's games from Steam
             steam_games = self.get_user_games(user.steam_id)
             
             new_games = 0
@@ -140,11 +130,9 @@ class SteamService:
             for game_data in steam_games:
                 app_id = game_data['appid']
                 
-                # Check if game exists in database
                 game = SteamGame.query.filter_by(steam_appid=app_id).first()
                 
                 if not game:
-                    # Create new game record
                     game = SteamGame(
                         steam_appid=app_id,
                         name=game_data.get('name', f'Game {app_id}'),
@@ -153,15 +141,12 @@ class SteamService:
                     db.session.add(game)
                     new_games += 1
                     
-                    # Get detailed game info in background (optional)
                     self._enrich_game_data(game, app_id)
                 
-                # Associate game with user if not already associated
                 if game not in user.owned_games:
                     user.owned_games.append(game)
                     updated_games += 1
             
-            # Update sync timestamp
             user.steam_library_synced_at = datetime.utcnow()
             db.session.commit()
             
@@ -172,7 +157,6 @@ class SteamService:
             raise APIException(f"Failed to sync library: {str(e)}", status_code=500)
     
     def _enrich_game_data(self, game: SteamGame, app_id: int):
-        """Enrich game data with detailed information from Steam Store API"""
         try:
             details = self.get_game_details(app_id)
             
@@ -180,29 +164,24 @@ class SteamService:
                 game.short_description = details.get('short_description', '')[:500]
                 game.website = details.get('website')
                 
-                # Process genres
                 if 'genres' in details:
                     genres = [genre['description'] for genre in details['genres']]
                     game.genres = json.dumps(genres)
                 
-                # Process categories
                 if 'categories' in details:
                     categories = [cat['description'] for cat in details['categories']]
                     game.categories = json.dumps(categories)
                     
-                    # Check for multiplayer support
                     game.multiplayer = any('Multi-player' in cat for cat in categories)
                     game.co_op = any('Co-op' in cat for cat in categories)
                 
-                # Process release date
                 if 'release_date' in details and details['release_date'].get('date'):
                     try:
                         release_str = details['release_date']['date']
                         game.release_date = datetime.strptime(release_str, '%b %d, %Y')
-                    except:
+                    except ValueError:
                         pass
                 
-                # Process pricing
                 if 'price_overview' in details:
                     game.price = details['price_overview'].get('final_formatted')
                 
@@ -210,26 +189,18 @@ class SteamService:
             print(f"Error enriching game {app_id}: {e}")
     
     def find_common_games(self, user_ids: List[int]) -> List[Dict]:
-        """Find games that are common among specified users"""
         if len(user_ids) < 2:
             raise APIException("At least 2 users required", status_code=400)
         
-        # Get all users and their games
         users = User.query.filter(User.id.in_(user_ids)).all()
         
         if len(users) != len(user_ids):
             raise APIException("One or more users not found", status_code=404)
         
-        # Find intersection of all user libraries
-        user_game_sets = []
-        for user in users:
-            user_games = set(game.id for game in user.owned_games)
-            user_game_sets.append(user_games)
+        user_game_sets = [set(game.id for game in user.owned_games) for user in users]
         
-        # Calculate intersection and coverage
         common_game_ids = set.intersection(*user_game_sets) if user_game_sets else set()
         
-        # Get coverage stats for all games
         all_game_ids = set.union(*user_game_sets) if user_game_sets else set()
         game_coverage = {}
         
@@ -242,7 +213,6 @@ class SteamService:
                 'coverage_percentage': coverage_percentage
             }
         
-        # Get game details with coverage info
         all_games = SteamGame.query.filter(SteamGame.id.in_(all_game_ids)).all()
         
         result = []
@@ -256,27 +226,23 @@ class SteamService:
             })
             result.append(game_data)
         
-        # Sort by coverage percentage (highest first)
         result.sort(key=lambda x: x['ownership_stats']['coverage_percentage'], reverse=True)
         
         return result
     
     def _get_coverage_level(self, percentage: float) -> str:
-        """Determine coverage level for UI highlighting"""
         if percentage == 100:
-            return 'all'  # Green highlight
+            return 'all'
         elif percentage >= 75:
-            return 'most'  # Yellow highlight
+            return 'most'
         elif percentage >= 50:
-            return 'some'  # Orange highlight
+            return 'some'
         else:
-            return 'few'   # Red highlight
+            return 'few'
     
     def filter_games(self, games: List[Dict], filters: Dict) -> List[Dict]:
-        """Apply filters to game list"""
         filtered = games
         
-        # Filter by coverage level
         if 'coverage' in filters:
             coverage_filter = filters['coverage']
             if coverage_filter == 'all':
@@ -286,11 +252,9 @@ class SteamService:
             elif coverage_filter == 'few':
                 filtered = [g for g in filtered if g['coverage_level'] == 'few']
         
-        # Filter by multiplayer support
         if filters.get('multiplayer_only'):
             filtered = [g for g in filtered if g.get('multiplayer') or g.get('co_op')]
         
-        # Filter by genres
         if 'genres' in filters and filters['genres']:
             target_genres = set(filters['genres'])
             filtered = [
@@ -298,7 +262,6 @@ class SteamService:
                 if target_genres.intersection(set(g.get('genres', [])))
             ]
         
-        # Filter by player count
         if 'min_players' in filters:
             min_players = int(filters['min_players'])
             filtered = [
@@ -308,7 +271,6 @@ class SteamService:
         
         return filtered
 
-# Initialize service
 try:
     steam_service = SteamService()
 except Exception as e:
