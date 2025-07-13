@@ -1,22 +1,40 @@
-// src/front/pages/Layout.jsx
+// src/front/pages/Layout.jsx - IMPROVED VERSION
 
-import React, { useEffect } from "react"; // ADD useEffect
+import React, { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import useGlobalReducer from "../hooks/useGlobalReducer";
-import authService from "../store/authService"; // ADD authService import
+import authService from "../store/authService";
 
 export const Layout = () => {
-    // Get the dispatch function from your hook
-    const { dispatch } = useGlobalReducer();
+    const { store, dispatch } = useGlobalReducer();
 
-    // ADD THIS useEffect BLOCK
-    // This will run only once when the application starts
     useEffect(() => {
-        // Push the dispatch function into the authService
+        console.log('🏗️ Layout mounted, injecting dispatch into authService...');
+        
+        // Inject dispatch into authService
         authService.setDispatch(dispatch);
-    }, []); // The empty array ensures this effect runs only once
+        
+        // Log current state for debugging
+        console.log('🏗️ Layout - Current store state:', {
+            hasUser: !!store?.user,
+            isAuthenticated: store?.isAuthenticated,
+            authLoading: store?.authLoading,
+            hasToken: !!store?.token
+        });
+        
+    }, [dispatch]); // Only run when dispatch changes
+
+    // Additional debug log on store changes
+    useEffect(() => {
+        console.log('🏗️ Layout - Store updated:', {
+            hasUser: !!store?.user,
+            isAuthenticated: store?.isAuthenticated,
+            authLoading: store?.authLoading,
+            hasToken: !!store?.token
+        });
+    }, [store?.user, store?.isAuthenticated, store?.authLoading, store?.token]);
 
     return (
         <div className="flex flex-col min-h-screen">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import authService from '../store/authService';
+import useGlobalReducer from '../hooks/useGlobalReducer'; // ADD THIS
 
 export const Login = () => {
     const [formData, setFormData] = useState({
@@ -14,22 +15,34 @@ export const Login = () => {
     
     const navigate = useNavigate();
     const location = useLocation();
-
-    // FIXED: Remove conflicting auth check that causes loops
+    
+    // ADD THIS: Monitor global state
+    const { store } = useGlobalReducer();
+    
+    // FIXED: Check BOTH authService AND global store
     useEffect(() => {
-        // Only redirect if we're definitely authenticated AND not in a loading state
-        const checkExistingAuth = () => {
-            if (authService.isAuthenticated() && !isLoading) {
-                console.log('🔄 Already authenticated, redirecting...');
-                const intendedPath = location.state?.from?.pathname || '/dashboard';
-                navigate(intendedPath, { replace: true });
-            }
-        };
-
-        // Only run this check once on mount, not on every render
-        const timer = setTimeout(checkExistingAuth, 100);
-        return () => clearTimeout(timer);
-    }, []); // Empty dependency array - only run once
+        console.log('🔍 Login page - checking auth state...', {
+            authServiceAuth: authService.isAuthenticated(),
+            globalStoreAuth: store?.isAuthenticated,
+            globalUser: store?.user,
+            authLoading: store?.authLoading
+        });
+        
+        // Only redirect if BOTH authService AND global store agree user is authenticated
+        const serviceAuthenticated = authService.isAuthenticated();
+        const storeAuthenticated = store?.isAuthenticated;
+        
+        if (serviceAuthenticated && storeAuthenticated && !isLoading && !store?.authLoading) {
+            console.log('🔄 Both systems agree: user is authenticated, redirecting...');
+            const intendedPath = location.state?.from?.pathname || '/dashboard';
+            navigate(intendedPath, { replace: true });
+        } else if (serviceAuthenticated && !storeAuthenticated) {
+            console.log('⚠️ AUTH MISMATCH: AuthService says authenticated but global store says not');
+            console.log('AuthService token:', !!authService.getAccessToken());
+            console.log('AuthService user:', !!authService.getCurrentUser());
+            console.log('Global store:', store);
+        }
+    }, [store?.isAuthenticated, store?.user, store?.authLoading, isLoading, navigate, location.state?.from?.pathname]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -38,7 +51,6 @@ export const Login = () => {
             [name]: type === 'checkbox' ? checked : value
         }));
         
-        // Clear error for this field when user starts typing
         if (errors[name]) {
             setErrors(prev => ({
                 ...prev,
@@ -73,21 +85,30 @@ export const Login = () => {
         setErrors({});
         
         try {
-            console.log('🔐 Starting login process...');
+            console.log('🔐 Starting login process from UI...');
             
             const result = await authService.login({
                 login: formData.login,
                 password: formData.password
             }, formData.remember);
             
+            console.log('🔐 Login result:', result);
+            
             if (result.success) {
-                console.log('✅ Login successful, redirecting...');
+                console.log('✅ Login successful from UI perspective');
                 
-                // FIXED: Immediate redirect without delay to prevent race conditions
-                const intendedPath = location.state?.from?.pathname || '/dashboard';
-                navigate(intendedPath, { replace: true });
+                // WAIT a moment for global state to update
+                setTimeout(() => {
+                    console.log('🔄 Checking state after login...', {
+                        authServiceAuth: authService.isAuthenticated(),
+                        globalStoreAuth: store?.isAuthenticated,
+                        globalUser: store?.user
+                    });
+                    
+                    const intendedPath = location.state?.from?.pathname || '/dashboard';
+                    navigate(intendedPath, { replace: true });
+                }, 100);
             } else {
-                // Handle specific error cases
                 let errorMessage = result.error || 'Login failed';
                 
                 if (errorMessage.includes('Invalid credentials')) {
@@ -126,7 +147,6 @@ export const Login = () => {
         alert('Steam login will be available soon!');
     };
 
-    // Development helper
     const handleDemoLogin = () => {
         if (import.meta.env.DEV) {
             setFormData({
@@ -135,6 +155,16 @@ export const Login = () => {
                 remember: false
             });
         }
+    };
+
+    // ADD DEBUG INFO
+    const debugInfo = {
+        authServiceAuth: authService.isAuthenticated(),
+        globalStoreAuth: store?.isAuthenticated,
+        hasGlobalUser: !!store?.user,
+        authLoading: store?.authLoading,
+        hasToken: !!authService.getAccessToken(),
+        hasStoredUser: !!authService.getCurrentUser()
     };
 
     return (
@@ -182,7 +212,6 @@ export const Login = () => {
                                 >
                                     Need an account?
                                 </Link>
-                                {/* Development helper */}
                                 {import.meta.env.DEV && (
                                     <button
                                         onClick={handleDemoLogin}
@@ -210,6 +239,19 @@ export const Login = () => {
                                     Sign in to continue your gaming journey!
                                 </p>
                             </div>
+
+                            {/* DEBUG INFO - DEV MODE ONLY */}
+                            {import.meta.env.DEV && (
+                                <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-xs">
+                                    <div className="mb-2"><strong>🐛 Debug Info:</strong></div>
+                                    <div>AuthService Auth: {debugInfo.authServiceAuth ? '✅' : '❌'}</div>
+                                    <div>Global Store Auth: {debugInfo.globalStoreAuth ? '✅' : '❌'}</div>
+                                    <div>Has Global User: {debugInfo.hasGlobalUser ? '✅' : '❌'}</div>
+                                    <div>Auth Loading: {debugInfo.authLoading ? '⏳' : '✅'}</div>
+                                    <div>Has Token: {debugInfo.hasToken ? '✅' : '❌'}</div>
+                                    <div>Has Stored User: {debugInfo.hasStoredUser ? '✅' : '❌'}</div>
+                                </div>
+                            )}
 
                             {/* Error Display */}
                             {errors.submit && (
