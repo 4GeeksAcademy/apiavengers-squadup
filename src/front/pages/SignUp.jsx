@@ -1,23 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // REVISED: Added useEffect
 import { Link, useNavigate } from 'react-router-dom';
-// REVISED: We no longer need useGlobalReducer here for auth.
-// Instead, we import the centralized authService which handles everything.
 import authService from '../store/authService';
+// REVISED: We now import the global state hook to react to the auth state.
+import useGlobalReducer from '../hooks/useGlobalReducer';
 
 export const SignUp = () => {
-    // --- All of your state hooks are perfect and remain unchanged. ---
-    const [formData, setFormData] = useState({
-        email: '',
-        username: '',
-        password: '',
-        confirmPassword: ''
-    });
+    // --- All of your state hooks remain the same ---
+    const [formData, setFormData] = useState({ email: '', username: '', password: '', confirmPassword: '' });
     const [errors, setErrors] = useState({});
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     
     const navigate = useNavigate();
+
+    // REVISED: Get isAuthenticated from the global store to watch for changes.
+    const { store } = useGlobalReducer();
+    const { isAuthenticated } = store;
+
+    // FINAL FIX: This useEffect hook handles the redirect after successful registration.
+    useEffect(() => {
+        // When the store updates and isAuthenticated becomes true, this will run.
+        if (isAuthenticated) {
+            console.log('✅ SignUp.jsx: isAuthenticated is now true. Navigating to dashboard...');
+            navigate('/dashboard', { replace: true });
+        }
+    }, [isAuthenticated, navigate]); // This dependency array makes the effect reactive.
+
 
     // --- The handleChange and validateForm functions are perfect and remain unchanged. ---
     const handleChange = (e) => {
@@ -44,36 +53,30 @@ export const SignUp = () => {
         return Object.keys(newErrors).length === 0;
     };
 
-    // --- REVISED: The handleSubmit function is now much cleaner and uses the authService ---
+    // --- REVISED: The handleSubmit function no longer navigates directly. ---
     const handleSubmit = async (e) => {
         e.preventDefault();
-        
-        // Use the same robust validation
         if (!validateForm()) return;
         
         setIsLoading(true);
-        setErrors({}); // Clear previous submission errors
+        setErrors({});
 
-        // Call the centralized authService. It handles fetch, storing tokens, AND dispatching to the store.
+        // This is correct: it calls the service to handle the registration and state update.
         const result = await authService.register({
             email: formData.email,
             username: formData.username,
             password: formData.password,
-            confirmPassword: formData.confirmPassword // The backend validates this
+            confirmPassword: formData.confirmPassword
         });
         
         setIsLoading(false);
         
-        if (result.success) {
-            // On success, navigate to the dashboard. The service already updated the global state.
-            console.log("SignUp Component: Registration successful, navigating...");
-            navigate('/dashboard'); 
-        } else {
-            // On failure, the service gives us a clean error message to display.
+        // REVISED: We only handle the failure case here.
+        // The useEffect hook will handle the successful navigation.
+        if (!result.success) {
             setErrors({ submit: result.error || 'An unknown error occurred.' });
         }
     };
-
 
     // --- NO CHANGES BELOW THIS LINE ---
     // The entire JSX structure, including all class names, styles, and animations,
