@@ -7,7 +7,7 @@ name = "pypi"
 flask = "*"
 flask-sqlalchemy = "*"
 flask-migrate = "*"
-flask-jwt-extended = "*"
+flask-jwt-extended = "==4.6.0"
 flask-cors = "*"
 flask-admin = "*"
 psycopg2-binary = "*"
@@ -16,6 +16,7 @@ gunicorn = "*"
 cloudinary = "*"
 werkzeug = "*"
 requests = "*"
+pyjwt = "==2.9.0"
 
 [dev-packages]
 
