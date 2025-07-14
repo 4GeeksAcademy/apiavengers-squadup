@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, Link } from 'react-router-dom'; // ✅ Import Link
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import logo from '../assets/img/games/squadup-logo.png';  // Import the logo
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -24,10 +25,11 @@ export const Footer = () => {
                         {/* Brand Section */}
                         <div className="col-span-1 md:col-span-2">
                             <div className="flex items-center space-x-3 mb-4">
-                                <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center shadow-lg">
-                                    <span className="text-white font-bold text-lg">S</span>
-                                </div>
-                                <span className="text-white font-bold text-2xl">SquadUp</span>
+                                <img 
+                                    src={logo} 
+                                    alt="SquadUp Logo" 
+                                    className="h-8 w-auto"  // Smaller size for footer
+                                />
                             </div>
                             <p className="text-white/70 max-w-md leading-relaxed">
                                 The ultimate platform for finding your perfect gaming squad. 
