@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GamingAnimations, GamingCard, GamingLink, GamingButton } from '../components/GamingAnimations'; // ✅ CORRECT: Import shared components
+import { GamingAnimations, GamingCard, GamingLink } from '../components/GamingAnimations'; // ✅ CORRECT: Import shared components
 import { Link, Navigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';

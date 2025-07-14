@@ -59,7 +59,6 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
     db_url.replace("postgres://", "postgresql://") if db_url else "sqlite:////tmp/test.db"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-db.init_app(app)
 Migrate(app, db, compare_type=True)
 
 app.config["SERVER_NAME"] = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"

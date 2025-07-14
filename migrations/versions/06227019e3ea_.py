@@ -18,7 +18,16 @@ depends_on = None
 
 def upgrade():
     with op.batch_alter_table('user') as batch_op:
+        # First add the steam_id column if it doesn't exist
+        batch_op.add_column(sa.Column('steam_id', sa.String(length=17), nullable=True))
+        # Then create the unique constraint
         batch_op.create_unique_constraint(
             'uq_user_steam_id',  # NAME the constraint
             ['steam_id']
         )
+
+
+def downgrade():
+    with op.batch_alter_table('user') as batch_op:
+        batch_op.drop_constraint('uq_user_steam_id', type_='unique')
+        batch_op.drop_column('steam_id')
