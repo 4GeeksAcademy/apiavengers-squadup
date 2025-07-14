@@ -95,16 +95,33 @@ def upgrade():
             sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
             sa.PrimaryKeyConstraint('user_id', 'group_id')
             )
+        # Check if columns already exist before adding them
+        user_columns = [col['name'] for col in inspector.get_columns('user')]
+        
         with op.batch_alter_table('user', schema=None) as batch_op:
-                batch_op.add_column(sa.Column('steam_id', sa.String(length=17), nullable=True))
-                batch_op.add_column(sa.Column('steam_username', sa.String(length=100), nullable=True))
-                batch_op.add_column(sa.Column('steam_avatar_url', sa.String(length=300), nullable=True))
-                batch_op.add_column(sa.Column('steam_profile_url', sa.String(length=300), nullable=True))
-                batch_op.add_column(sa.Column('steam_library_synced_at', sa.DateTime(), nullable=True))
-                batch_op.add_column(sa.Column('gaming_preferences', sa.Text(), nullable=True))
-                batch_op.add_column(sa.Column('favorite_genres', sa.Text(), nullable=True))
-                batch_op.add_column(sa.Column('gaming_style', sa.String(length=50), nullable=True))
-                batch_op.create_unique_constraint('uq_user_steam_id', ['steam_id'])
+                if 'steam_id' not in user_columns:
+                    batch_op.add_column(sa.Column('steam_id', sa.String(length=17), nullable=True))
+                if 'steam_username' not in user_columns:
+                    batch_op.add_column(sa.Column('steam_username', sa.String(length=100), nullable=True))
+                if 'steam_avatar_url' not in user_columns:
+                    batch_op.add_column(sa.Column('steam_avatar_url', sa.String(length=300), nullable=True))
+                if 'steam_profile_url' not in user_columns:
+                    batch_op.add_column(sa.Column('steam_profile_url', sa.String(length=300), nullable=True))
+                if 'steam_library_synced_at' not in user_columns:
+                    batch_op.add_column(sa.Column('steam_library_synced_at', sa.DateTime(), nullable=True))
+                if 'gaming_preferences' not in user_columns:
+                    batch_op.add_column(sa.Column('gaming_preferences', sa.Text(), nullable=True))
+                if 'favorite_genres' not in user_columns:
+                    batch_op.add_column(sa.Column('favorite_genres', sa.Text(), nullable=True))
+                if 'gaming_style' not in user_columns:
+                    batch_op.add_column(sa.Column('gaming_style', sa.String(length=50), nullable=True))
+                
+                # Only create unique constraint if it doesn't exist
+                try:
+                    batch_op.create_unique_constraint('uq_user_steam_id', ['steam_id'])
+                except Exception:
+                    # Constraint might already exist, skip it
+                    pass
 
             # ### end Alembic commands ###
 
