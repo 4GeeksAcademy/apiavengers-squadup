@@ -1,7 +1,7 @@
 // src/pages/Single.jsx
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
+//import { jwtDecode } from "jwt-decode";
 
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import {ConnectSteamButton} from "../components/ConnectSteamButton";   
