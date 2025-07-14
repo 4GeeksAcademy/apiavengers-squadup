@@ -16,10 +16,10 @@ cloudinary = "*"
 werkzeug = "*"
 requests = "*"
 pyjwt = "==2.9.0"
-flask-socketio = "*"
 python-dotenv = "*"
 flask-limiter = "*"
-flask-migrate = "*"
+flask-socketio = "*"
+flask-swagger = "*"
 
 [dev-packages]
 

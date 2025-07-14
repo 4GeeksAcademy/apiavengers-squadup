@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'; // REVISED: Added useEffect
 import { Link, useNavigate } from 'react-router-dom';
-import authService from '../store/authService';
 // REVISED: We now import the global state hook to react to the auth state.
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store';

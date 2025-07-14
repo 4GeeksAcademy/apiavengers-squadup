@@ -23,12 +23,9 @@ export const Profile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const { user: storeUser, dispatch } = useGlobalReducer();
-
     const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
 
-    const navigate = useNavigate();
 
     useEffect(() => {
         let mounted = true;
