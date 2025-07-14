@@ -1,4 +1,4 @@
-// src/front/main.jsx
+// src/front/main.jsx - Optimized for 429 Prevention
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -10,9 +10,10 @@ import './index.css';
 import { RouterProvider } from "react-router-dom";
 import { router } from "./routes.jsx";
 
-// Import store provider with correct syntax
+// Import optimized store provider
 import { StoreProvider } from './hooks/useGlobalReducer.jsx';
 import { BackendURL } from './components/BackendURL.jsx';
+import { AuthBootstrap } from './components/AuthBootstrap.jsx';
 
 const Main = () => {
     // Check if the backend URL is configured in your .env file
@@ -26,11 +27,13 @@ const Main = () => {
         );
     }
     
-    // If configured, render the main app
+    // If configured, render the main app with optimized providers
     return (
         <React.StrictMode>
             <StoreProvider>
-                <RouterProvider router={router} />
+                <AuthBootstrap>
+                    <RouterProvider router={router} />
+                </AuthBootstrap>
             </StoreProvider>
         </React.StrictMode>
     );

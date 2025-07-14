@@ -76,7 +76,8 @@ export const Login = () => {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSubmit = async (e) => {
+    /* ───────── submit ───────── */
+    const onSubmit = async e => {
         e.preventDefault();
         
         if (!validateForm()) return;
@@ -165,6 +166,40 @@ export const Login = () => {
         authLoading: store?.authLoading,
         hasToken: !!authService.getAccessToken(),
         hasStoredUser: !!authService.getCurrentUser()
+        
+        if (!validate()) return;
+
+        setLoading(true);
+        const { success, user, error } = await authService.login(formData);
+
+        if (success) {
+            // move tokens to sessionStorage if "Remember me" NOT checked
+            if (!remember) {
+                sessionStorage.setItem('access_token', authService.getAccessToken());
+                sessionStorage.setItem('refresh_token', authService.getRefreshToken());
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('token_expiration');
+            }
+
+            dispatch({
+                type: ACTION_TYPES.LOGIN_SUCCESS,
+                payload: { user, token: authService.getAccessToken() }
+            });
+
+            setSuccess('Login successful! Welcome back!');
+            setFormData({ login: '', password: '' });
+            navigate('/profile', { replace: true });
+
+
+        } else {
+            setErrors({ submit: error || 'Login failed' });
+        }
+        setLoading(false);
+    };
+
+    const handleForgotPassword = () => {
+        navigate('/forgot-password');
     };
 
     return (
@@ -176,7 +211,7 @@ export const Login = () => {
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(138,43,226,0.1),transparent_50%)]"></div>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(0,191,255,0.1),transparent_50%)]"></div>
                 </div>
-                
+
                 {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     {[...Array(50)].map((_, i) => (
@@ -297,7 +332,7 @@ export const Login = () => {
                                     </label>
                                     <div className="relative group">
                                         <input
-                                            type={showPassword ? 'text' : 'password'}
+                                            type={showPw ? 'text' : 'password'}
                                             name="password"
                                             value={formData.password}
                                             onChange={handleChange}
@@ -312,12 +347,12 @@ export const Login = () => {
                                         />
                                         <button
                                             type="button"
-                                            onClick={() => setShowPassword(!showPassword)}
+                                            onClick={() => setShowPw(!showPw)}
                                             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200"
                                             disabled={isLoading}
                                             tabIndex={-1}
                                         >
-                                            {showPassword ? '👁️' : '👁️‍🗨️'}
+                                            {showPw ? '👁️' : '👁️‍🗨️'}
                                         </button>
                                         {errors.password && (
                                             <p className="mt-1 text-xs text-red-400">{errors.password}</p>
@@ -350,11 +385,11 @@ export const Login = () => {
 
                                 {/* Submit Button */}
                                 <button
-                                    type="submit"
-                                    disabled={isLoading}
+                                    onClick={onSubmit}
+                                    disabled={loading}
                                     className="w-full py-3 px-4 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 focus:outline-none focus:ring-2 focus:ring-coral-500/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none"
                                 >
-                                    {isLoading ? (
+                                    {loading ? (
                                         <div className="flex items-center justify-center">
                                             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
                                             Signing in...
@@ -381,6 +416,13 @@ export const Login = () => {
                                 <span className="text-lg">🎮</span>
                                 <span className="group-hover:text-blue-300 transition-colors duration-300">Continue with Steam</span>
                             </button>
+                            {/* Social Login Buttons */}
+
+                                <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group">
+                                    <span className="text-lg">🎵</span>
+                                    <span className="group-hover:text-purple-300 transition-colors duration-300">Continue with Discord</span>
+                                </button>
+                            </div>
 
                             {/* Signup Link */}
                             <p className="mt-6 text-center text-white/70 text-sm">

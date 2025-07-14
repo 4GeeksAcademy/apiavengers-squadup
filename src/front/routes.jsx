@@ -17,6 +17,7 @@ import JoinGroup from "./pages/JoinGroup";
 import GroupPage from "./pages/GroupPage";
 import ResultsPage from "./pages/ResultsPage";
 
+import { SteamCallback } from "./pages/SteamCallback";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -36,6 +37,14 @@ export const router = createBrowserRouter(
 
             {/* Standalone routes */}
             <Route path="/join/:inviteCode" element={<JoinGroup />} />
+            {/* Public Routes */}
+            <Route path="/" element={<Home />} />
+            <Route path="/demo" element={<Demo />} />
+            <Route path="/single/:theId" element={<Single />} />
+            <Route path= "/steam/callback" element= {<SteamCallback /> }/>
+
+            {/* Authentication Routes */}
+            <Route path="/signup" element={<SignUp />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
 

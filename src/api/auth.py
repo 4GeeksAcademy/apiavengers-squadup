@@ -13,6 +13,9 @@ import re
 import json
 from datetime import datetime, timedelta
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError, ProgrammingError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 auth = Blueprint('auth', __name__)
 CORS(auth)
@@ -22,6 +25,7 @@ def validate_email(email):
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email) is not None
 
+
 def validate_password(password):
     if len(password) < 8: return False, "Password must be at least 8 characters long"
     if not re.search(r'[A-Z]', password): return False, "Password must contain at least one uppercase letter"
@@ -29,10 +33,21 @@ def validate_password(password):
     if not re.search(r'[0-9]', password): return False, "Password must contain at least one number"
     return True, "Password is valid"
 
+
 def validate_username(username):
     if len(username) < 3 or len(username) > 20: return False, "Username must be between 3 and 20 characters"
     if not re.match(r'^[a-zA-Z0-9_]+$', username): return False, "Username can only contain letters, numbers, and underscores"
     return True, "Username is valid"
+
+
+@auth.route('/users', methods=['GET'])
+def get_users():
+    users = User.query.all()
+    return jsonify([{
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+    } for user in users]), 200
 
 
 @auth.route('/register', methods=['POST'])
@@ -74,7 +89,7 @@ def register():
             "tokens": {"access_token": access_token, "refresh_token": refresh_token},
             "expires_in": 3600
         }), 201
-        
+
     except APIException as e:
         db.session.rollback()
         return jsonify({"success": False, "error": e.message}), e.status_code
@@ -82,6 +97,7 @@ def register():
         db.session.rollback()
         current_app.logger.info(f"Generated access_token: {access_token[:20]}...")
         return jsonify({"success": False, "error": "Internal server error"}), 500
+
 
 
 @auth.route('/login', methods=['POST'])
@@ -101,7 +117,7 @@ def login():
         if not user or not user.check_password(password):
             current_app.logger.warning(f"Failed login attempt for: {login_field}")
             raise APIException("Invalid credentials", status_code=401)
-        
+
         if not user.is_active:
             current_app.logger.warning(f"Login attempt for inactive account: {user.username}")
             raise APIException("Account is deactivated", status_code=401)
@@ -121,7 +137,7 @@ def login():
             "tokens": {"access_token": access_token, "refresh_token": refresh_token},
             "expires_in": 3600
         }), 200
-        
+
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
@@ -141,6 +157,7 @@ def logout():
         current_app.logger.error(f"Logout error: {str(e)}")
         return jsonify({"success": False, "error": "Logout failed"}), 500
 
+
 @auth.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh_token():
@@ -154,6 +171,8 @@ def refresh_token():
         current_app.logger.error(f"Token refresh error: {str(e)}")
         return jsonify({"success": False, "error": "Token refresh failed"}), 401
 
+
+
 @auth.route('/verify', methods=['GET'])
 @jwt_required()
 def verify_token():
@@ -165,6 +184,7 @@ def verify_token():
     except Exception as e:
         current_app.logger.error(f"Token verification error: {str(e)}")
         return jsonify({"valid": False, "success": False, "error": "Invalid token"}), 401
+
 
 @auth.route('/profile', methods=['GET', 'PUT'])
 @jwt_required()

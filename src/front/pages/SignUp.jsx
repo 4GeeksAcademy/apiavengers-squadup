@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 // REVISED: We now import the global state hook to react to the auth state.
 import useGlobalReducer from '../hooks/useGlobalReducer';
+import { ACTION_TYPES } from '../store/store';
+import authService from '../store/authService';
 
 export const SignUp = () => {
     // --- All of your state hooks remain the same ---
@@ -31,24 +33,58 @@ export const SignUp = () => {
     // --- The handleChange and validateForm functions are perfect and remain unchanged. ---
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-        if (errors[name]) { setErrors(prev => ({ ...prev, [name]: '' })); }
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+
+        // Clear error for this field when user starts typing
+        if (errors[name]) {
+            setErrors(prev => ({
+                ...prev,
+                [name]: ''
+            }));
+        }
     };
 
     const validateForm = () => {
         const newErrors = {};
+
+        // Email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!formData.email) newErrors.email = 'Email is required';
-        else if (!emailRegex.test(formData.email)) newErrors.email = 'Please enter a valid email';
-        if (!formData.username) newErrors.username = 'Username is required';
-        else if (formData.username.length < 3) newErrors.username = 'Username must be at least 3 characters';
-        else if (formData.username.length > 20) newErrors.username = 'Username must be less than 20 characters';
-        else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) newErrors.username = 'Username can only contain letters, numbers, and underscores';
-        if (!formData.password) newErrors.password = 'Password is required';
-        else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
-        else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) newErrors.password = 'Password must contain uppercase, lowercase, and number';
-        if (!formData.confirmPassword) newErrors.confirmPassword = 'Please confirm your password';
-        else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+        if (!formData.email) {
+            newErrors.email = 'Email is required';
+        } else if (!emailRegex.test(formData.email)) {
+            newErrors.email = 'Please enter a valid email';
+        }
+
+        // Username validation
+        if (!formData.username) {
+            newErrors.username = 'Username is required';
+        } else if (formData.username.length < 3) {
+            newErrors.username = 'Username must be at least 3 characters';
+        } else if (formData.username.length > 20) {
+            newErrors.username = 'Username must be less than 20 characters';
+        } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+            newErrors.username = 'Username can only contain letters, numbers, and underscores';
+        }
+
+        // Password validation
+        if (!formData.password) {
+            newErrors.password = 'Password is required';
+        } else if (formData.password.length < 8) {
+            newErrors.password = 'Password must be at least 8 characters';
+        } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+            newErrors.password = 'Password must contain uppercase, lowercase, and number';
+        }
+
+        // Confirm password validation
+        if (!formData.confirmPassword) {
+            newErrors.confirmPassword = 'Please confirm your password';
+        } else if (formData.password !== formData.confirmPassword) {
+            newErrors.confirmPassword = 'Passwords do not match';
+        }
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -57,24 +93,73 @@ export const SignUp = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validateForm()) return;
-        
-        setIsLoading(true);
-        setErrors({});
 
-        // This is correct: it calls the service to handle the registration and state update.
-        const result = await authService.register({
-            email: formData.email,
-            username: formData.username,
-            password: formData.password,
-            confirmPassword: formData.confirmPassword
-        });
-        
-        setIsLoading(false);
-        
-        // REVISED: We only handle the failure case here.
-        // The useEffect hook will handle the successful navigation.
-        if (!result.success) {
-            setErrors({ submit: result.error || 'An unknown error occurred.' });
+        setIsLoading(true);
+
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+            const res = await fetch(`${backendUrl}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: formData.email,
+                    username: formData.username,
+                    password: formData.password,
+                    confirmPassword: formData.confirmPassword   // ← backend expects this key
+                })
+            });
+
+            // attempt to parse JSON regardless of status
+            let data = {};
+            try {
+                data = await res.json();
+            } catch { /* ignore if not JSON */ }
+
+            if (res.ok) {
+                const { user, access_token, refresh_token, message } = data;
+
+                // persist token & user
+                localStorage.setItem('access_token', access_token);
+                if (refresh_token) {
+                    localStorage.setItem('refresh_token', refresh_token);
+                }
+                dispatch({
+                    type: ACTION_TYPES.LOGIN_SUCCESS,
+                    payload: {
+                        user: user,
+                        token: access_token
+                    }
+                });
+
+                setFormData({
+                    email: '',
+                    username: '',
+                    password: '',
+                    confirmPassword: ''
+                });
+
+                // show success toast/message
+                dispatch({
+                    type: 'set_message',
+                    payload: { type: 'success', text: message || 'Account created!' }
+                });
+
+
+                setTimeout(() => {
+                    navigate('/login', { replace: true });
+                }, 500);
+
+            } else {
+                // show backend-supplied error, or fallback
+                setErrors({ submit: data.error || data.message || 'Registration failed' });
+            }
+
+        } catch (err) {
+            console.error(err);
+            setErrors({ submit: 'Network error. Please try again.' });
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -90,11 +175,11 @@ export const SignUp = () => {
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(138,43,226,0.1),transparent_50%)]"></div>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(0,191,255,0.1),transparent_50%)]"></div>
                 </div>
-                
+
                 {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     {[...Array(50)].map((_, i) => (
-                        <div 
+                        <div
                             key={i}
                             className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
                             style={{
@@ -119,8 +204,8 @@ export const SignUp = () => {
                                     SquadUp
                                 </span>
                             </Link>
-                            <Link 
-                                to="/login" 
+                            <Link
+                                to="/login"
                                 className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
                             >
                                 Already have an account?
@@ -161,11 +246,11 @@ export const SignUp = () => {
                                             name="email"
                                             value={formData.email}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 bg-white/5 border ${
-                                                errors.email 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            disabled={isLoading}
+                                            className={`w-full px-4 py-3 bg-white/5 border ${errors.email
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Enter your email"
                                         />
                                         {errors.email && (
@@ -185,11 +270,11 @@ export const SignUp = () => {
                                             name="username"
                                             value={formData.username}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 bg-white/5 border ${
-                                                errors.username 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            disabled={isLoading}
+                                            className={`w-full px-4 py-3 bg-white/5 border ${errors.username
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Choose a username"
                                         />
                                         {errors.username && (
@@ -209,11 +294,11 @@ export const SignUp = () => {
                                             name="password"
                                             value={formData.password}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${
-                                                errors.password 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            disabled={isLoading}
+                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${errors.password
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Create a password"
                                         />
                                         <button
@@ -240,16 +325,17 @@ export const SignUp = () => {
                                             name="confirmPassword"
                                             value={formData.confirmPassword}
                                             onChange={handleChange}
-                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${
-                                                errors.confirmPassword 
-                                                    ? 'border-red-500/50 focus:border-red-500' 
-                                                    : 'border-white/20 focus:border-coral-500'
-                                            } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
+                                            disabled={isLoading}
+                                            className={`w-full px-4 py-3 pr-12 bg-white/5 border ${errors.confirmPassword
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
+                                                } rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-white/10`}
                                             placeholder="Confirm your password"
                                         />
                                         <button
                                             type="button"
                                             onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                            disabled={isLoading}
                                             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200"
                                         >
                                             {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
@@ -288,13 +374,14 @@ export const SignUp = () => {
                             <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group">
                                 <span className="text-lg">🎮</span>
                                 <span className="group-hover:text-blue-300 transition-colors duration-300">Connect with Steam</span>
+                                disabled={isLoading}
                             </button>
 
                             {/* Login Link */}
                             <p className="mt-6 text-center text-white/70 text-sm">
                                 Already have an account?{' '}
-                                <Link 
-                                    to="/login" 
+                                <Link
+                                    to="/login"
                                     className="text-coral-400 hover:text-coral-300 font-medium transition-colors duration-300 hover:underline"
                                 >
                                     Sign in

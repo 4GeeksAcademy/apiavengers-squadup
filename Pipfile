@@ -11,12 +11,15 @@ flask-jwt-extended = "==4.6.0"
 flask-cors = "*"
 flask-admin = "*"
 psycopg2-binary = "*"
-python-dotenv = "*"
 gunicorn = "*"
 cloudinary = "*"
 werkzeug = "*"
 requests = "*"
 pyjwt = "==2.9.0"
+flask-socketio = "*"
+python-dotenv = "*"
+flask-limiter = "*"
+flask-migrate = "*"
 
 [dev-packages]
 

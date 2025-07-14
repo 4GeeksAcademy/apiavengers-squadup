@@ -1,8 +1,8 @@
-// src/front/hooks/useGlobalReducer.jsx
+// src/front/hooks/useGlobalReducer.jsx - Optimized for 429 Prevention
 
-import React, { useContext, useReducer, createContext } from "react";
-// REVISED: We ONLY import the reducer logic, not any old action creators.
-import storeReducer, { initialStore } from "../store/store";
+import { useContext, useReducer, createContext, useMemo } from "react";
+import storeReducer, { initialStore, ACTION_TYPES } from "../store/store"
+import authService from "../store/authService.js";
 
 const StoreContext = createContext();
 
@@ -13,9 +13,74 @@ export function StoreProvider({ children }) {
     // have been completely removed from this file.
     const [store, dispatch] = useReducer(storeReducer, initialStore());
 
-    // The value provided to all child components is now simple and clean.
-    const contextValue = { store, dispatch };
-    
+    // Memoize context value to prevent unnecessary re-renders
+    const contextValue = useMemo(() => ({
+        store,
+        dispatch,
+        
+        // Helper functions for common actions
+        actions: {
+            // Authentication helpers - optimized
+            login: (user, token) => {
+                localStorage.setItem('token', token);
+                dispatch({ 
+                    type: ACTION_TYPES.LOGIN_SUCCESS, 
+                    payload: { user, token } 
+                });
+            },
+            
+            logout: () => {
+                // Use authService to ensure proper cleanup
+                authService.clearTokens();
+                dispatch({ type: ACTION_TYPES.LOGOUT });
+            },
+            
+            setUser: (user) => {
+                dispatch({ type: ACTION_TYPES.SET_USER, payload: user });
+            },
+            
+            setLoading: (loading) => {
+                dispatch({ type: ACTION_TYPES.SET_LOADING, payload: loading });
+            },
+            
+            setError: (error) => {
+                dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
+            },
+            
+            clearError: () => {
+                dispatch({ type: ACTION_TYPES.CLEAR_ERROR });
+            },
+            
+            // Message helpers
+            setMessage: (message) => {
+                dispatch({ type: ACTION_TYPES.SET_MESSAGE, payload: message });
+                
+                // Auto-clear success messages after 5 seconds
+                if (message?.type === 'success') {
+                    setTimeout(() => {
+                        dispatch({ type: ACTION_TYPES.CLEAR_MESSAGE });
+                    }, 5000);
+                }
+            },
+            
+            clearMessage: () => {
+                dispatch({ type: ACTION_TYPES.CLEAR_MESSAGE });
+            },
+            
+            // Demo helpers (for existing functionality)
+            setHello: (message) => {
+                dispatch({ type: ACTION_TYPES.SET_HELLO, payload: message });
+            },
+            
+            changeTaskColor: (id, color) => {
+                dispatch({ 
+                    type: ACTION_TYPES.ADD_TASK, 
+                    payload: { id, color } 
+                });
+            }
+        }
+    }), [store, dispatch]);
+
     return (
         <StoreContext.Provider value={contextValue}>
             {children}
@@ -29,9 +94,23 @@ function useGlobalReducer() {
     if (!context) {
         throw new Error('useGlobalReducer must be used within a StoreProvider');
     }
-    // REVISED: The hook now returns the raw context. Components that use this
-    // hook will destructure what they need (e.g., const { store } = useGlobalReducer();).
-    return context;
+    
+    const { store, dispatch, actions } = context;
+    
+    // Memoize the return value to prevent unnecessary re-renders
+    return useMemo(() => ({ 
+        store, 
+        dispatch, 
+        actions,
+        
+        // Computed values for convenience
+        isAuthenticated: store.isAuthenticated,
+        user: store.user,
+        isLoading: store.authLoading,
+        error: store.authError,
+        message: store.message
+    }), [store, dispatch, actions]);
 }
 
+// Export as default
 export default useGlobalReducer;

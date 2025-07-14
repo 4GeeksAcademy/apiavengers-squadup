@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GamingAnimations, GamingCard, GamingLink } from '../components/GamingAnimations'; // ✅ CORRECT: Import shared components
+import { Link, Navigate } from 'react-router-dom';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useNavigate } from 'react-router-dom';
 
 export const Home = () => {
   const [activeTab, setActiveTab] = useState('home');
+  const navigate = useNavigate();
   
   return (
     <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
@@ -68,9 +73,19 @@ export const Home = () => {
         </div>
 
         <div className="flex flex-wrap justify-center gap-6 mb-12" data-animate="true">
-          <GamingLink variant="primary" to="/signup">Start Gaming</GamingLink>
-          <GamingLink variant="neon" to="/demo">Try Demo</GamingLink>
-          <GamingLink variant="ghost" to="/login">Sign In</GamingLink>
+          <Link to="/signup">
+            <GamingButton variant="primary">
+              Start Gaming
+            </GamingButton>
+          </Link>
+          <Link to="/demo">
+            <GamingButton variant="neon">
+              Try Demo
+            </GamingButton>
+          </Link>
+           <GamingButton onClick={()=> navigate('/login')}>
+              Sign In
+            </GamingButton>
         </div>
 
         <GamingCard data-animate="true">
