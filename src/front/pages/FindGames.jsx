@@ -1,18 +1,22 @@
 import React, { useEffect, useState } from 'react';
+import useGlobalReducer from '../hooks/useGlobalReducer';  // Import to access store
 import authService from '../store/authService.js';  // For authenticated API calls
 
 const FindGames = () => {
+    const { store } = useGlobalReducer();  // Get global store
     const [commonGames, setCommonGames] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
     useEffect(() => {
         const fetchCommonGames = async () => {
+            console.log('Fetching common games');  // Debug to trace calls
             try {
-                // Example: Call backend to get common games (add user_ids as needed, e.g., from group/friends)
+                // Use current user's ID from store; add more IDs (e.g., from friends/group) later
+                const userIds = [store.user?.id || 1, 2];  // Placeholder for multiple users
                 const response = await authService.authenticatedFetch('/api/steam/common-games', {
                     method: 'POST',
-                    body: JSON.stringify({ user_ids: [1, 2] })  // Placeholder; get real IDs from store/context
+                    body: JSON.stringify({ user_ids: userIds })
                 });
                 if (!response.ok) throw new Error('Failed to fetch games');
                 const data = await response.json();
@@ -24,7 +28,7 @@ const FindGames = () => {
             }
         };
         fetchCommonGames();
-    }, []);
+    }, []);  // Empty dependency prevents re-fetches
 
     return (
         <div className="page-container">

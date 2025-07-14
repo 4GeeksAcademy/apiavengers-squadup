@@ -35,3 +35,13 @@
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
 }
+
+.nav-dropdown.active {
+  pointer-events: auto !important;
+  z-index: 70 !important;
+}
+
+.dropdown-item {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}

@@ -3,15 +3,15 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { GamingLink } from './GamingAnimations';
-import useGlobalReducer from '../hooks/useGlobalReducer'; // Add this import
-import authService from '../store/authService.js';  // Changed to default import
+import useGlobalReducer from '../hooks/useGlobalReducer';
+import authService from '../store/authService.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
 export const Navbar = () => {
-    const { store, dispatch } = useGlobalReducer(); // Use global store
-    const isAuthenticated = store.isAuthenticated; // From global store
-    const user = store.user; // From global store
+    const { store, dispatch } = useGlobalReducer();
+    const isAuthenticated = store.isAuthenticated;
+    const user = store.user;
     const [showUserMenu, setShowUserMenu] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
@@ -24,24 +24,22 @@ export const Navbar = () => {
     }
 
     const handleLogout = () => {
-        // Assuming authService has a logout method that clears tokens and dispatches
-        // If not, add: localStorage.removeItem('token'); sessionStorage.removeItem('token');
-        dispatch({ type: 'logout' }); // Dispatch global logout
+        console.log('Logout clicked');
+        dispatch({ type: 'logout' });
         setShowUserMenu(false);
         navigate('/');
     };
 
-    // Updated handler for Steam Integration (prompt for steamId)
     const handleSteamIntegration = async () => {
-        const steamId = prompt('Enter your Steam ID to connect:');  // Simple MVP prompt; replace with modal/form later
+        console.log('Steam Integration clicked');
+        const steamId = prompt('Enter your Steam ID to connect:');
         if (!steamId) {
             alert('Steam ID is required.');
             return;
         }
-        
         try {
-            await authService.connectSteam(steamId);  // Call on the instance
-            alert('Steam integration initiated!');  // Placeholder feedback; replace with better UX if needed
+            await authService.connectSteam(steamId);
+            alert('Steam integration initiated!');
             setShowUserMenu(false);
         } catch (error) {
             console.error('Steam integration failed:', error);
@@ -49,11 +47,14 @@ export const Navbar = () => {
         }
     };
 
+    const handleProfileClick = () => console.log('Profile Settings clicked');
+    const handleDashboardClick = () => console.log('Dashboard clicked');
+    const handleFindGamesClick = () => console.log('Find Games clicked');
+
     return (
         <nav className="fixed top-4 left-4 right-4 z-50">
             <div className="navbar-glass">
                 <div className="flex justify-between items-center">
-                    
                     <Link 
                         to="/"
                         className="flex items-center space-x-3 group"
@@ -67,7 +68,6 @@ export const Navbar = () => {
                     </Link>
 
                     <div className="flex items-center space-x-6">
-                        
                         {isAuthenticated ? (
                             <>
                                 <Link to="/dashboard" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
@@ -88,7 +88,7 @@ export const Navbar = () => {
 
                         {isAuthenticated ? (
                             <div className="flex items-center space-x-4">
-                                <div className="relative">
+                                <div className="relative z-[60]">  {/* Increased z-index for stacking context */}
                                     <button 
                                         onClick={() => setShowUserMenu(!showUserMenu)}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
@@ -110,17 +110,17 @@ export const Navbar = () => {
                                         </svg>
                                     </button>
                                     
-                                    <div className={`nav-dropdown ${showUserMenu ? 'active' : ''}`}>
-                                        <Link to="/profile" className="dropdown-item">
+                                    <div className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}>  {/* Inline override for pointer-events and z-index */}
+                                        <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
                                             <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
                                         </Link>
-                                        <Link to="/dashboard" className="dropdown-item">
+                                        <Link to="/dashboard" className="dropdown-item" onClick={handleDashboardClick}>
                                             <span className="flex items-center space-x-2"><span>📊</span><span>Dashboard</span></span>
                                         </Link>
-                                        <Link to="/sessions" className="dropdown-item">
+                                        <Link to="/sessions" className="dropdown-item" onClick={handleFindGamesClick}>
                                             <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
                                         </Link>
-                                        <button className="dropdown-item" onClick={handleSteamIntegration}>  {/* Added onClick here */}
+                                        <button className="dropdown-item" onClick={handleSteamIntegration}>
                                             <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
                                         </button>
                                         <hr className="my-2 border-white/20" />
@@ -135,10 +135,9 @@ export const Navbar = () => {
                                 <Link to="/login" className="text-white/80 hover:text-white transition-colors duration-300 font-medium">
                                     Login
                                 </Link>
-                                {/* ✅ FIXED: Replaced standard Link with GamingLink for animated navigation */}
                                 <GamingLink
                                     to="/signup"
-                                    variant="primary" // Matches the coral/orange theme for primary actions
+                                    variant="primary"
                                 >
                                     Sign Up
                                 </GamingLink>
