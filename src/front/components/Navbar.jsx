@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -15,6 +15,7 @@ export const Navbar = () => {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
+    const dropdownRef = useRef(null);
 
     const authPages = ['/login', '/signup'];
     const isAuthPage = authPages.includes(location.pathname);
@@ -22,6 +23,23 @@ export const Navbar = () => {
     if (isAuthPage) {
         return null;
     }
+
+    const handleToggle = (event) => {
+        event.stopPropagation();
+        setShowUserMenu(!showUserMenu);
+    };
+
+    useEffect(() => {
+        const handleOutsideClick = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setShowUserMenu(false);
+            }
+        };
+        if (showUserMenu) {
+            document.addEventListener('click', handleOutsideClick);
+        }
+        return () => document.removeEventListener('click', handleOutsideClick);
+    }, [showUserMenu]);
 
     const handleLogout = () => {
         console.log('Logout clicked');
@@ -47,9 +65,20 @@ export const Navbar = () => {
         }
     };
 
-    const handleProfileClick = () => console.log('Profile Settings clicked');
-    const handleDashboardClick = () => console.log('Dashboard clicked');
-    const handleFindGamesClick = () => console.log('Find Games clicked');
+    const handleProfileClick = () => {
+        console.log('Profile Settings clicked');
+        setShowUserMenu(false);
+    };
+
+    const handleDashboardClick = () => {
+        console.log('Dashboard clicked');
+        setShowUserMenu(false);
+    };
+
+    const handleFindGamesClick = () => {
+        console.log('Find Games clicked');
+        setShowUserMenu(false);
+    };
 
     return (
         <nav className="fixed top-4 left-4 right-4 z-50">
@@ -90,7 +119,7 @@ export const Navbar = () => {
                             <div className="flex items-center space-x-4">
                                 <div className="relative z-[60]">  {/* Increased z-index for stacking context */}
                                     <button 
-                                        onClick={() => setShowUserMenu(!showUserMenu)}
+                                        onClick={handleToggle}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
                                     >
                                         {user?.avatar_url ? (
@@ -110,7 +139,12 @@ export const Navbar = () => {
                                         </svg>
                                     </button>
                                     
-                                    <div className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}>  {/* Inline override for pointer-events and z-index */}
+                                    <div 
+                                        ref={dropdownRef}
+                                        className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} 
+                                        style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}  
+                                        onClick={(e) => e.stopPropagation()}
+                                    >  
                                         <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
                                             <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
                                         </Link>
@@ -146,13 +180,6 @@ export const Navbar = () => {
                     </div>
                 </div>
             </div>
-
-            {showUserMenu && (
-                <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setShowUserMenu(false)}
-                ></div>
-            )}
         </nav>
     );
 };
