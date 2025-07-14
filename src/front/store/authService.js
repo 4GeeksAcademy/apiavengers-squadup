@@ -386,6 +386,29 @@ class AuthService {
                     throw new Error('Unable to refresh token');
                 }
             }
+        }
+
+        // Create the request promise
+        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
+        
+        // Store it for deduplication
+        this.#pendingRequests.set(requestKey, requestPromise);
+        
+        // Clean up after request completes
+        requestPromise.finally(() => {
+            this.#pendingRequests.delete(requestKey);
+        });
+
+        return requestPromise;
+    }
+
+    async login(credentials, remember = false) {
+        try {
+            console.log('🔐 Starting login process...');
+            
+            if (this.dispatch) {
+                this.dispatch({ type: 'set_loading', payload: true });
+            }
             
             const response = await fetch(`${this.apiUrl}/api/auth/login`, { 
                 method: 'POST', 
@@ -410,7 +433,7 @@ class AuthService {
                 
                 if (this.dispatch) {
                     this.dispatch({ 
-                        type: 'login_success', // FIXED: lowercase
+                        type: 'login_success',
                         payload: { 
                             user: data.user, 
                             token: accessToken, 
@@ -423,30 +446,17 @@ class AuthService {
                 return { success: true, user: data.user };
             } else { 
                 if (this.dispatch) {
-                    this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+                    this.dispatch({ type: 'set_loading', payload: false });
                 }
                 return { success: false, error: data.error || 'Login failed' }; 
             }
         } catch (error) { 
             console.error('Login error:', error);
             if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+                this.dispatch({ type: 'set_loading', payload: false });
             }
             return { success: false, error: error.message || 'Network error' }; 
         }
-
-        // Create the request promise
-        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
-        
-        // Store it for deduplication
-        this.#pendingRequests.set(requestKey, requestPromise);
-        
-        // Clean up after request completes
-        requestPromise.finally(() => {
-            this.#pendingRequests.delete(requestKey);
-        });
-
-        return requestPromise;
     }
 
     async register(userData, remember = false) {
