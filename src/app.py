@@ -16,16 +16,13 @@ from dotenv import load_dotenv
 load_dotenv() 
 
 # Third-party imports
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
-
-
-from flask import Flask, send_from_directory, jsonify, request, current_app   
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, current_app
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
-from api.steam_auth import steam_bp
 from flask_swagger import swagger
 from flask_jwt_extended import JWTManager, get_jwt, create_refresh_token
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Local application imports
 from api.utils import APIException
@@ -35,16 +32,7 @@ from api.gaming import gaming
 from api.admin import setup_admin
 from api.commands import setup_commands
 from api.steam_auth import steam_auth
-from api.steam_auth import steam_bp
-from api.gaming import gaming  # Import gaming blueprint
-from api.admin import setup_admin
-from api.commands import setup_commands
 from api.genre_routes import genre_bp
-from werkzeug.middleware.proxy_fix import ProxyFix
-from dotenv import load_dotenv
-
-load_dotenv()
-SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
 
 # ============================================================================
 # App Initialization & Environment
@@ -56,9 +44,7 @@ app = Flask(__name__, static_folder=static_file_dir, static_url_path="/")
 
 app.url_map.strict_slashes = False
 
-
 socketio = SocketIO(app, cors_allowed_origins="*")
-
 
 # JWT
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -84,26 +70,13 @@ setup_commands(app)
 
 # Blueprints
 app.register_blueprint(auth, url_prefix='/api/auth')
-app.register_blueprint(steam_bp, url_prefix="/api")
+app.register_blueprint(steam_auth, url_prefix="/api")
 app.register_blueprint(genre_bp, url_prefix="/api")
 app.register_blueprint(gaming, url_prefix='/api/gaming')
-
-# Enable CORS for your GitHub Codespace frontend
-#CORS(app, origins=[
-#    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
-#    "http://localhost:3000",
-#    "https://localhost:3000",
-#])
-
-# Database configuration
-
-
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # ============================================================================
 # PRODUCTION-READY JWT CONFIGURATION
 # ============================================================================
-
 
 # SECURE TOKEN EXPIRATION TIMES
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)    # 1 HOUR (secure)
@@ -112,7 +85,6 @@ app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)   # 30 days for ref
 # ENABLE TOKEN BLACKLISTING FOR LOGOUT
 app.config['JWT_BLACKLIST_ENABLED'] = True
 app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
-
 
 # ============================================================================
 # SECURE TOKEN BLACKLIST SYSTEM
@@ -161,15 +133,6 @@ def missing_token_callback(error):
         'code': 'TOKEN_REQUIRED'
     }), 401
 
-@jwt.invalid_token_loader
-def invalid_token_callback(err_msg):
-    current_app.logger.warning(f"Invalid token → {err_msg}")
-    return jsonify(
-        error="invalid_token",
-        message=err_msg,
-        code="TOKEN_INVALID"
-    ), 401
-
 @jwt.revoked_token_loader
 def revoked_token_callback(jwt_header, jwt_payload):
     """Handle revoked tokens (logged out users)"""
@@ -198,145 +161,68 @@ def after_request(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    
-    # Only add HSTS in production with HTTPS
-    if ENV == "production":
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
     return response
 
 # ============================================================================
-# RATE LIMITING PROTECTION (Basic)
+# RATE LIMITING
 # ============================================================================
 
-from collections import defaultdict
-from datetime import datetime
-
-# Simple rate limiting storage (use Redis in production)
-rate_limit_storage = defaultdict(list)
+# Simple in-memory rate limiting (use Redis in production)
+request_counts = defaultdict(list)
 
 def is_rate_limited(identifier, max_requests=100, window_minutes=15):
-    """
-    Basic rate limiting - 100 requests per 15 minutes per IP
-    In production, use Flask-Limiter or Redis
-    """
+    """Check if request is rate limited"""
     now = datetime.utcnow()
     window_start = now - timedelta(minutes=window_minutes)
     
     # Clean old requests
-    rate_limit_storage[identifier] = [
-        req_time for req_time in rate_limit_storage[identifier] 
+    request_counts[identifier] = [
+        req_time for req_time in request_counts[identifier] 
         if req_time > window_start
     ]
     
-    # Check if over limit
-    if len(rate_limit_storage[identifier]) >= max_requests:
+    # Check if limit exceeded
+    if len(request_counts[identifier]) >= max_requests:
         return True
     
     # Add current request
-    rate_limit_storage[identifier].append(now)
+    request_counts[identifier].append(now)
     return False
 
 @app.before_request
 def rate_limit():
-    """Apply rate limiting to auth endpoints"""
-    if request.endpoint and 'auth' in request.endpoint:
-        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    """Apply rate limiting to all requests"""
+    if request.endpoint and 'static' not in request.endpoint:
+        identifier = request.remote_addr
         
-        if is_rate_limited(client_ip, max_requests=20, window_minutes=15):
+        if is_rate_limited(identifier):
             return jsonify({
                 'error': 'rate_limit_exceeded',
                 'message': 'Too many requests. Please try again later.',
-                'code': 'RATE_LIMITED'
+                'code': 'RATE_LIMIT_EXCEEDED'
             }), 429
 
 # ============================================================================
-# REST OF YOUR APP CONFIGURATION
+# ERROR HANDLERS
 # ============================================================================
-db.init_app(app)
-MIGRATE = Migrate(app, db, compare_type=True)
 
-# ============================================================================
-# JWT Configuration
-# ============================================================================
-# This line now correctly loads your secret key from the .env file.
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-# --- MINOR IMPROVEMENT: Ensure the key was actually loaded ---
-if not app.config['JWT_SECRET_KEY']:
-    raise RuntimeError("JWT_SECRET_KEY is not set in the .env file. The application cannot start securely.")
-
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
-app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
-jwt = JWTManager(app)
-app.blacklisted_tokens = set()
-
-# --- The rest of your app.py file is correct and needs no further changes ---
-
-@jwt.token_in_blocklist_loader
-def check_if_token_revoked(jwt_header, jwt_payload):
-    jti = jwt_payload['jti']
-    return jti in app.blacklisted_tokens
-
-@jwt.expired_token_loader
-def expired_token_callback(jwt_header, jwt_payload):
-    return jsonify({'message': 'The token has expired.', 'error': 'token_expired'}), 401
-
-@jwt.invalid_token_loader
-def invalid_token_callback(error):
-    return jsonify({'message': 'Signature verification failed.', 'error': 'invalid_token'}), 401
-
-@jwt.unauthorized_loader
-def missing_token_callback(error):
-    return jsonify({'message': 'Request does not contain an access token.', 'error': 'authorization_required'}), 401
-
-@jwt.revoked_token_loader
-def revoked_token_callback(jwt_header, jwt_payload):
-    return jsonify({'message': 'The token has been revoked.', 'error': 'token_revoked'}), 401
-
-# Rate Limiting & Other hooks...
-# (All other code from your file is correct)
-
-# ============================================================================
-# Blueprint & Route Registration
-# ============================================================================
-setup_admin(app)
-setup_commands(app)
-app.register_blueprint(api, url_prefix='/api')
-app.register_blueprint(auth, url_prefix='/api/auth')
-app.register_blueprint(gaming, url_prefix='/api/gaming')
-app.register_blueprint(steam_auth, url_prefix='/api/auth')
-
-# ============================================================================
-# Route Configuration & Main Entry Point
-# ============================================================================
-# (All other code from your file is correct)
-@app.route('/')
-def redirect_to_admin():
-    return redirect(url_for('admin.index'))
-
-
-
-# Error handler
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
     return jsonify(error.to_dict()), error.status_code
 
-# Sitemap / SPA fall-through
 @app.route("/")
 def sitemap():
-    if ENV == "development":
-        return generate_sitemap(app)
-    return send_from_directory(static_file_dir, "index.html")
+    return jsonify("Hello World")
 
 @app.route('/<path:path>', methods=['GET'])
 def serve_any_other_file(path):
     if not os.path.isfile(os.path.join(static_file_dir, path)):
-        path = "index.html"
+        path = os.path.join(static_file_dir, 'index.html')
     response = send_from_directory(static_file_dir, path)
     response.cache_control.max_age = 0
     return response
 
 if __name__ == '__main__':
-    PORT = int(os.environ.get('PORT', 3001))
-    socketio.run(host='0.0.0.0', port=PORT, debug=True) 
+    app.run(host='0.0.0.0', port=3001, debug=True) 
