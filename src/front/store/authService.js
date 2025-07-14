@@ -195,7 +195,7 @@ class AuthService {
         // Only refresh if token is actually expired or about to expire
         if (this.isTokenExpired(10)) { // 10 minute buffer
             console.log('🔄 Token expired, attempting refresh...');
-            return await this.refreshAccessToken();
+            return await this.refreshTokenSilently();
         }
         
         this.authCheckCompleted = true;
@@ -381,7 +381,7 @@ class AuthService {
                 const token = await refreshPromise;
                 return this.makeRequest(url, { ...options, token });
             } else {
-                const refreshed = await this.refreshAccessToken();
+                const refreshed = await this.refreshTokenSilently();
                 if (!refreshed) {
                     throw new Error('Unable to refresh token');
                 }

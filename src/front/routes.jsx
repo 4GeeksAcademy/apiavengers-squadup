@@ -10,6 +10,7 @@ import { SignUp } from "./pages/SignUp";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Profile } from "./pages/Profile";
+import { Single } from "./pages/Single";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import JoinGroup from "./pages/JoinGroup";
 
@@ -22,14 +23,14 @@ import { SteamCallback } from "./pages/SteamCallback";
 export const router = createBrowserRouter(
     createRoutesFromElements(
         <Route errorElement={<h1>Something went wrong!</h1>}>
-            
+
             {/* Routes with the main Navbar and Footer */}
             <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />
-                
+
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                
+
                 {/* Your existing routes are correct */}
                 <Route path="/groups/:groupId" element={<ProtectedRoute><GroupPage /></ProtectedRoute>} />
                 <Route path="/sessions/:sessionId/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
@@ -39,9 +40,8 @@ export const router = createBrowserRouter(
             <Route path="/join/:inviteCode" element={<JoinGroup />} />
             {/* Public Routes */}
             <Route path="/" element={<Home />} />
-            <Route path="/demo" element={<Demo />} />
             <Route path="/single/:theId" element={<Single />} />
-            <Route path= "/steam/callback" element= {<SteamCallback /> }/>
+            <Route path="/steam/callback" element={<SteamCallback />} />
 
             {/* Authentication Routes */}
             <Route path="/signup" element={<SignUp />} />
