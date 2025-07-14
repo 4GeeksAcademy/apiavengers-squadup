@@ -1,15 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { logOut } from '../store/actions';
-import { ACTION_TYPES } from '../store/store';
 
 // Reusable Loading Spinner component
 const LoadingSpinner = ({ message = 'Loading...' }) => (
-  <div 
+  <div
     className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center"
     role="status"
     aria-live="polite"
@@ -21,7 +17,7 @@ const LoadingSpinner = ({ message = 'Loading...' }) => (
   </div>
 );
 
-export const ProtectedRoute = ({ children }) => {  
+export const ProtectedRoute = ({ children }) => {
   const location = useLocation();
   const { store } = useGlobalReducer();
 
@@ -59,6 +55,8 @@ export const ProtectedRoute = ({ children }) => {
     if (import.meta.env.DEV) {
       // Optional: Add toast or alert in dev mode
       // toast.error('Auth mismatch detected! Check console.');
+    }
+  }
 
   if (authLoading) {
     console.log('⏳ ProtectedRoute: Auth is loading, showing loading screen');
@@ -78,32 +76,4 @@ export const ProtectedRoute = ({ children }) => {
   // Fallback (rarely reached)
   console.log('⚠️ ProtectedRoute: Fallback loading state');
   return <LoadingSpinner />;
-};
-    return () => { cancelled = true; };
-  }, [dispatch, isAuthenticated]);
-
-  const redirectToLogin = () => {
-
-    navigate('/login')
-  };
-
-  // Show loading spinner while checking authentication
-  if (checking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900">
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl text-center">
-          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white/70">Verifying authentication...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Redirect to login if not authenticated
-  if (!allowed && !isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  // Render protected content if authenticated
-  return children;
 };

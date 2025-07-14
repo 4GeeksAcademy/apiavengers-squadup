@@ -1,35 +1,31 @@
-import React, { useState, useEffect } from 'react'; // REVISED: Added useEffect
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-// REVISED: We now import the global state hook to react to the auth state.
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store';
 import authService from '../store/authService';
 
 export const SignUp = () => {
-    // --- All of your state hooks remain the same ---
     const [formData, setFormData] = useState({ email: '', username: '', password: '', confirmPassword: '' });
     const [errors, setErrors] = useState({});
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    
+
     const navigate = useNavigate();
 
-    // REVISED: Get isAuthenticated from the global store to watch for changes.
-    const { store } = useGlobalReducer();
+    // Get isAuthenticated from the global store to watch for changes.
+    const { store, dispatch } = useGlobalReducer();
     const { isAuthenticated } = store;
 
-    // FINAL FIX: This useEffect hook handles the redirect after successful registration.
+    // This useEffect hook handles the redirect after successful registration.
     useEffect(() => {
         // When the store updates and isAuthenticated becomes true, this will run.
         if (isAuthenticated) {
             console.log('✅ SignUp.jsx: isAuthenticated is now true. Navigating to dashboard...');
             navigate('/dashboard', { replace: true });
         }
-    }, [isAuthenticated, navigate]); // This dependency array makes the effect reactive.
+    }, [isAuthenticated, navigate]);
 
-
-    // --- The handleChange and validateForm functions are perfect and remain unchanged. ---
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({
@@ -88,7 +84,6 @@ export const SignUp = () => {
         return Object.keys(newErrors).length === 0;
     };
 
-    // --- REVISED: The handleSubmit function no longer navigates directly. ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validateForm()) return;
@@ -105,7 +100,7 @@ export const SignUp = () => {
                     email: formData.email,
                     username: formData.username,
                     password: formData.password,
-                    confirmPassword: formData.confirmPassword   // ← backend expects this key
+                    confirmPassword: formData.confirmPassword
                 })
             });
 
@@ -144,7 +139,6 @@ export const SignUp = () => {
                     payload: { type: 'success', text: message || 'Account created!' }
                 });
 
-
                 setTimeout(() => {
                     navigate('/login', { replace: true });
                 }, 500);
@@ -162,9 +156,6 @@ export const SignUp = () => {
         }
     };
 
-    // --- NO CHANGES BELOW THIS LINE ---
-    // The entire JSX structure, including all class names, styles, and animations,
-    // has been preserved exactly as you provided it.
     return (
         <>
             <div className="min-h-screen relative overflow-hidden">
@@ -370,10 +361,12 @@ export const SignUp = () => {
                             </div>
 
                             {/* Steam Connect Button */}
-                            <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group">
+                            <button
+                                className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group"
+                                disabled={isLoading}
+                            >
                                 <span className="text-lg">🎮</span>
                                 <span className="group-hover:text-blue-300 transition-colors duration-300">Connect with Steam</span>
-                                disabled={isLoading}
                             </button>
 
                             {/* Login Link */}

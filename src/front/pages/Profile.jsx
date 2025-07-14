@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import authService from '../store/authService.js'
+import authService from '../store/authService.js';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store';
 import { ConnectSteamButton } from "../components/ConnectSteamButton";
 
 export const Profile = () => {
-    // FINAL FIX: Changed 'state' to 'store' to match the hook's return value.
     const { store, dispatch } = useGlobalReducer();
     const { user: globalUser } = store;
 
     const [isEditing, setIsEditing] = useState(false);
-
+    const [user, setUser] = useState(null);
     const [formData, setFormData] = useState({
         username: '',
         email: '',
@@ -23,27 +22,27 @@ export const Profile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
+
     const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
-
 
     useEffect(() => {
         let mounted = true;
 
         const loadProfile = async () => {
             // If the user is already in global state, use it
-            if (storeUser) {
+            if (globalUser) {
                 setFormData({
-                    username: storeUser.username ?? '',
-                    email: storeUser.email ?? '',
-                    bio: storeUser.bio ?? '',
-                    avatar_url: storeUser.avatar_url ?? '',
-                    gaming_style: storeUser.gaming_style ?? '',
-                    favorite_genres: storeUser.favorite_genres ?? [],
-                    created_at: storeUser.created_at ?? '',
-                    total_games: storeUser.total_games || 0
+                    username: globalUser.username ?? '',
+                    email: globalUser.email ?? '',
+                    bio: globalUser.bio ?? '',
+                    avatar_url: globalUser.avatar_url ?? '',
+                    gaming_style: globalUser.gaming_style ?? '',
+                    favorite_genres: globalUser.favorite_genres ?? [],
+                    created_at: globalUser.created_at ?? '',
+                    total_games: globalUser.total_games || 0
                 });
-                setUser(storeUser); // Set local user state
+                setUser(globalUser); // Set local user state
                 setIsLoading(false);
                 return;
             }
@@ -95,8 +94,7 @@ export const Profile = () => {
                     gaming_style: u.gaming_style ?? '',
                     favorite_genres: u.favorite_genres ?? [],
                     created_at: u.created_at ?? '',
-                    total_games: u.total_games || 0,
-                    created_at: u.created_at || ''
+                    total_games: u.total_games || 0
                 });
             } catch (err) {
                 console.error(err);
@@ -109,7 +107,7 @@ export const Profile = () => {
         loadProfile();
 
         return () => { mounted = false; };
-    }, [backendUrl, navigate, dispatch, storeUser]);
+    }, [backendUrl, navigate, dispatch, globalUser]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -128,6 +126,7 @@ export const Profile = () => {
             return { ...prev, favorite_genres: genres };
         });
     };
+
     const handleSave = async () => {
         setIsSaving(true);
         setMessage({ type: '', text: '' });
@@ -188,70 +187,59 @@ export const Profile = () => {
 
     const navigateToDashboard = () => navigate('/dashboard');
 
-
     const handleSteamConnect = () => {
         console.log('Steam connection feature coming soon!');
         setMessage({ type: 'info', text: 'Steam integration coming soon!' });
     };
 
+    const handleDisconnectSteam = async () => {
+        try {
+            const accessToken = authService.getAccessToken();
+            const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+
+            if (!res.ok) {
+                throw new Error("Steam disconnect failed");
+            }
+
+            const userRes = await fetch(`${backendUrl}/api/me`, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+
+            if (!userRes.ok) throw new Error("Failed to refresh user");
+
+            const updatedUser = await userRes.json();
+
+            // ✅ Clear Steam info from global state
+            dispatch({
+                type: ACTION_TYPES.SET_USER,
+                payload: {
+                    ...updatedUser,
+                    steam_id: 'none',
+                    is_steam_connected: false,
+                    steam_avatar_url: 'none',
+                    steam_username: 'none',
+                    steamlinked: false
+                },
+            });
+
+            setMessage({ type: 'success', text: 'Steam account disconnected successfully!' });
+
+        } catch (err) {
+            console.error("❌ Failed to disconnect Steam:", err);
+            setMessage({ type: 'error', text: 'Failed to disconnect Steam account.' });
+        }
+    };
+
     const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
     const gamingStyles = ['Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'];
-    
-    // --- NO STYLING OR JSX CHANGES BELOW ---
-
-    const handleDisconnectSteam = async () => {
-  try {
-    const accessToken = authService.getAccessToken();
-    const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error("Steam disconnect failed");
-    }
-
-    // ✅ Clear Steam info from global state
-    dispatch({
-      type: ACTION_TYPES.SET_USER,
-      payload: {
-        steam_id: 'none',
-        is_steam_connected: false,
-        steam_avatar_url: 'none',
-        steam_username: 'none',
-        steamlinked: false
-      },
-    });
-
-  } catch (err) {
-    console.error("❌ Failed to disconnect Steam:", err);
-    alert("Failed to disconnect Steam.");
-  }
-  const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${accessToken}`,
-  },
-});
-
-if (!res.ok) throw new Error("Steam disconnect failed");
-
-const userRes = await fetch(`${backendUrl}/api/me`, {
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-  },
-});
-
-if (!userRes.ok) throw new Error("Failed to refresh user");
-
-const updatedUser = await userRes.json();
-
-dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
-};
 
     if (isLoading) {
         return (
@@ -287,7 +275,6 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
             </div>
 
             <div className="max-w-4xl mx-auto relative z-10">
-
                 {/* Header */}
                 <div className="mb-8">
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
@@ -321,12 +308,10 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                 )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
                     {/* Profile Overview */}
                     <div className="lg:col-span-1">
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                             <div className="text-center">
-
                                 {/* Avatar */}
                                 <div className="mb-6">
                                     {user?.avatar_url ? (
@@ -336,7 +321,7 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                                             className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"
                                         />
                                     ) : (
-                                        <div className="w-24 h-24 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full mx-auto flex items-center justify-center border-4 border-white/20">
+                                        <div className="w-24 h-24 bg-gradient-to-r from-coral-500 to-blue-500 rounded-full mx-auto flex items-center justify-center border-4 border-white/20">
                                             <span className="text-3xl font-bold text-white">
                                                 {user?.username?.[0]?.toUpperCase() || 'U'}
                                             </span>
@@ -352,49 +337,40 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                                 <div className="space-y-3 mb-6">
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Total Games:</span>
-                                        <span className="text-white font-medium">{storeUser?.total_games || 0}</span>
+                                        <span className="text-white font-medium">{globalUser?.total_games || 0}</span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Steam Connected:</span>
-                                        <span className={`font-medium ${storeUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
-                                            {storeUser?.is_steam_connected ? 'Yes' : 'No'}
+                                        <span className={`font-medium ${globalUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
+                                            {globalUser?.is_steam_connected ? 'Yes' : 'No'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Member Since:</span>
                                         <span className="text-white font-medium">
-                                            {storeUser?.created_at ? new Date(storeUser.created_at).toLocaleDateString() : 'Unknown'}
+                                            {globalUser?.created_at ? new Date(globalUser.created_at).toLocaleDateString() : 'Unknown'}
                                         </span>
                                     </div>
                                 </div>
 
                                 {/* Steam Integration */}
-                                {!storeUser?.is_steam_connected && (
+                                {!globalUser?.is_steam_connected && (
                                     <div className="w-full">
                                         <ConnectSteamButton
-                                            className="
-                                        w-full py-3 px-4
-                                        bg-gradient-to-r from-blue-600 to-blue-700
-                                        hover:from-blue-700 hover:to-blue-800
-                                        text-white font-semibold rounded-xl
-                                        transition-all duration-300 transform hover:-translate-y-1
-                                        shadow-lg hover:shadow-blue-500/25
-                                        flex items-center justify-center space-x-2
-                                    "
+                                            className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2"
                                         />
-
                                     </div>
                                 )}
-                                {storeUser?.is_steam_connected && (
+                                {globalUser?.is_steam_connected && (
                                     <div className="text-white/70 text-sm mb-4">
-                                        <p>Steam ID: {storeUser?.steam_id || 'Not found'}</p>
-                                        <p>Steam Profile: <a href={storeUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{storeUser?.steam_profile_url || 'Not available'}</a></p>
+                                        <p>Steam ID: {globalUser?.steam_id || 'Not found'}</p>
+                                        <p>Steam Profile: <a href={globalUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{globalUser?.steam_profile_url || 'Not available'}</a></p>
                                     </div>
                                 )}
 
                                 {/* Disconnect Button */}
                                 <div className="mt-6">
-                                    {storeUser?.is_steam_connected && (
+                                    {globalUser?.is_steam_connected && (
                                         <button
                                             onClick={handleDisconnectSteam}
                                             className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all duration-300"
@@ -410,7 +386,6 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                     {/* Profile Details */}
                     <div className="lg:col-span-2">
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-
                             {/* Edit Toggle */}
                             <div className="flex items-center justify-between mb-8">
                                 <h3 className="text-2xl font-bold text-white">Profile Details</h3>
@@ -441,7 +416,6 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                             </div>
 
                             <div className="space-y-6">
-
                                 {/* Basic Info */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
