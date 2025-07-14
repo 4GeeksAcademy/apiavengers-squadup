@@ -6,6 +6,9 @@ from api.models import db, User
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 
+# Import SteamService (assuming it's in the same directory)
+from .steam_service import steam_service
+
 api = Blueprint('api', __name__)
 
 # Allow CORS requests to this API - Updated with your GitHub Codespace URLs
@@ -39,3 +42,49 @@ def test_auth():
             "profile": "/api/auth/profile (GET/PUT)"
         }
     }), 200
+
+# ============================================================================
+# STEAM INTEGRATION ROUTES
+# ============================================================================
+
+@api.route('/steam/connect', methods=['POST'])
+def connect_steam():
+    """Connect user's Steam account"""
+    data = request.json
+    # Assuming user_id comes from auth context (e.g., JWT or session)
+    # For now, placeholder: get user_id from request or token
+    user_id = data.get('user_id')  # Replace with actual auth mechanism
+    steam_id = data.get('steam_id')
+    
+    if not user_id or not steam_id:
+        return jsonify({'error': 'user_id and steam_id are required'}), 400
+    
+    try:
+        success = steam_service.connect_user_steam(user_id, steam_id)
+        return jsonify({'success': success}), 200
+    except APIException as e:
+        return jsonify({'error': str(e)}), e.status_code
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+@api.route('/steam/sync', methods=['POST'])
+def sync_steam_library():
+    """Sync user's Steam library"""
+    data = request.json
+    # Assuming user_id from auth
+    user_id = data.get('user_id')  # Replace with actual auth
+    
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    try:
+        new_games, updated_games = steam_service.sync_user_library(user_id)
+        return jsonify({
+            'success': True,
+            'new_games': new_games,
+            'updated_games': updated_games
+        }), 200
+    except APIException as e:
+        return jsonify({'error': str(e)}), e.status_code
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500

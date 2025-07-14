@@ -18,6 +18,10 @@ import ResultsPage from "./pages/ResultsPage";
 // --- ADD THIS IMPORT ---
 import { Demo } from "./pages/Demo";  // Add this line
 
+// Add imports for new pages (create these files if they don't exist)
+import FindGames from "./pages/FindGames.jsx";  // For /sessions route
+import Friends from "./pages/Friends.jsx";  // For /friends route
+
 export const router = createBrowserRouter(
     createRoutesFromElements(
         <Route errorElement={<h1>Something went wrong!</h1>}>
@@ -35,6 +39,10 @@ export const router = createBrowserRouter(
                 
                 {/* --- ADD THIS ROUTE --- */}
                 <Route path="/demo" element={<Demo />} />  // Add this line (unprotected for easy demo access)
+                
+                {/* Added routes for missing navbar links */}
+                <Route path="/sessions" element={<ProtectedRoute><FindGames /></ProtectedRoute>} />  {/* For Find Games */}
+                <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />  {/* For Friends */}
             </Route>
 
             {/* Standalone routes */}

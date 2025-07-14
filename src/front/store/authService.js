@@ -466,6 +466,39 @@ class AuthService {
             throw error;
         }
     }
+
+    // Added method for Steam integration
+    async connectSteam(steamId) {
+        if (!steamId) {
+            throw new Error('Steam ID is required');
+        }
+
+        try {
+            const response = await this.authenticatedFetch(`${this.apiUrl}/api/steam/connect`, {
+                method: 'POST',
+                body: JSON.stringify({ steam_id: steamId })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to connect Steam account');
+            }
+
+            const data = await response.json();
+            
+            // Optionally update user in store if backend returns updated user
+            if (data.user && this.dispatch) {
+                this.dispatch({ 
+                    type: 'set_user', 
+                    payload: data.user 
+                });
+            }
+
+            return data;
+        } catch (error) {
+            console.error('Steam connection failed:', error);
+            throw error;
+        }
+    }
 }
 
 const authService = new AuthService();

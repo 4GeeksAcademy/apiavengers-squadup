@@ -4,6 +4,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer'; // Add this import
+import authService from '../store/authService.js';  // Changed to default import
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -28,6 +29,24 @@ export const Navbar = () => {
         dispatch({ type: 'logout' }); // Dispatch global logout
         setShowUserMenu(false);
         navigate('/');
+    };
+
+    // Updated handler for Steam Integration (prompt for steamId)
+    const handleSteamIntegration = async () => {
+        const steamId = prompt('Enter your Steam ID to connect:');  // Simple MVP prompt; replace with modal/form later
+        if (!steamId) {
+            alert('Steam ID is required.');
+            return;
+        }
+        
+        try {
+            await authService.connectSteam(steamId);  // Call on the instance
+            alert('Steam integration initiated!');  // Placeholder feedback; replace with better UX if needed
+            setShowUserMenu(false);
+        } catch (error) {
+            console.error('Steam integration failed:', error);
+            alert('Failed to connect Steam. Please try again.');
+        }
     };
 
     return (
@@ -101,7 +120,7 @@ export const Navbar = () => {
                                         <Link to="/sessions" className="dropdown-item">
                                             <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
                                         </Link>
-                                        <button className="dropdown-item">
+                                        <button className="dropdown-item" onClick={handleSteamIntegration}>  {/* Added onClick here */}
                                             <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
                                         </button>
                                         <hr className="my-2 border-white/20" />
