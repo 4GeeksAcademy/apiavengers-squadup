@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GamingAnimations, GamingCard, GamingLink } from '../components/GamingAnimations'; // ✅ CORRECT: Import shared components
+import { GamingAnimations, GamingCard, GamingLink, GamingButton } from '../components/GamingAnimations'; // ✅ CORRECT: Import shared components
 import { Link, Navigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -8,11 +8,11 @@ import { useNavigate } from 'react-router-dom';
 export const Home = () => {
   const [activeTab, setActiveTab] = useState('home');
   const navigate = useNavigate();
-  
+
   return (
     <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
       <div className="max-w-6xl mx-auto">
-        
+
         <div className="text-center mb-12" data-animate="true">
           <h1 className="text-6xl font-black mb-4 magnetic">
             Squad<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">Up</span>
@@ -83,9 +83,9 @@ export const Home = () => {
               Try Demo
             </GamingButton>
           </Link>
-           <GamingButton onClick={()=> navigate('/login')}>
-              Sign In
-            </GamingButton>
+          <GamingButton onClick={() => navigate('/login')}>
+            Sign In
+          </GamingButton>
         </div>
 
         <GamingCard data-animate="true">
