@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { GamingLink } from './GamingAnimations'; // ✅ Import the new GamingLink component
+import { GamingLink } from './GamingAnimations';
+import useGlobalReducer from '../hooks/useGlobalReducer'; // Add this import
 
 gsap.registerPlugin(ScrollTrigger);
 
 export const Navbar = () => {
-    const [user, setUser] = React.useState(null);
-    const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+    const { store, dispatch } = useGlobalReducer(); // Use global store
+    const isAuthenticated = store.isAuthenticated; // From global store
+    const user = store.user; // From global store
     const [showUserMenu, setShowUserMenu] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
@@ -20,19 +22,10 @@ export const Navbar = () => {
         return null;
     }
 
-    React.useEffect(() => {
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        if (token) {
-            setIsAuthenticated(true);
-            setUser({ username: 'Player1', avatar_url: null });
-        }
-    }, []);
-
     const handleLogout = () => {
-        localStorage.removeItem('token');
-        sessionStorage.removeItem('token');
-        setUser(null);
-        setIsAuthenticated(false);
+        // Assuming authService has a logout method that clears tokens and dispatches
+        // If not, add: localStorage.removeItem('token'); sessionStorage.removeItem('token');
+        dispatch({ type: 'logout' }); // Dispatch global logout
         setShowUserMenu(false);
         navigate('/');
     };
@@ -91,7 +84,7 @@ export const Navbar = () => {
                                             </div>
                                         )}
                                         <span className="text-white font-medium hidden sm:block">
-                                            {user?.username || 'User'}
+                                            Profile
                                         </span>
                                         <svg className={`w-4 h-4 text-white/60 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

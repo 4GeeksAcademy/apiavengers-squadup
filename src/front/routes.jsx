@@ -1,5 +1,3 @@
-// src/front/routes.jsx
-
 import React from "react";
 import { createBrowserRouter, createRoutesFromElements, Route } from "react-router-dom";
 
@@ -17,6 +15,8 @@ import JoinGroup from "./pages/JoinGroup";
 import GroupPage from "./pages/GroupPage";
 import ResultsPage from "./pages/ResultsPage";
 
+// --- ADD THIS IMPORT ---
+import { Demo } from "./pages/Demo";  // Add this line
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -32,6 +32,9 @@ export const router = createBrowserRouter(
                 {/* Your existing routes are correct */}
                 <Route path="/groups/:groupId" element={<ProtectedRoute><GroupPage /></ProtectedRoute>} />
                 <Route path="/sessions/:sessionId/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
+                
+                {/* --- ADD THIS ROUTE --- */}
+                <Route path="/demo" element={<Demo />} />  // Add this line (unprotected for easy demo access)
             </Route>
 
             {/* Standalone routes */}

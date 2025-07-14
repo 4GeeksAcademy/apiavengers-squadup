@@ -97,8 +97,10 @@ export const Profile = () => {
     };
 
     const handleSteamConnect = () => {
-        console.log('Steam connection feature coming soon!');
-        setMessage({ type: 'info', text: 'Steam integration coming soon!' });
+        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        // Append return_to param to redirect back to /profile after Steam callback
+        window.location.href = `${backendUrl}/api/auth/steam/login?return_to=${encodeURIComponent('/profile')}`;
+        // After callback, backend will update user.steam_connected and redirect back
     };
 
     const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
