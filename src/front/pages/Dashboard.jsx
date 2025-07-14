@@ -4,7 +4,7 @@ import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import CreateGroupModal from '../components/CreateGroupModal';
-import ConnectSteamButton from '../components/ConnectSteamButton';
+import { ConnectSteamButton } from '../components/ConnectSteamButton';
 
 export const Dashboard = () => {
     const navigate = useNavigate();
