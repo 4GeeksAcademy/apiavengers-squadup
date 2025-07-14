@@ -95,7 +95,7 @@ def register():
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        current_app.logger.info(f"Generated access_token: {access_token[:20]}...")
+        current_app.logger.error(f"Registration error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
