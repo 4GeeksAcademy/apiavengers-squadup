@@ -6,7 +6,9 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 class AuthService {
     constructor() {
-        this.apiUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        // Ensure API URL doesn't end with a slash to prevent double slashes
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+        this.apiUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
         this.tokenKey = 'squadup_access_token';
         this.refreshTokenKey = 'squadup_refresh_token';
         this.userKey = 'squadup_user';
