@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
-import { ACTION_TYPES } from '../store/store';
 import authService from '../store/authService';
 
 export const SignUp = () => {
@@ -91,41 +90,15 @@ export const SignUp = () => {
         setIsLoading(true);
 
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            // Use authService.register instead of direct fetch
+            const result = await authService.register({
+                email: formData.email,
+                username: formData.username,
+                password: formData.password,
+                confirmPassword: formData.confirmPassword
+            }, true); // Remember user by default
 
-            const res = await fetch(`${backendUrl}/api/auth/register`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: formData.email,
-                    username: formData.username,
-                    password: formData.password,
-                    confirmPassword: formData.confirmPassword
-                })
-            });
-
-            // attempt to parse JSON regardless of status
-            let data = {};
-            try {
-                data = await res.json();
-            } catch { /* ignore if not JSON */ }
-
-            if (res.ok) {
-                const { user, access_token, refresh_token, message } = data;
-
-                // persist token & user
-                localStorage.setItem('access_token', access_token);
-                if (refresh_token) {
-                    localStorage.setItem('refresh_token', refresh_token);
-                }
-                dispatch({
-                    type: ACTION_TYPES.LOGIN_SUCCESS,
-                    payload: {
-                        user: user,
-                        token: access_token
-                    }
-                });
-
+            if (result.success) {
                 setFormData({
                     email: '',
                     username: '',
@@ -136,20 +109,17 @@ export const SignUp = () => {
                 // show success toast/message
                 dispatch({
                     type: 'set_message',
-                    payload: { type: 'success', text: message || 'Account created!' }
+                    payload: { type: 'success', text: 'Account created successfully!' }
                 });
 
-                setTimeout(() => {
-                    navigate('/login', { replace: true });
-                }, 500);
-
+                // Navigate to dashboard (authService will handle the redirect)
+                navigate('/dashboard', { replace: true });
             } else {
-                // show backend-supplied error, or fallback
-                setErrors({ submit: data.error || data.message || 'Registration failed' });
+                setErrors({ submit: result.error || 'Registration failed' });
             }
 
         } catch (err) {
-            console.error(err);
+            console.error('Registration error:', err);
             setErrors({ submit: 'Network error. Please try again.' });
         } finally {
             setIsLoading(false);

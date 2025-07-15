@@ -227,13 +227,26 @@ class AuthService {
     }
 
     setTokens(accessToken, refreshToken, user, remember = false) { 
+        console.log('🔧 setTokens called:', {
+            hasAccessToken: !!accessToken,
+            accessTokenValue: accessToken,
+            hasRefreshToken: !!refreshToken,
+            hasUser: !!user,
+            remember: remember,
+            tokenKey: this.tokenKey
+        });
+        
         const storage = remember ? localStorage : sessionStorage; 
+        console.log('🔧 Using storage:', remember ? 'localStorage' : 'sessionStorage');
+        
         storage.setItem(this.tokenKey, accessToken); 
         if (refreshToken) { 
             storage.setItem(this.refreshTokenKey, refreshToken); 
         } 
         storage.setItem(this.userKey, JSON.stringify(user)); 
         this.scheduleTokenRefresh(accessToken); 
+        
+        console.log('✅ Tokens stored successfully');
     }
 
     clearAuth() { 
