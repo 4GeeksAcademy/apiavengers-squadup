@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import authService from '../store/authService.js'
+import authService from '../store/authService.js';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store';
 import { ConnectSteamButton } from "../components/ConnectSteamButton";
-import { steamApi } from '../store/steamapi';
 
 export const Profile = () => {
-    const [user, setUser] = useState(null);
-    const [isEditing, setIsEditing] = useState(false);
+    const { store, dispatch } = useGlobalReducer();
+    const { user: globalUser } = store;
 
+    const [isEditing, setIsEditing] = useState(false);
+    const [user, setUser] = useState(null);
     const [formData, setFormData] = useState({
         username: '',
         email: '',
@@ -21,12 +22,6 @@ export const Profile = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const { user: storeUser, dispatch } = useGlobalReducer();
-    const [gameList, setGameList] = useState([]);
-    const [isGamesLoading, setIsGamesLoading] = useState(false);
-    const [gamesError, setGamesError] = useState("");
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [syncMessage, setSyncMessage] = useState("");
 
     const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
@@ -34,39 +29,51 @@ export const Profile = () => {
     useEffect(() => {
         let mounted = true;
 
+        const parseGenres = (genres) => {
+            if (Array.isArray(genres)) return genres;
+            if (typeof genres === 'string') {
+                try {
+                    return JSON.parse(genres);
+                } catch {
+                    return [];
+                }
+            }
+            return [];
+        };
+
         const loadProfile = async () => {
             // If the user is already in global state, use it
-            if (storeUser) {
+            if (globalUser) {
                 setFormData({
-                    username: storeUser.username ?? '',
-                    email: storeUser.email ?? '',
-                    bio: storeUser.bio ?? '',
-                    avatar_url: storeUser.avatar_url ?? '',
-                    gaming_style: storeUser.gaming_style ?? '',
-                    favorite_genres: storeUser.favorite_genres ?? [],
-                    created_at: storeUser.created_at ?? '',
-                    total_games: storeUser.total_games || 0
+                    username: globalUser.username ?? '',
+                    email: globalUser.email ?? '',
+                    bio: globalUser.bio ?? '',
+                    avatar_url: globalUser.avatar_url ?? '',
+                    gaming_style: globalUser.gaming_style ?? '',
+                    favorite_genres: parseGenres(globalUser.favorite_genres),
+                    created_at: globalUser.created_at ?? '',
+                    total_games: globalUser.total_games || 0
                 });
-                setUser(storeUser); // Set local user state
+                setUser(globalUser); // Set local user state
                 setIsLoading(false);
                 return;
             }
 
             // Check if we have cached user data in localStorage
             const cachedUser = authService.getCurrentUser();
-            if (cachedUser && cachedUser.steam_id && cachedUser.is_steam_connected) {
+            if (cachedUser) {
                 setFormData({
                     username: cachedUser.username ?? '',
                     email: cachedUser.email ?? '',
                     bio: cachedUser.bio ?? '',
                     avatar_url: cachedUser.avatar_url ?? '',
                     gaming_style: cachedUser.gaming_style ?? '',
-                    favorite_genres: cachedUser.favorite_genres ?? [],
+                    favorite_genres: parseGenres(cachedUser.favorite_genres),
                     created_at: cachedUser.created_at ?? '',
                     total_games: cachedUser.total_games || 0
                 });
                 setUser(cachedUser);
-                dispatch({ type: ACTION_TYPES.SET_USER, payload: cachedUser });
+                dispatch({ type: ACTION_TYPES.SET_USER, payload: { ...cachedUser, favorite_genres: parseGenres(cachedUser.favorite_genres) } });
                 setIsLoading(false);
                 return;
             }
@@ -89,7 +96,7 @@ export const Profile = () => {
                 const { user: u } = await res.json();
                 if (!mounted) return;
 
-                dispatch({ type: ACTION_TYPES.SET_USER, payload: u });
+                dispatch({ type: ACTION_TYPES.SET_USER, payload: { ...u, favorite_genres: parseGenres(u.favorite_genres) } });
                 setUser(u);
                 setFormData({
                     username: u.username ?? '',
@@ -97,7 +104,7 @@ export const Profile = () => {
                     bio: u.bio ?? '',
                     avatar_url: u.avatar_url ?? '',
                     gaming_style: u.gaming_style ?? '',
-                    favorite_genres: u.favorite_genres ?? [],
+                    favorite_genres: parseGenres(u.favorite_genres),
                     created_at: u.created_at ?? '',
                     total_games: u.total_games || 0
                 });
@@ -112,33 +119,7 @@ export const Profile = () => {
         loadProfile();
 
         return () => { mounted = false; };
-    }, [backendUrl, navigate, dispatch, storeUser]);
-
-    useEffect(() => {
-        // Fetch user's game library if Steam is connected
-        const fetchGames = async () => {
-            if (storeUser?.is_steam_connected) {
-                setIsGamesLoading(true);
-                setGamesError("");
-                try {
-                    const res = await steamApi.getMyLibrary();
-                    if (res.ok) {
-                        const data = await res.json();
-                        setGameList(data.games || []);
-                    } else {
-                        setGamesError("Failed to load game library");
-                    }
-                } catch (err) {
-                    setGamesError("Error loading game library");
-                } finally {
-                    setIsGamesLoading(false);
-                }
-            } else {
-                setGameList([]);
-            }
-        };
-        fetchGames();
-    }, [storeUser?.is_steam_connected]);
+    }, [backendUrl, navigate, dispatch, globalUser]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -157,9 +138,19 @@ export const Profile = () => {
             return { ...prev, favorite_genres: genres };
         });
     };
+
     const handleSave = async () => {
         setIsSaving(true);
         setMessage({ type: '', text: '' });
+        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+        // Always send favorite_genres as an array (backend expects array, will json.dumps)
+        const payload = {
+            ...formData,
+            favorite_genres: Array.isArray(formData.favorite_genres)
+                ? formData.favorite_genres
+                : (formData.favorite_genres ? JSON.parse(formData.favorite_genres) : [])
+        };
 
         try {
             const res = await authService.authenticatedFetch(
@@ -167,7 +158,7 @@ export const Profile = () => {
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData),
+                    body: JSON.stringify(payload),
                 }
             );
 
@@ -184,12 +175,14 @@ export const Profile = () => {
                 bio: updated.bio ?? '',
                 avatar_url: updated.avatar_url ?? '',
                 gaming_style: updated.gaming_style ?? '',
-                favorite_genres: updated.favorite_genres ?? [],
+                favorite_genres: Array.isArray(updated.favorite_genres)
+                    ? updated.favorite_genres
+                    : (updated.favorite_genres ? JSON.parse(updated.favorite_genres) : []),
                 total_games: updated.total_games || 0
             });
 
-            // Update global state
-            dispatch({ type: ACTION_TYPES.SET_USER, payload: updated });
+            // Update global state with correct array format
+            dispatch({ type: ACTION_TYPES.SET_USER, payload: { ...updated, favorite_genres: Array.isArray(updated.favorite_genres) ? updated.favorite_genres : (updated.favorite_genres ? JSON.parse(updated.favorite_genres) : []) } });
 
             setIsEditing(false);
             setMessage({ type: 'success', text: 'Profile updated successfully!' });
@@ -206,12 +199,12 @@ export const Profile = () => {
         if (!user) return;
 
         setFormData({
-            username: user.username || '',
-            email: user.email || '',
-            bio: user.bio || '',
-            avatar_url: user.avatar_url || '',
-            gaming_style: user.gaming_style || '',
-            favorite_genres: user.favorite_genres || []
+            username: globalUser.username || '',
+            email: globalUser.email || '',
+            bio: globalUser.bio || '',
+            avatar_url: globalUser.avatar_url || '',
+            gaming_style: globalUser.gaming_style || '',
+            favorite_genres: globalUser.favorite_genres || []
         });
         setIsEditing(false);
         setMessage({ type: '', text: '' });
@@ -219,22 +212,10 @@ export const Profile = () => {
 
     const navigateToDashboard = () => navigate('/dashboard');
 
-
     const handleSteamConnect = () => {
-        // Placeholder for Steam connection
         console.log('Steam connection feature coming soon!');
         setMessage({ type: 'info', text: 'Steam integration coming soon!' });
     };
-
-    const availableGenres = [
-        'Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports',
-        'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer',
-        'MMO', 'Battle Royale', 'MOBA', 'Indie'
-    ];
-
-    const gamingStyles = [
-        'Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'
-    ];
 
     const handleDisconnectSteam = async () => {
         try {
@@ -251,71 +232,32 @@ export const Profile = () => {
                 throw new Error("Steam disconnect failed");
             }
 
-            // ✅ Clear Steam info from global state
-            dispatch({
-                type: ACTION_TYPES.SET_USER,
-                payload: {
-                    steam_id: 'none',
-                    is_steam_connected: false,
-                    steam_avatar_url: 'none',
-                    steam_username: 'none',
-                    steamlinked: false
+            const userRes = await fetch(`${backendUrl}/api/me`, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
                 },
             });
 
+            if (!userRes.ok) throw new Error("Failed to refresh user");
+
+            const updatedUser = await userRes.json();
+
+            // ✅ Clear Steam info from global state
+            dispatch({
+                type: ACTION_TYPES.SET_USER,
+                payload: updatedUser
+            });
+
+            setMessage({ type: 'success', text: 'Steam account disconnected successfully!' });
+
         } catch (err) {
             console.error("❌ Failed to disconnect Steam:", err);
-            alert("Failed to disconnect Steam.");
-        }
-        const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${accessToken}`,
-            },
-        });
-
-        if (!res.ok) throw new Error("Steam disconnect failed");
-
-        const userRes = await fetch(`${backendUrl}/api/me`, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
-        });
-
-        if (!userRes.ok) throw new Error("Failed to refresh user");
-
-        const updatedUser = await userRes.json();
-
-        dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-    };
-
-    // Add sync handler
-    const handleSyncLibrary = async () => {
-        setIsSyncing(true);
-        setSyncMessage("");
-        try {
-            const res = await steamApi.syncLibrary();
-            if (res.ok) {
-                setSyncMessage("Library synced!");
-                // Refresh game list
-                const gamesRes = await steamApi.getMyLibrary();
-                if (gamesRes.ok) {
-                    const data = await gamesRes.json();
-                    setGameList(data.games || []);
-                } else {
-                    setGamesError("Failed to refresh game list");
-                }
-            } else {
-                setSyncMessage("Sync failed");
-            }
-        } catch (err) {
-            setSyncMessage("Sync error");
-        } finally {
-            setIsSyncing(false);
+            setMessage({ type: 'error', text: 'Failed to disconnect Steam account.' });
         }
     };
+
+    const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
+    const gamingStyles = ['Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'];
 
     if (isLoading) {
         return (
@@ -350,8 +292,7 @@ export const Profile = () => {
                 ))}
             </div>
 
-            <div className="max-w-6xl mx-auto relative z-10">
-
+            <div className="max-w-4xl mx-auto relative z-10">
                 {/* Header */}
                 <div className="mb-8">
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
@@ -384,13 +325,11 @@ export const Profile = () => {
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Profile Overview */}
                     <div className="lg:col-span-1">
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                             <div className="text-center">
-
                                 {/* Avatar */}
                                 <div className="mb-6">
                                     {user?.avatar_url ? (
@@ -400,7 +339,7 @@ export const Profile = () => {
                                             className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"
                                         />
                                     ) : (
-                                        <div className="w-24 h-24 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full mx-auto flex items-center justify-center border-4 border-white/20">
+                                        <div className="w-24 h-24 bg-gradient-to-r from-coral-500 to-blue-500 rounded-full mx-auto flex items-center justify-center border-4 border-white/20">
                                             <span className="text-3xl font-bold text-white">
                                                 {user?.username?.[0]?.toUpperCase() || 'U'}
                                             </span>
@@ -416,49 +355,40 @@ export const Profile = () => {
                                 <div className="space-y-3 mb-6">
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Total Games:</span>
-                                        <span className="text-white font-medium">{storeUser?.total_games || 0}</span>
+                                        <span className="text-white font-medium">{globalUser?.total_games || 0}</span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Steam Connected:</span>
-                                        <span className={`font-medium ${storeUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
-                                            {storeUser?.is_steam_connected ? 'Yes' : 'No'}
+                                        <span className={`font-medium ${globalUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
+                                            {globalUser?.is_steam_connected ? 'Yes' : 'No'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Member Since:</span>
                                         <span className="text-white font-medium">
-                                            {storeUser?.created_at ? new Date(storeUser.created_at).toLocaleDateString() : 'Unknown'}
+                                            {globalUser?.created_at ? new Date(globalUser.created_at).toLocaleDateString() : 'Unknown'}
                                         </span>
                                     </div>
                                 </div>
 
                                 {/* Steam Integration */}
-                                {!storeUser?.is_steam_connected && (
+                                {!globalUser?.is_steam_connected && (
                                     <div className="w-full">
                                         <ConnectSteamButton
-                                            className="
-                                        w-full py-3 px-4
-                                        bg-gradient-to-r from-blue-600 to-blue-700
-                                        hover:from-blue-700 hover:to-blue-800
-                                        text-white font-semibold rounded-xl
-                                        transition-all duration-300 transform hover:-translate-y-1
-                                        shadow-lg hover:shadow-blue-500/25
-                                        flex items-center justify-center space-x-2
-                                    "
+                                            className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2"
                                         />
-
                                     </div>
                                 )}
-                                {storeUser?.is_steam_connected && (
+                                {globalUser?.is_steam_connected && (
                                     <div className="text-white/70 text-sm mb-4">
-                                        <p>Steam ID: {storeUser?.steam_id || 'Not found'}</p>
-                                        <p>Steam Profile: <a href={storeUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{storeUser?.steam_profile_url || 'Not available'}</a></p>
+                                        <p>Steam ID: {globalUser?.steam_id || 'Not found'}</p>
+                                        <p>Steam Profile: <a href={globalUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{globalUser?.steam_profile_url || 'Not available'}</a></p>
                                     </div>
                                 )}
 
                                 {/* Disconnect Button */}
                                 <div className="mt-6">
-                                    {storeUser?.is_steam_connected && (
+                                    {globalUser?.is_steam_connected && (
                                         <button
                                             onClick={handleDisconnectSteam}
                                             className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all duration-300"
@@ -474,7 +404,6 @@ export const Profile = () => {
                     {/* Profile Details */}
                     <div className="lg:col-span-2">
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-
                             {/* Edit Toggle */}
                             <div className="flex items-center justify-between mb-8">
                                 <h3 className="text-2xl font-bold text-white">Profile Details</h3>
@@ -505,7 +434,6 @@ export const Profile = () => {
                             </div>
 
                             <div className="space-y-6">
-
                                 {/* Basic Info */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
@@ -608,49 +536,6 @@ export const Profile = () => {
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    {/* Game List Panel */}
-                    <div className="lg:col-span-1 hidden lg:block">
-                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 shadow-2xl h-full flex flex-col">
-                            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                                <span role="img" aria-label="games">🎮</span> My Games
-                            </h3>
-                            <button
-                                onClick={handleSyncLibrary}
-                                disabled={isSyncing || isGamesLoading}
-                                className="mb-4 w-full p-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50"
-                            >
-                                {isSyncing ? 'Syncing...' : '🔄 Sync Game Library'}
-                            </button>
-                            {syncMessage && (
-                                <div className={`mb-2 text-center text-sm ${syncMessage.includes('error') || syncMessage.includes('fail') ? 'text-red-300' : 'text-green-300'}`}>{syncMessage}</div>
-                            )}
-                            {isGamesLoading ? (
-                                <div className="flex-1 flex items-center justify-center">
-                                    <span className="text-white/70">Loading games...</span>
-                                </div>
-                            ) : gamesError ? (
-                                <div className="flex-1 flex items-center justify-center">
-                                    <span className="text-red-300">{gamesError}</span>
-                                </div>
-                            ) : gameList.length === 0 ? (
-                                <div className="flex-1 flex items-center justify-center">
-                                    <span className="text-white/70">No games found.</span>
-                                </div>
-                            ) : (
-                                <ul className="overflow-y-auto flex-1 space-y-2 pr-2 max-h-[120vh]">
-                                    {gameList.map((game) => (
-                                        <li key={game.id} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white/90 flex items-center gap-2">
-                                            {game.icon_url && (
-                                                <img src={game.icon_url} alt={game.name} className="w-8 h-8 rounded mr-2" />
-                                            )}
-                                            <span className="truncate">{game.name}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
                         </div>
                     </div>
                 </div>
