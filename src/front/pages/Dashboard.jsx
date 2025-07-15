@@ -21,32 +21,6 @@ export const Dashboard = () => {
         authLoading = false
     } = store || {};
 
-    useEffect(() => {
-        if (isAuthenticated && user) {
-            loadDashboardData();
-        }
-    }, [isAuthenticated, user, loadDashboardData]);
-
-    useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('steam_connected') === 'true') {
-            toast.success('Steam account connected successfully!');
-            window.history.replaceState({}, document.title, window.location.pathname);
-            loadDashboardData();
-        } else if (urlParams.get('steam_error')) {
-            const error = urlParams.get('steam_error');
-            const errorMessages = {
-                'auth_failed': 'Steam authentication failed. Please try again.',
-                'connection_failed': 'Failed to connect Steam account.',
-                'invalid_id': 'Invalid Steam ID received.',
-                'server_error': 'Server error occurred. Please try again later.',
-                'no_user': 'Authentication session expired. Please try again.'
-            };
-            toast.error(errorMessages[error] || 'An unknown Steam connection error occurred.');
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, []);
-
     const loadDashboardData = useCallback(async () => {
         setIsLoadingData(true);
         try {
@@ -100,6 +74,32 @@ export const Dashboard = () => {
             setIsLoadingData(false);
         }
     }, [navigate]);
+
+    useEffect(() => {
+        if (isAuthenticated && user) {
+            loadDashboardData();
+        }
+    }, [isAuthenticated, user]);
+
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('steam_connected') === 'true') {
+            toast.success('Steam account connected successfully!');
+            window.history.replaceState({}, document.title, window.location.pathname);
+            loadDashboardData();
+        } else if (urlParams.get('steam_error')) {
+            const error = urlParams.get('steam_error');
+            const errorMessages = {
+                'auth_failed': 'Steam authentication failed. Please try again.',
+                'connection_failed': 'Failed to connect Steam account.',
+                'invalid_id': 'Invalid Steam ID received.',
+                'server_error': 'Server error occurred. Please try again later.',
+                'no_user': 'Authentication session expired. Please try again.'
+            };
+            toast.error(errorMessages[error] || 'An unknown Steam connection error occurred.');
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, [loadDashboardData]);
 
     const handleCreateGroup = async (groupName) => {
         const loadingToast = toast.loading("Creating group...");
