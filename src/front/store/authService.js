@@ -25,72 +25,42 @@ class AuthService {
     }
 
     async checkAuthOnStartup() {
-        if (this.authCheckCompleted) {
-            console.log('⚠️ Auth check already completed, skipping');
-            return;
-        }
-
-        console.log('🔍 Starting auth check on startup...');
+        if (this.authCheckCompleted) return;
         
-        // CRITICAL FIX: Set loading state immediately
         if (this.dispatch) {
-            this.dispatch({ type: 'set_loading', payload: true }); // FIXED: lowercase
+            this.dispatch({ type: 'set_loading', payload: true });
         }
         
         const accessToken = this.getAccessToken();
-        const refreshToken = this.getRefreshToken();
         const user = this.getUser();
-        
-        console.log('🔍 Auth check data:', { 
-            hasToken: !!accessToken, 
-            hasUser: !!user,
-            hasRefresh: !!refreshToken,
-            hasDispatch: !!this.dispatch,
-            user: user
-        });
         
         if (accessToken && user) {
             try {
-                console.log('🔐 Verifying existing token...');
                 const isValid = await this.verifyToken();
-                
-                if (isValid) {
-                    console.log('✅ Token valid, updating global state to authenticated');
-                    if (this.dispatch) {
-                        this.dispatch({ 
-                            type: 'login_success', // FIXED: lowercase
-                            payload: { 
-                                user, 
-                                token: accessToken, 
-                                refreshToken 
-                            } 
-                        });
-                        console.log('✅ Global state updated with login_success');
-                    }
+                if (isValid && this.dispatch) {
+                    // Ensure both token AND user are set atomically
+                    this.dispatch({ 
+                        type: 'login_success',
+                        payload: { user, token: accessToken, refreshToken: this.getRefreshToken() }
+                    });
                     this.scheduleTokenRefresh(accessToken);
                 } else {
-                    console.log('❌ Token invalid or expired, clearing auth');
                     this.clearAuth();
                 }
-            } catch (error) { 
-                console.error('💥 Token verification failed:', error); 
-                this.clearAuth(); 
+            } catch (error) {
+                this.clearAuth();
             }
         } else {
-            console.log('🚫 No valid auth data found, setting unauthenticated state');
             if (this.dispatch) {
-                this.dispatch({ type: 'logout' }); // FIXED: lowercase
-                console.log('✅ Global state updated with logout');
+                this.dispatch({ type: 'logout' });
             }
         }
         
-        // CRITICAL FIX: Always clear loading state
         if (this.dispatch) {
-            this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+            this.dispatch({ type: 'set_loading', payload: false });
         }
         
         this.authCheckCompleted = true;
-        console.log('✅ Auth check completed, authCheckCompleted =', this.authCheckCompleted);
     }
 
     getAccessToken() { 
