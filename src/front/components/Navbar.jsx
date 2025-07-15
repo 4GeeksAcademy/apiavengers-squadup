@@ -105,22 +105,41 @@ export const Navbar = () => {
                   </button>
 
                   {/* Dropdown menu */}
-                  <div className={`absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg z-50 transition-all duration-200 ${showUserMenu ? '' : 'hidden'}`}>
-                    <Link to="/profile" className="dropdown-item">
-                      <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
+                  <div className={`absolute right-0 mt-2 w-56 bg-blue-200/90 backdrop-blur-md rounded-xl shadow-lg z-50 transition-all duration-200 ${showUserMenu ? '' : 'hidden'}`}>
+                    <Link
+                      to="/profile"
+                      className="flex items-center px-4 py-2 text-gray-800 hover:bg-blue-100 hover:text-blue-700 transition-colors duration-150 rounded"
+                    >
+                      <span className="mr-2">👤</span>
+                      <span>Profile Settings</span>
                     </Link>
-                    <Link to="/dashboard" className="dropdown-item">
-                      <span className="flex items-center space-x-2"><span>📊</span><span>Dashboard</span></span>
+                    <Link
+                      to="/dashboard"
+                      className="flex items-center px-4 py-2 text-gray-800 hover:bg-blue-100 hover:text-blue-700 transition-colors duration-150 rounded"
+                    >
+                      <span className="mr-2">📊</span>
+                      <span>Dashboard</span>
                     </Link>
-                    <Link to="/sessions" className="dropdown-item">
-                      <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
+                    <Link
+                      to="/sessions"
+                      className="flex items-center px-4 py-2 text-gray-800 hover:bg-blue-100 hover:text-blue-700 transition-colors duration-150 rounded"
+                    >
+                      <span className="mr-2">🎮</span>
+                      <span>Find Games</span>
                     </Link>
-                    <button className="dropdown-item">
-                      <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
+                    <button
+                      className="flex items-center px-4 py-2 text-gray-800 hover:bg-blue-100 hover:text-blue-700 transition-colors duration-150 rounded w-full text-left"
+                    >
+                      <span className="mr-2">🔗</span>
+                      <span>Steam Integration</span>
                     </button>
-                    <hr className="my-2 border-white/20" />
-                    <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
-                      <span className="flex items-center space-x-2"><span>🚪</span><span>Logout</span></span>
+                    <hr className="my-2 border-gray-200" />
+                    <button
+                      className="flex items-center px-4 py-2 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors duration-150 rounded w-full text-left"
+                      onClick={handleLogout}
+                    >
+                      <span className="mr-2">🚪</span>
+                      <span>Logout</span>
                     </button>
                   </div>
                 </div>
