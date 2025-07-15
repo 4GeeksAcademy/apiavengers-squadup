@@ -20,12 +20,13 @@ STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
 def steam_login():
     """Redirect user to Steam for authentication"""
     # Get the frontend URL from the environment or request
-    frontend_url = os.getenv('FRONTEND_URL')
+    frontend_url = request.args.get('return_to')
     if not frontend_url:
-        frontend_url = request.args.get('return_to', '')
+        frontend_url = os.getenv('FRONTEND_URL')
     if not frontend_url:
         # Fallback to replacing port for dev
         backend_url = request.url_root.rstrip('/')
+        # This assumes your frontend is always on port 3000
         frontend_url = backend_url.replace('-3001.', '-3000.') + '/steam/callback'
 
     # Get backend public URL from env (for _external=True)
