@@ -116,11 +116,11 @@ setup_admin(app)
 setup_commands(app)
 
 # Register blueprints - FIXED: No duplicate registrations
-app.register_blueprint(api, url_prefix='/api')
-app.register_blueprint(auth, url_prefix='/api/auth')
-app.register_blueprint(gaming, url_prefix='/api/gaming')
-app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Specific for Steam auth
-app.register_blueprint(steam, url_prefix='/api/steam')  # For library/sync/common
+app.register_blueprint(api, url_prefix='/api')           # Main API routes
+app.register_blueprint(auth, url_prefix='/api/auth')     # Auth routes  
+app.register_blueprint(gaming, url_prefix='/api/gaming') # Gaming routes
+app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Steam auth (OpenID)
+app.register_blueprint(steam, url_prefix='/api/steam')   # Steam API routes (library, sync, etc.)
 
 # ============================================================================
 # Route Configuration & Main Entry Point

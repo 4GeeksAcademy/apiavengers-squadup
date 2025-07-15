@@ -56,11 +56,12 @@ class AuthService {
             }
         }
         
+        // CRITICAL: Always set this flag
+        this.authCheckCompleted = true;
+        
         if (this.dispatch) {
             this.dispatch({ type: 'set_loading', payload: false });
         }
-        
-        this.authCheckCompleted = true;
     }
 
     getAccessToken() { 
