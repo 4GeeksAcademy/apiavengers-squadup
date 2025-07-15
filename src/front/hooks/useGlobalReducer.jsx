@@ -1,6 +1,6 @@
 // src/front/hooks/useGlobalReducer.jsx - Optimized for 429 Prevention
 
-import { useContext, useReducer, createContext, useMemo } from "react";
+import { useContext, useReducer, createContext, useMemo, useEffect } from "react";
 import storeReducer, { initialStore, ACTION_TYPES } from "../store/store"
 import authService from "../store/authService.js";
 
@@ -13,48 +13,53 @@ export function StoreProvider({ children }) {
     // have been completely removed from this file.
     const [store, dispatch] = useReducer(storeReducer, initialStore());
 
+    // CRITICAL FIX: Inject dispatch into authService when provider mounts
+    useEffect(() => {
+        authService.setDispatch(dispatch);
+    }, [dispatch]);
+
     // Memoize context value to prevent unnecessary re-renders
     const contextValue = useMemo(() => ({
         store,
         dispatch,
-        
+
         // Helper functions for common actions
         actions: {
             // Authentication helpers - optimized
             login: (user, token) => {
                 localStorage.setItem('token', token);
-                dispatch({ 
-                    type: ACTION_TYPES.LOGIN_SUCCESS, 
-                    payload: { user, token } 
+                dispatch({
+                    type: ACTION_TYPES.LOGIN_SUCCESS,
+                    payload: { user, token }
                 });
             },
-            
+
             logout: () => {
                 // Use authService to ensure proper cleanup
                 authService.clearTokens();
                 dispatch({ type: ACTION_TYPES.LOGOUT });
             },
-            
+
             setUser: (user) => {
                 dispatch({ type: ACTION_TYPES.SET_USER, payload: user });
             },
-            
+
             setLoading: (loading) => {
                 dispatch({ type: ACTION_TYPES.SET_LOADING, payload: loading });
             },
-            
+
             setError: (error) => {
                 dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
             },
-            
+
             clearError: () => {
                 dispatch({ type: ACTION_TYPES.CLEAR_ERROR });
             },
-            
+
             // Message helpers
             setMessage: (message) => {
                 dispatch({ type: ACTION_TYPES.SET_MESSAGE, payload: message });
-                
+
                 // Auto-clear success messages after 5 seconds
                 if (message?.type === 'success') {
                     setTimeout(() => {
@@ -62,20 +67,20 @@ export function StoreProvider({ children }) {
                     }, 5000);
                 }
             },
-            
+
             clearMessage: () => {
                 dispatch({ type: ACTION_TYPES.CLEAR_MESSAGE });
             },
-            
+
             // Demo helpers (for existing functionality)
             setHello: (message) => {
                 dispatch({ type: ACTION_TYPES.SET_HELLO, payload: message });
             },
-            
+
             changeTaskColor: (id, color) => {
-                dispatch({ 
-                    type: ACTION_TYPES.ADD_TASK, 
-                    payload: { id, color } 
+                dispatch({
+                    type: ACTION_TYPES.ADD_TASK,
+                    payload: { id, color }
                 });
             }
         }
@@ -94,15 +99,15 @@ function useGlobalReducer() {
     if (!context) {
         throw new Error('useGlobalReducer must be used within a StoreProvider');
     }
-    
+
     const { store, dispatch, actions } = context;
-    
+
     // Memoize the return value to prevent unnecessary re-renders
-    return useMemo(() => ({ 
-        store, 
-        dispatch, 
+    return useMemo(() => ({
+        store,
+        dispatch,
         actions,
-        
+
         // Computed values for convenience
         isAuthenticated: store.isAuthenticated,
         user: store.user,

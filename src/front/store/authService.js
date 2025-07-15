@@ -92,12 +92,26 @@ class AuthService {
             this.dispatch({ type: 'set_loading', payload: true }); // FIXED: lowercase
         }
         
-        console.log('✅ Tokens stored successfully');
+        // Actually check for existing tokens and user data
+        await this.checkAndRefreshToken();
+        
+        console.log('✅ Auth check on startup completed');
         return true;
     }
 
     getAccessToken() {
-        return localStorage.getItem(this.tokenKey) || sessionStorage.getItem(this.tokenKey);
+        const localToken = localStorage.getItem(this.tokenKey);
+        const sessionToken = sessionStorage.getItem(this.tokenKey);
+        const token = localToken || sessionToken;
+        
+        console.log('🔍 getAccessToken():', {
+            tokenKey: this.tokenKey,
+            localToken: !!localToken,
+            sessionToken: !!sessionToken,
+            finalToken: !!token
+        });
+        
+        return token;
     }
 
     getRefreshToken() {
@@ -579,6 +593,10 @@ class AuthService {
     
     getCurrentUser() { 
         return this.getUser(); 
+    }
+
+    getApiUrl() {
+        return this.apiUrl;
     }
 
     async authenticatedFetch(url, options = {}) {
