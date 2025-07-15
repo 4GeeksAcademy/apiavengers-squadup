@@ -87,8 +87,7 @@ app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
 jwt = JWTManager(app)
 app.blacklisted_tokens = set()
 
-# --- The rest of your app.py file is correct and needs no further changes ---
-
+# --- JWT handlers ---
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(jwt_header, jwt_payload):
     jti = jwt_payload['jti']
@@ -115,7 +114,8 @@ def revoked_token_callback(jwt_header, jwt_payload):
 # ============================================================================
 setup_admin(app)
 setup_commands(app)
-# Register blueprints (remove any duplicates)
+
+# Register blueprints - FIXED: No duplicate registrations
 app.register_blueprint(api, url_prefix='/api')
 app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')

@@ -105,3 +105,31 @@ def get_common_games():
     except Exception as e:
         current_app.logger.error(f"Common games error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+    
+
+@api.route('/steam/common-games', methods=['POST'])
+@jwt_required()
+def get_common_games():
+    """Get common games for a list of user IDs - FIXED ROUTE"""
+    try:
+        data = request.get_json()
+        user_ids = data.get('user_ids')
+        
+        if not user_ids or not isinstance(user_ids, list) or len(user_ids) < 2:
+            return jsonify({'error': 'At least 2 user IDs required as a list'}), 400
+        
+        common_games = steam_service.find_common_games(user_ids)
+        
+        # Serialize games for JSON response
+        games_data = []
+        for game in common_games:
+            if hasattr(game, 'serialize'):
+                games_data.append(game.serialize())
+            elif isinstance(game, dict):
+                games_data.append(game)
+        
+        return jsonify({'games': games_data}), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Common games error: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
