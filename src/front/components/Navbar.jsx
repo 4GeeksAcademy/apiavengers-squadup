@@ -13,9 +13,11 @@ export const Navbar = () => {
     const isAuthenticated = store.isAuthenticated;
     const user = store.user;
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [showExploreMenu, setShowExploreMenu] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
     const dropdownRef = useRef(null);
+    const exploreDropdownRef = useRef(null);
 
     const authPages = ['/login', '/signup'];
     const isAuthPage = authPages.includes(location.pathname);
@@ -27,6 +29,13 @@ export const Navbar = () => {
     const handleToggle = (event) => {
         event.stopPropagation();
         setShowUserMenu(!showUserMenu);
+        setShowExploreMenu(false); // Close explore menu if open
+    };
+
+    const handleExploreToggle = (event) => {
+        event.stopPropagation();
+        setShowExploreMenu(!showExploreMenu);
+        setShowUserMenu(false); // Close user menu if open
     };
 
     useEffect(() => {
@@ -34,12 +43,15 @@ export const Navbar = () => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
                 setShowUserMenu(false);
             }
+            if (exploreDropdownRef.current && !exploreDropdownRef.current.contains(event.target)) {
+                setShowExploreMenu(false);
+            }
         };
-        if (showUserMenu) {
+        if (showUserMenu || showExploreMenu) {
             document.addEventListener('click', handleOutsideClick);
         }
         return () => document.removeEventListener('click', handleOutsideClick);
-    }, [showUserMenu]);
+    }, [showUserMenu, showExploreMenu]);
 
     const handleLogout = () => {
         console.log('Logout clicked');
@@ -113,9 +125,67 @@ export const Navbar = () => {
                                 </Link>
                             </>
                         ) : (
-                            <Link to="/demo" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
-                                Demo
-                            </Link>
+                            <div className="relative z-[60]">
+                                <button
+                                    onClick={handleExploreToggle}
+                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
+                                >
+                                    Explore
+                                </button>
+                                
+                                {showExploreMenu && (
+                                    <div 
+                                        ref={exploreDropdownRef}
+                                        className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`} 
+                                        style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}  
+                                        onClick={(e) => e.stopPropagation()}
+                                    >  
+                                        {/* Profile (Home) */}
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                            <div className="flex items-center mb-4">
+                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                    <span className="text-xl">👤</span>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-white">Profile</h3>
+                                            </div>
+                                            <p className="text-white/70">Manage your gaming profile, connect Steam, and view your game library.</p>
+                                        </div>
+                                        
+                                        {/* Features */}
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                            <div className="flex items-center mb-4">
+                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                    <span className="text-xl">⚙️</span>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-white">Features</h3>
+                                            </div>
+                                            <p className="text-white/70">Create account, link Steam to sync games, create/join groups, vote on common games, and play the winner!</p>
+                                        </div>
+                                        
+                                        {/* Gaming */}
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                            <div className="flex items-center mb-4">
+                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                    <span className="text-xl">🎮</span>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-white">Gaming</h3>
+                                            </div>
+                                            <p className="text-white/70">Stay tuned!</p>
+                                        </div>
+                                        
+                                        {/* Community */}
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                            <div className="flex items-center mb-4">
+                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                    <span className="text-xl">👥</span>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-white">Community</h3>
+                                            </div>
+                                            <p className="text-white/70">Stay tuned!</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {isAuthenticated ? (

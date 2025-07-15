@@ -13,7 +13,7 @@ export const Dashboard = () => {
     const [dashboardData, setDashboardData] = useState(null);
     const [isLoadingData, setIsLoadingData] = useState(true);
     const [groups, setGroups] = useState([]);
-
+    const [commonGames, setCommonGames] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const {
@@ -70,6 +70,9 @@ export const Dashboard = () => {
             // Replace mock data with actual API if available
             const mockData = { stats: { totalSessions: 12, totalVotes: 47, favoriteGame: 'Valorant', winRate: 73 }};
             setDashboardData(mockData);
+            
+            // Fetch common games after groups
+            await fetchCommonGames();
         } catch (error) {
             console.error('❌ Error loading dashboard data:', error);
             toast.error("Could not load your dashboard data.");
@@ -80,6 +83,31 @@ export const Dashboard = () => {
             }
         } finally {
             setIsLoadingData(false);
+        }
+    };
+
+    const fetchCommonGames = async () => {
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            // Dynamic userIds: current user + e.g., group members or friends (fetch if needed)
+            const userIds = [user.id, ...groups.flatMap(g => g.members.map(m => m.id))]; // Example from groups
+            if (userIds.length < 2) {
+                setCommonGames([]);
+                toast.info('Add friends or join groups to see common games!');
+                return;
+            }
+            const response = await authService.authenticatedFetch(`${backendUrl}/api/steam/common-games`, {
+                method: 'POST',
+                body: JSON.stringify({ user_ids: userIds })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setCommonGames(data.games || []); // Use data.games based on backend response
+            } else {
+                toast.error('Failed to load common games');
+            }
+        } catch (error) {
+            toast.error('Error fetching common games');
         }
     };
 
@@ -160,6 +188,22 @@ export const Dashboard = () => {
                             </div>
                         </div>
                         <div className="space-y-6">{/*...Sidebar Actions...*/}</div>
+                    </div>
+                    
+                    {/* New Common Games Section */}
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl mt-8">
+                        <h2 className="text-2xl font-bold text-white mb-4">Common Games with Friends</h2>
+                        {commonGames.length > 0 ? (
+                            <ul className="space-y-4">
+                                {commonGames.map(game => (
+                                    <li key={game.id} className="bg-white/5 p-4 rounded-xl">
+                                        {game.name} (Owned by {game.ownership_stats.owners} users)
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-white/70">No common games found. Connect more friends!</p>
+                        )}
                     </div>
                 </div>
             </div>

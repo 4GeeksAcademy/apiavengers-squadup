@@ -2,8 +2,19 @@ import React, { useState } from 'react';
 import { GamingAnimations, GamingCard, GamingLink } from '../components/GamingAnimations'; // ✅ CORRECT: Import shared components
 
 export const Home = () => {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(null);
   
+  const tabs = [
+    { id: 'profile', label: 'Profile', description: 'Profile is where your account information is!' },
+    { id: 'features', label: 'Features', description: 'The WebApp lets you connect your steam and it will find your existing games and match you with other gamers' },
+    { id: 'gaming', label: 'Gaming', description: 'This WebApp lets you match with a friend and both of your steam profiles will have matching games and will let you vote on matched games found!' },
+    { id: 'community', label: 'Community', description: 'Coming Soon!' }
+  ];
+
+  const toggleTab = (tabId) => {
+    setActiveTab(activeTab === tabId ? null : tabId);
+  };
+
   return (
     <GamingAnimations className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-8">
       <div className="max-w-6xl mx-auto">
@@ -17,19 +28,29 @@ export const Home = () => {
           </p>
         </div>
 
-        <div className="flex justify-center mb-12" data-animate="true">
-          <div className="backdrop-blur-xl bg-white/10 border border-cyan-400/30 rounded-2xl p-2">
-            {['home', 'features', 'gaming', 'community'].map((tab) => (
+        <div className="flex justify-center mb-12 relative" data-animate="true">
+          <div className="backdrop-blur-xl bg-white/10 border border-cyan-400/30 rounded-2xl p-2 flex space-x-1">
+            {tabs.map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 magnetic ${activeTab === tab ? 'bg-cyan-400 text-black' : 'text-white hover:bg-white/10'}`}
+                key={tab.id}
+                onClick={() => toggleTab(tab.id)}
+                className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 magnetic ${activeTab === tab.id ? 'bg-cyan-400 text-black' : 'text-white hover:bg-white/10'}`}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
+
+        {activeTab && (
+          <div className="flex justify-center mb-12">
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 shadow-2xl max-w-2xl text-center transition-all duration-300 animate-fadeIn">
+              <p className="text-white/90 text-lg">
+                {tabs.find(t => t.id === activeTab)?.description}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
           <GamingCard>

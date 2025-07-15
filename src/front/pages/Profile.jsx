@@ -96,11 +96,25 @@ export const Profile = () => {
         navigate('/dashboard');
     };
 
-    const handleSteamConnect = () => {
+    const handleSteamConnect = async () => {
         const backendUrl = import.meta.env.VITE_BACKEND_URL;
-        // Append return_to param to redirect back to /profile after Steam callback
-        window.location.href = `${backendUrl}/api/auth/steam/login?return_to=${encodeURIComponent('/profile')}`;
-        // After callback, backend will update user.steam_connected and redirect back
+        const returnTo = encodeURIComponent('/profile');
+        try {
+            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/login?return_to=${returnTo}`, {
+                method: 'GET'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                window.location.href = data.steam_auth_url;
+            } else {
+                const errorData = await response.json();
+                console.error('Steam connect failed:', errorData);
+                setMessage({ type: 'error', text: errorData.message || 'Failed to initiate Steam connection' });
+            }
+        } catch (error) {
+            console.error('Error initiating Steam connect:', error);
+            setMessage({ type: 'error', text: 'Network error connecting to Steam' });
+        }
     };
 
     const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
@@ -127,7 +141,7 @@ export const Profile = () => {
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
             <div className="absolute inset-0 overflow-hidden pointer-events-none">{[...Array(30)].map((_, i) => (<div key={i} className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse" style={{left: `${Math.random() * 100}%`,top: `${Math.random() * 100}%`,animationDelay: `${Math.random() * 3}s`,animationDuration: `${2 + Math.random() * 3}s`}}></div>))}</div>
             <div className="max-w-4xl mx-auto relative z-10">
-                <div className="mb-8"><div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl"><div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold text-white mb-2">Profile Settings</h1><p className="text-white/70">Manage your gaming profile and preferences</p></div><button onClick={navigateToDashboard} className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300">← Back to Dashboard</button></div></div></div>
+                <div className="mb-8"><div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8"><div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold text-white mb-2">Profile Settings</h1><p className="text-white/70">Manage your gaming profile and preferences</p></div><button onClick={navigateToDashboard} className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300">← Back to Dashboard</button></div></div></div>
                 {message.text && (<div className="mb-6"><div className={`p-4 rounded-xl border ${message.type === 'success' ? 'bg-green-500/20 border-green-500/30 text-green-300' : message.type === 'error' ? 'bg-red-500/20 border-red-500/30 text-red-300' : 'bg-blue-500/20 border-blue-500/30 text-blue-300'}`}>{message.text}</div></div>)}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-1"><div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl"><div className="text-center"><div className="mb-6">{globalUser?.avatar_url ? (<img src={globalUser.avatar_url} alt="Profile Avatar" className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"/>) : (<div className="w-24 h-24 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full mx-auto flex items-center justify-center border-4 border-white/20"><span className="text-3xl font-bold text-white">{globalUser?.username?.[0]?.toUpperCase() || 'U'}</span></div>)}</div><h2 className="text-2xl font-bold text-white mb-2">{globalUser?.username}</h2><p className="text-white/70 mb-4">{globalUser?.email}</p><div className="space-y-3 mb-6"><div className="flex justify-between items-center"><span className="text-white/70">Total Games:</span><span className="text-white font-medium">{globalUser?.total_games || 0}</span></div><div className="flex justify-between items-center"><span className="text-white/70">Steam Connected:</span><span className={`font-medium ${globalUser?.steam_connected ? 'text-green-300' : 'text-red-300'}`}>{globalUser?.steam_connected ? 'Yes' : 'No'}</span></div><div className="flex justify-between items-center"><span className="text-white/70">Member Since:</span><span className="text-white font-medium">{globalUser?.created_at ? new Date(globalUser.created_at).toLocaleDateString() : 'Unknown'}</span></div></div>{!globalUser?.steam_connected && (<button onClick={handleSteamConnect} className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2"><span className="text-lg">🎮</span><span>Connect Steam</span></button>)}</div></div></div>
