@@ -97,11 +97,11 @@ class AuthService {
     }
 
     getAccessToken() {
-        return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        return localStorage.getItem(this.tokenKey) || sessionStorage.getItem(this.tokenKey);
     }
 
     getRefreshToken() {
-        return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+        return localStorage.getItem(this.refreshTokenKey) || sessionStorage.getItem(this.refreshTokenKey);
     }
 
     getTokenExpiration() {
@@ -118,12 +118,12 @@ class AuthService {
     }
 
     clearTokens() {
-        localStorage.removeItem('access_token');
-        sessionStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        sessionStorage.removeItem('refresh_token');
+        localStorage.removeItem(this.tokenKey);
+        sessionStorage.removeItem(this.tokenKey);
+        localStorage.removeItem(this.refreshTokenKey);
+        sessionStorage.removeItem(this.refreshTokenKey);
         localStorage.removeItem('token_expiration');
-        localStorage.removeItem('user');
+        localStorage.removeItem(this.userKey);
         this.#verifiedAt = 0; // Reset verification timestamp
         console.log('🧹 Tokens cleared');
     }
@@ -202,14 +202,6 @@ class AuthService {
         console.log('✅ Auth check completed, authCheckCompleted =', this.authCheckCompleted);
     }
 
-    getAccessToken() { 
-        return localStorage.getItem(this.tokenKey) || sessionStorage.getItem(this.tokenKey); 
-    }
-    
-    getRefreshToken() { 
-        return localStorage.getItem(this.refreshTokenKey) || sessionStorage.getItem(this.refreshTokenKey); 
-    }
-    
     getUser() { 
         const userStr = localStorage.getItem(this.userKey) || sessionStorage.getItem(this.userKey); 
         try { 
@@ -628,61 +620,7 @@ class AuthService {
         }
     }
 
-    async logout() {
-        try {
-            console.log('🚪 Logging out...');
-            
-            // Clear all tokens and user data
-            this.clearTokens();
-            
-            console.log('✅ Logout successful');
-            return { success: true };
-        } catch (error) {
-            console.error('❌ Logout error:', error);
-            return { success: false, error: 'Logout failed' };
-        }
-    }
 
-    async verifyToken() {
-        try {
-            const response = await this.makeAuthenticatedRequest(`${API_BASE_URL}/api/auth/verify`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                localStorage.setItem('user', JSON.stringify(data.user));
-                return { valid: true, user: data.user };
-            } else {
-                return { valid: false };
-            }
-        } catch (error) {
-            console.error('Token verification error:', error);
-            return { valid: false };
-        }
-    }
-
-    getCurrentUser() {
-        const userStr = localStorage.getItem('user');
-        return userStr ? JSON.parse(userStr) : null;
-    }
-
-    isAuthenticated() {
-        const accessToken = this.getAccessToken();
-        const user = this.getCurrentUser();
-        return !!(accessToken && user);
-    }
-
-    getApiUrl() {
-        return API_BASE_URL;
-    }
-
-    getUserInfo() {
-        return this.getCurrentUser();
-    }
-
-    hasRole(role) {
-        const user = this.getCurrentUser();
-        return user && user.roles && user.roles.includes(role);
-    }
 }
 
 const authService = new AuthService();
