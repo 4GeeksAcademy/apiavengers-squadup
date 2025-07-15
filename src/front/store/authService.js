@@ -290,6 +290,7 @@ class AuthService {
             console.log('✅ Global state cleared with logout');
         }
         
+        this.authCheckCompleted = false; // <-- Add this line
         console.log('🧹 Auth cleared successfully'); 
     }
 
@@ -424,6 +425,7 @@ class AuthService {
                 
                 console.log('✅ Login successful, storing tokens and updating global state...');
                 this.setTokens(accessToken, refreshToken, data.user, remember);
+                this.authCheckCompleted = true; // <-- Add this line
                 
                 if (this.dispatch) {
                     this.dispatch({ 
@@ -478,6 +480,7 @@ class AuthService {
                 
                 console.log('✅ Registration successful, storing tokens and updating global state...');
                 this.setTokens(accessToken, refreshToken, data.user, remember);
+                this.authCheckCompleted = true; // <-- Add this line
                 
                 if (this.dispatch) {
                     this.dispatch({ 
@@ -547,6 +550,7 @@ class AuthService {
                 const data = await res.json();
                 console.log('✅ Token verification successful');
                 this.#verifiedAt = now; // Update verification timestamp
+                this.authCheckCompleted = true; // <-- Add this line
                 
                 // Update user data if it changed
                 if (data.user && this.dispatch) {

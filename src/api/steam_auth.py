@@ -19,30 +19,31 @@ STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
 @steam_auth.route('/steam/login', methods=['GET'])
 def steam_login():
     """Redirect user to Steam for authentication"""
-    # Get the frontend URL from the request or use default
-    frontend_url = request.args.get('return_to', '')
+    # Get the frontend URL from the environment or request
+    frontend_url = os.getenv('FRONTEND_URL')
     if not frontend_url:
-        # Use the VITE_BACKEND_URL to construct frontend URL
+        frontend_url = request.args.get('return_to', '')
+    if not frontend_url:
+        # Fallback to replacing port for dev
         backend_url = request.url_root.rstrip('/')
-        # Replace port 3001 with 3000 for frontend
         frontend_url = backend_url.replace('-3001.', '-3000.') + '/steam/callback'
-    
+
+    # Get backend public URL from env (for _external=True)
+    backend_url = os.getenv('VITE_BACKEND_URL', request.url_root.rstrip('/'))
+
     # Get user ID from query parameter instead of JWT
     current_user_id = request.args.get('user_id')
-    
+
     # Store user ID in session for callback
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
         'openid.mode': 'checkid_setup',
-        'openid.return_to': url_for('steam_auth.steam_callback', 
-                                   _external=True, 
-                                   user_id=current_user_id,
-                                   return_to=frontend_url),
-        'openid.realm': request.url_root,
+        'openid.return_to': f"{backend_url}/api/steam/callback?user_id={current_user_id}&return_to={frontend_url}",
+        'openid.realm': backend_url,
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     }
-    
+
     return redirect(f"{STEAM_OPENID_URL}?{urlencode(params)}")
 
 @steam_auth.route('/steam/callback', methods=['GET'])

@@ -52,10 +52,9 @@ export const ProtectedRoute = ({ children }) => {
       globalStore: isAuthenticated,
       action: 'This is likely the source of the redirect loop'
     });
-    if (import.meta.env.DEV) {
-      // Optional: Add toast or alert in dev mode
-      // toast.error('Auth mismatch detected! Check console.');
-    }
+    // Force logout and redirect to login to resync state
+    authService.clearAuth();
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (authLoading) {

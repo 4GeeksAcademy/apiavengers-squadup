@@ -4,17 +4,20 @@ import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 //import { jwtDecode } from "jwt-decode";
 
 import useGlobalReducer from "../hooks/useGlobalReducer";
-import {ConnectSteamButton} from "../components/ConnectSteamButton";   
+import { ConnectSteamButton } from "../components/ConnectSteamButton";
 
 export const Single = () => {
   /* ── context + router ─────────────────────────────────────────────────── */
   const { store, dispatch } = useGlobalReducer();
-  const { theId }           = useParams();
-  const navigate            = useNavigate();
-  const location            = useLocation();
+  const { theId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  /* ── local fallback for steam data ────────────────────────────────────── */
-  const [steamData, setSteamData] = useState(null);
+  const [steamData, setSteamData] = useState(store.steamLinked);
+
+  useEffect(() => {
+    setSteamData(store.steamLinked);
+  }, [store.steamLinked]);
 
   /* ── auth-gate + openid catch-up ──────────────────────────────────────── */
   useEffect(() => {

@@ -48,23 +48,17 @@ export const SteamCallback = () => {
           throw new Error("Incomplete Steam authentication data");
         }
 
-        console.log("✅ Steam payload decoded successfully:", { steamid, profile: profile.personaname });
-        setPhase("connecting");
+
 
         /* 2️⃣ Tell backend to connect this SteamID ----------------------------- */
         console.log("🔗 Connecting Steam account to backend...");
 
-        // Debug authentication state
-        console.log("🔍 Auth state check:");
-        console.log("  - Access token exists:", !!authService.getAccessToken());
-        console.log("  - Refresh token exists:", !!authService.getRefreshToken());
-        console.log("  - User authenticated:", authService.isAuthenticated());
-        console.log("  - Current user:", authService.getCurrentUser());
+
 
         // Ensure we have a valid token before making the request
         const accessToken = authService.getAccessToken();
         if (!accessToken) {
-          console.error("❌ No access token available for Steam connection");
+          console.error(" No access token available for Steam connection");
           throw new Error("Authentication required. Please log in again.");
         }
 
@@ -76,7 +70,7 @@ export const SteamCallback = () => {
 
 
         if (!res.ok) {
-          console.error("❌ Backend connect failed:", res.status, res.body);
+          console.error(" Backend connect failed:", res.status, res.body);
 
           if (res.status === 401) {
             console.log("🔄 Authentication expired, redirecting to login...");
@@ -105,15 +99,30 @@ export const SteamCallback = () => {
 
         /* 4️⃣ Update global store  --------------------------------------------- */
         console.log("🔄 Updating global store...");
-        dispatch({ type: ACTION_TYPES.STEAM_LINKED, payload });        // Use proper action type
-        dispatch({
-          type: ACTION_TYPES.SET_USER, payload: {            // keep user fresh
-            is_steam_connected: true,
-            steam_id: steamid,
-            steam_avatar_url: profile.avatarfull,
-            steam_username: profile.personaname,
+        try {
+          // Fetch the updated user profile from the backend
+          const profileRes = await authService.authenticatedFetch(`${authService.getApiUrl()}/api/auth/profile`);
+          if (profileRes.ok) {
+            const { user: updatedUser } = await profileRes.json();
+            dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
+            // Update storage to keep authService in sync
+            authService.setTokens(authService.getAccessToken(), authService.getRefreshToken(), updatedUser, true);
+          } else {
+            // Fallback: at least update the global store with Steam fields
+            dispatch({
+              type: ACTION_TYPES.SET_USER,
+              payload: {
+                ...authService.getCurrentUser(),
+                is_steam_connected: true,
+                steam_id: steamid,
+                steam_avatar_url: profile.avatarfull,
+                steam_username: profile.personaname,
+              }
+            });
           }
-        });
+        } catch (profileError) {
+          console.warn("⚠️ Failed to fetch updated user profile after Steam connect:", profileError);
+        }
 
         /* 5️⃣ All done → go back  --------------------------------------------- */
         setPhase("done");
@@ -121,7 +130,7 @@ export const SteamCallback = () => {
 
         // Small delay to show success message
         setTimeout(() => {
-          navigate("/dashboard", { replace: true });
+          navigate("/profile", { replace: true });
         }, 1000);
 
       } catch (err) {

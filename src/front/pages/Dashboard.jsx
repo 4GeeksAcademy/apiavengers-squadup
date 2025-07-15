@@ -9,6 +9,7 @@ import { ConnectSteamButton } from '../components/ConnectSteamButton';
 export const Dashboard = () => {
     const navigate = useNavigate();
     const { store } = useGlobalReducer();
+    // Removed: const [user, setUser] = useState(store.user);
 
     const [dashboardData, setDashboardData] = useState(null);
     const [isLoadingData, setIsLoadingData] = useState(true);
@@ -80,6 +81,8 @@ export const Dashboard = () => {
             loadDashboardData();
         }
     }, [isAuthenticated, user]);
+
+    // Removed useEffect that syncs setUser(store.user)
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);

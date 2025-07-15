@@ -7,7 +7,6 @@ import { ConnectSteamButton } from "../components/ConnectSteamButton";
 import { steamApi } from '../store/steamapi';
 
 export const Profile = () => {
-    const [user, setUser] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
 
     const [formData, setFormData] = useState({
@@ -22,6 +21,7 @@ export const Profile = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
     const { user: storeUser, dispatch } = useGlobalReducer();
+    const [user, setUser] = useState(storeUser);
     const [gameList, setGameList] = useState([]);
     const [isGamesLoading, setIsGamesLoading] = useState(false);
     const [gamesError, setGamesError] = useState("");
@@ -105,6 +105,10 @@ export const Profile = () => {
         };
         fetchGames();
     }, [storeUser?.is_steam_connected]);
+
+    useEffect(() => {
+        setUser(storeUser);
+    }, [storeUser]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
