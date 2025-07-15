@@ -4,16 +4,13 @@ import authService from '../store/authService';
 import { useNavigate } from 'react-router-dom';
 
 export const Profile = () => {
-    // FINAL FIX: Changed 'state' to 'store' to match the hook's return value.
     const { store, dispatch } = useGlobalReducer();
     const { user: globalUser } = store;
-
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({});
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -45,12 +42,11 @@ export const Profile = () => {
                 : [...prev.favorite_genres, genre]
         }));
     };
-    
+
     const handleSave = async () => {
         setIsSaving(true);
         setMessage({ type: '', text: '' });
         const backendUrl = import.meta.env.VITE_BACKEND_URL;
-
         try {
             const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`, {
                 method: 'PUT',
@@ -61,7 +57,6 @@ export const Profile = () => {
                     favorite_genres: formData.favorite_genres
                 })
             });
-
             if (response.ok) {
                 const data = await response.json();
                 dispatch({ type: 'SET_USER', payload: data.user });
@@ -117,37 +112,230 @@ export const Profile = () => {
         }
     };
 
+    const handleDisconnect = async () => {
+        if (!window.confirm('Are you sure you want to disconnect your Steam account? This will clear your game library.')) return;
+        setMessage({ type: '', text: '' });
+        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        try {
+            const disconnectResponse = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/disconnect`, {
+                method: 'POST'
+            });
+            if (disconnectResponse.ok) {
+                // Refresh user data after disconnect
+                const profileResponse = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`);
+                if (profileResponse.ok) {
+                    const updatedData = await profileResponse.json();
+                    dispatch({ type: 'SET_USER', payload: updatedData.user || updatedData });
+                    setMessage({ type: 'success', text: 'Steam account disconnected successfully!' });
+                } else {
+                    throw new Error('Failed to refresh profile after disconnect');
+                }
+            } else {
+                const errorData = await disconnectResponse.json();
+                setMessage({ type: 'error', text: errorData.error || 'Failed to disconnect Steam' });
+            }
+        } catch (error) {
+            console.error('Error disconnecting Steam:', error);
+            setMessage({ type: 'error', text: 'Network error disconnecting Steam' });
+        }
+    };
+
     const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
     const gamingStyles = ['Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'];
-    
-    // --- NO STYLING OR JSX CHANGES BELOW ---
 
     if (isLoading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
-                <div className="max-w-4xl mx-auto">
-                    <div className="flex items-center justify-center h-64">
-                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                            <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                            <p className="text-white/70">Loading your profile...</p>
+        return <div>Loading your profile...</div>;
+    }
+
+    return (
+        <>
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
+                <div className="max-w-4xl mx-auto relative z-10">
+                    <button 
+                        onClick={navigateToDashboard}
+                        className="mb-4 px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl text-sm transition-colors duration-200"
+                    >
+                        ← Back to Dashboard
+                    </button>
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+                        <h1 className="text-3xl font-bold text-white mb-6">Profile Settings</h1>
+                        <p className="text-white/70 mb-8">Manage your gaming profile and preferences</p>
+                        
+                        {message.text && (
+                            <div className={`p-4 rounded-xl mb-6 ${message.type === 'success' ? 'bg-green-500/20 text-green-200' : 'bg-red-500/20 text-red-200'}`}>
+                                {message.text}
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="flex flex-col items-center">
+                                <img 
+                                    src={globalUser.steam_avatar_url || formData.avatar_url || '/placeholder-avatar.jpg'} 
+                                    alt="Avatar" 
+                                    className="w-32 h-32 rounded-full mb-4 object-cover"
+                                />
+                                <h2 className="text-2xl font-bold text-white">{formData.username}</h2>
+                                {globalUser.steam_username && (
+                                    <p className="text-white/60">{globalUser.steam_username} (Steam)</p>
+                                )}
+                            </div>
+                            <div>
+                                {!isEditing ? (
+                                    <>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Username</label>
+                                                <p className="text-white">{formData.username}</p>
+                                                <p className="text-white/50 text-xs">Username cannot be changed</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Email</label>
+                                                <p className="text-white">{formData.email}</p>
+                                                <p className="text-white/50 text-xs">Email cannot be changed</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Bio</label>
+                                                <p className="text-white">{formData.bio || 'Tell other gamers about yourself...'}</p>
+                                            </div>
+                                            <div className="flex items-center">
+                                                <div>
+                                                    <label className="block text-white/70 text-sm mb-1">Steam Connected</label>
+                                                    <p className="text-white">{globalUser.is_steam_connected ? 'Yes' : 'No'}</p>
+                                                </div>
+                                                {globalUser.is_steam_connected && (
+                                                    <>
+                                                        <button 
+                                                            onClick={() => navigate('/game-library')}
+                                                            className="ml-4 px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl text-sm transition-colors duration-200"
+                                                        >
+                                                            View Game Library
+                                                        </button>
+                                                        <button 
+                                                            onClick={handleDisconnect}
+                                                            className="ml-4 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-xl text-sm transition-colors duration-200"
+                                                        >
+                                                            Disconnect Steam
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                            {!globalUser.is_steam_connected && (
+                                                <button 
+                                                    onClick={handleSteamConnect}
+                                                    className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl text-sm transition-colors duration-200"
+                                                >
+                                                    Connect Steam
+                                                </button>
+                                            )}
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Member Since</label>
+                                                <p className="text-white">{new Date(globalUser.created_at).toLocaleDateString()}</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Avatar URL</label>
+                                                <p className="text-white">{formData.avatar_url}</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Gaming Style</label>
+                                                <p className="text-white">{formData.gaming_style || 'Select your style'}</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-1">Favorite Genres</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {formData.favorite_genres.map(genre => (
+                                                        <span key={genre} className="px-3 py-1 bg-white/10 rounded-full text-white text-sm">
+                                                            {genre}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setIsEditing(true)}
+                                            className="mt-6 px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
+                                        >
+                                            Edit Profile
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-2">Bio</label>
+                                                <textarea 
+                                                    name="bio"
+                                                    value={formData.bio}
+                                                    onChange={handleChange}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 transition-colors"
+                                                    rows="4"
+                                                    placeholder="Tell other gamers about yourself..."
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-2">Avatar URL</label>
+                                                <input 
+                                                    type="text"
+                                                    name="avatar_url"
+                                                    value={formData.avatar_url}
+                                                    onChange={handleChange}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 transition-colors"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-2">Gaming Style</label>
+                                                <select 
+                                                    name="gaming_style"
+                                                    value={formData.gaming_style}
+                                                    onChange={handleChange}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-coral-500 transition-colors"
+                                                >
+                                                    <option value="">Select your style</option>
+                                                    {gamingStyles.map(style => (
+                                                        <option key={style} value={style}>{style}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-white/70 text-sm mb-2">Favorite Genres</label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                    {availableGenres.map(genre => (
+                                                        <button 
+                                                            key={genre}
+                                                            onClick={() => handleGenreToggle(genre)}
+                                                            className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                                                                formData.favorite_genres.includes(genre)
+                                                                    ? 'bg-coral-500 text-white'
+                                                                    : 'bg-white/10 text-white hover:bg-white/20'
+                                                            }`}
+                                                        >
+                                                            {genre}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-6 flex gap-4">
+                                            <button 
+                                                onClick={handleSave}
+                                                disabled={isSaving}
+                                                className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 disabled:opacity-50"
+                                            >
+                                                {isSaving ? 'Saving...' : 'Save Changes'}
+                                            </button>
+                                            <button 
+                                                onClick={handleCancel}
+                                                className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-xl transition-colors duration-200"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        );
-    }
-
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">{[...Array(30)].map((_, i) => (<div key={i} className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse" style={{left: `${Math.random() * 100}%`,top: `${Math.random() * 100}%`,animationDelay: `${Math.random() * 3}s`,animationDuration: `${2 + Math.random() * 3}s`}}></div>))}</div>
-            <div className="max-w-4xl mx-auto relative z-10">
-                <div className="mb-8"><div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8"><div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold text-white mb-2">Profile Settings</h1><p className="text-white/70">Manage your gaming profile and preferences</p></div><button onClick={navigateToDashboard} className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300">← Back to Dashboard</button></div></div></div>
-                {message.text && (<div className="mb-6"><div className={`p-4 rounded-xl border ${message.type === 'success' ? 'bg-green-500/20 border-green-500/30 text-green-300' : message.type === 'error' ? 'bg-red-500/20 border-red-500/30 text-red-300' : 'bg-blue-500/20 border-blue-500/30 text-blue-300'}`}>{message.text}</div></div>)}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-1"><div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl"><div className="text-center"><div className="mb-6">{globalUser?.avatar_url ? (<img src={globalUser.avatar_url} alt="Profile Avatar" className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"/>) : (<div className="w-24 h-24 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full mx-auto flex items-center justify-center border-4 border-white/20"><span className="text-3xl font-bold text-white">{globalUser?.username?.[0]?.toUpperCase() || 'U'}</span></div>)}</div><h2 className="text-2xl font-bold text-white mb-2">{globalUser?.username}</h2><p className="text-white/70 mb-4">{globalUser?.email}</p><div className="space-y-3 mb-6"><div className="flex justify-between items-center"><span className="text-white/70">Total Games:</span><span className="text-white font-medium">{globalUser?.total_games || 0}</span></div><div className="flex justify-between items-center"><span className="text-white/70">Steam Connected:</span><span className={`font-medium ${globalUser?.steam_connected ? 'text-green-300' : 'text-red-300'}`}>{globalUser?.steam_connected ? 'Yes' : 'No'}</span></div><div className="flex justify-between items-center"><span className="text-white/70">Member Since:</span><span className="text-white font-medium">{globalUser?.created_at ? new Date(globalUser.created_at).toLocaleDateString() : 'Unknown'}</span></div></div>{!globalUser?.steam_connected && (<button onClick={handleSteamConnect} className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2"><span className="text-lg">🎮</span><span>Connect Steam</span></button>)}</div></div></div>
-                    <div className="lg:col-span-2"><div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl"><div className="flex items-center justify-between mb-8"><h3 className="text-2xl font-bold text-white">Profile Details</h3>{!isEditing ? (<button onClick={() => setIsEditing(true)} className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-all duration-300">✏️ Edit Profile</button>) : (<div className="flex space-x-3"><button onClick={handleCancel} className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-xl transition-all duration-300">Cancel</button><button onClick={handleSave} disabled={isSaving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-xl transition-all duration-300 disabled:opacity-50">{isSaving ? 'Saving...' : 'Save Changes'}</button></div>)}</div><div className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className="block text-sm font-medium text-white/90 mb-2">Username</label><input type="text" value={formData.username} disabled={true} className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white/50 cursor-not-allowed"/><p className="text-xs text-white/50 mt-1">Username cannot be changed</p></div><div><label className="block text-sm font-medium text-white/90 mb-2">Email</label><input type="email" value={formData.email} disabled={true} className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white/50 cursor-not-allowed"/><p className="text-xs text-white/50 mt-1">Email cannot be changed</p></div></div><div><label className="block text-sm font-medium text-white/90 mb-2">Bio</label><textarea name="bio" value={formData.bio} onChange={handleChange} disabled={!isEditing} rows={4} placeholder="Tell other gamers about yourself..." className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 resize-none transition-all duration-300 ${isEditing ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30' : 'cursor-not-allowed text-white/70'}`}/></div><div><label className="block text-sm font-medium text-white/90 mb-2">Avatar URL</label><input type="url" name="avatar_url" value={formData.avatar_url} onChange={handleChange} disabled={!isEditing} placeholder="https://example.com/your-avatar.jpg" className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 transition-all duration-300 ${isEditing ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30' : 'cursor-not-allowed text-white/70'}`}/></div><div><label className="block text-sm font-medium text-white/90 mb-2">Gaming Style</label><select name="gaming_style" value={formData.gaming_style} onChange={handleChange} disabled={!isEditing} className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white transition-all duration-300 ${isEditing ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30' : 'cursor-not-allowed text-white/70'}`}><option value="" className="bg-slate-800">Select your style</option>{gamingStyles.map(style => (<option key={style} value={style.toLowerCase()} className="bg-slate-800">{style}</option>))}</select></div><div><label className="block text-sm font-medium text-white/90 mb-4">Favorite Genres</label><div className="grid grid-cols-2 md:grid-cols-4 gap-3">{availableGenres.map(genre => (<button key={genre} type="button" onClick={() => isEditing && handleGenreToggle(genre)} disabled={!isEditing} className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${formData.favorite_genres.includes(genre) ? 'bg-coral-500 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'} ${!isEditing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>{genre}</button>))}</div></div></div></div></div>
-                </div>
-            </div>
-        </div>
+        </>
     );
 };

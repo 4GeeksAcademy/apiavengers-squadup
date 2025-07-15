@@ -30,11 +30,13 @@ def steam_login():
     state_data = f"{current_user_id}:{frontend_url}"
     state = base64.urlsafe_b64encode(state_data.encode()).decode()
     
+    app_base = os.getenv('APP_BASE_URL', request.url_root)
+    
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
         'openid.mode': 'checkid_setup',
-        'openid.return_to': url_for('steam_auth.steam_callback', _external=True, state=state),
-        'openid.realm': request.url_root,
+        'openid.return_to': f"{app_base}/api/auth/steam/callback?state={state}",
+        'openid.realm': app_base,
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     }
@@ -48,7 +50,8 @@ def steam_callback():
     state = request.args.get('state')
     
     if not state:
-        return redirect(f"{os.getenv('FRONTEND_URL', 'http://localhost:3000/dashboard')}?steam_error=no_state")
+        frontend_base = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        return redirect(f"{frontend_base}/dashboard?steam_error=no_state")
     
     try:
         # Decode state (add padding if needed)
@@ -57,7 +60,8 @@ def steam_callback():
         user_id = int(user_id)
     except Exception as e:
         current_app.logger.error(f"Invalid state: {str(e)}")
-        return redirect(f"{os.getenv('FRONTEND_URL', 'http://localhost:3000/dashboard')}?steam_error=invalid_state")
+        frontend_base = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        return redirect(f"{frontend_base}/dashboard?steam_error=invalid_state")
     
     try:
         # Validate the response

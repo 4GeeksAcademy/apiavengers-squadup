@@ -1,11 +1,3 @@
-"""
-REFINED Flask Application (`src/app.py`)
-=========================================
-This version includes:
-- The necessary `dotenv` configuration to load environment variables.
-- A robust CORS setup for GitHub Codespaces.
-- A more secure JWT configuration that requires the secret key to be set.
-"""
 import os
 import logging
 from datetime import timedelta, datetime
@@ -13,7 +5,8 @@ from collections import defaultdict
 
 # --- This is the correct fix ---
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv()
+print(f"Loaded FRONTEND_URL: {os.getenv('FRONTEND_URL')}")  # Should print the codespace URL 
 
 # Third-party imports
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
@@ -30,6 +23,7 @@ from api.gaming import gaming
 from api.admin import setup_admin
 from api.commands import setup_commands
 from api.steam_auth import steam_auth
+from api.steam import steam
 
 # ============================================================================
 # App Initialization & Environment
@@ -109,11 +103,12 @@ def revoked_token_callback(jwt_header, jwt_payload):
 # ============================================================================
 setup_admin(app)
 setup_commands(app)
+# Register blueprints (remove any duplicates)
 app.register_blueprint(api, url_prefix='/api')
 app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')
-app.register_blueprint(steam_auth, url_prefix='/api/auth')
-
+app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Specific for Steam auth
+app.register_blueprint(steam, url_prefix='/api/steam')  # For library/sync/common
 # ============================================================================
 # Route Configuration & Main Entry Point
 # ============================================================================

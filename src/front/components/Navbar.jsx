@@ -120,6 +120,9 @@ export const Navbar = () => {
                                 <Link to="/sessions" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
                                     Find Games
                                 </Link>
+                                <Link to="/game-library" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
+                                    Game Library
+                                </Link>
                                 <Link to="/friends" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
                                     Friends
                                 </Link>

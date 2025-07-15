@@ -1,6 +1,6 @@
 """
 Gaming-focused API routes for SquadUp
-Handles Steam integration, group creation, and game matching
+Handles group creation, game matching, and sessions
 """
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -12,110 +12,9 @@ import string
 import json
 from datetime import datetime
 from sqlalchemy import func
-from collections import defaultdict # Import for tallying votes
+from collections import defaultdict  # Import for tallying votes
 
 gaming = Blueprint('gaming', __name__)
-
-# ============================================================================
-# STEAM INTEGRATION ROUTES
-# ============================================================================
-
-@gaming.route('/steam/connect', methods=['POST'])
-@jwt_required()
-def connect_steam():
-    """Connect user's Steam account"""
-    try:
-        current_user_id = get_jwt_identity()
-        data = request.get_json()
-        
-        steam_id = data.get('steam_id')
-        if not steam_id:
-            raise APIException("Steam ID is required", status_code=400)
-        
-        # Validate Steam ID format (64-bit)
-        try:
-            steam_id_int = int(steam_id)
-            if steam_id_int < 76561197960265729:  # Minimum Steam ID64
-                raise ValueError()
-        except ValueError:
-            raise APIException("Invalid Steam ID format", status_code=400)
-        
-        success = steam_service.connect_user_steam(current_user_id, steam_id)
-        
-        if success:
-            return jsonify({
-                "message": "Steam account connected successfully",
-                "steam_id": steam_id
-            }), 200
-        else:
-            raise APIException("Failed to connect Steam account", status_code=500)
-            
-    except APIException as e:
-        return jsonify({"error": e.message}), e.status_code
-    except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
-
-@gaming.route('/steam/sync-library', methods=['POST'])
-@jwt_required()
-def sync_steam_library():
-    """Sync user's Steam game library"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user.is_steam_connected:
-            raise APIException("Steam account not connected", status_code=400)
-        
-        new_games, updated_games = steam_service.sync_user_library(current_user_id)
-        
-        return jsonify({
-            "message": "Library synced successfully",
-            "new_games": new_games,
-            "updated_games": updated_games,
-            "total_games": len(user.owned_games)
-        }), 200
-        
-    except APIException as e:
-        return jsonify({"error": e.message}), e.status_code
-    except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
-
-@gaming.route('/steam/library', methods=['GET'])
-@jwt_required()
-def get_user_library():
-    """Get user's Steam game library"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user.is_steam_connected:
-            raise APIException("Steam account not connected", status_code=400)
-        
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('per_page', 20, type=int), 100)
-        search = request.args.get('search', '')
-        
-        query = user.owned_games
-        
-        if search:
-            query = [game for game in query if search.lower() in game.name.lower()]
-        
-        start = (page - 1) * per_page
-        end = start + per_page
-        games = query[start:end]
-        
-        return jsonify({
-            "games": [game.serialize() for game in games],
-            "total": len(user.owned_games),
-            "page": page,
-            "per_page": per_page,
-            "last_synced": user.steam_library_synced_at.isoformat() if user.steam_library_synced_at else None
-        }), 200
-        
-    except APIException as e:
-        return jsonify({"error": e.message}), e.status_code
-    except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
 
 # ============================================================================
 # GROUP MANAGEMENT ROUTES
@@ -494,23 +393,24 @@ def get_session_results(session_id):
 @gaming.route('/public/groups', methods=['GET'])
 @jwt_required()
 def discover_public_groups():
-    # ... (code is fine for future use)
-    pass
+    # Placeholder for future implementation
+    return jsonify({"groups": []}), 200  # Add actual logic later
 
 @gaming.route('/public/popular-games', methods=['GET'])
 @jwt_required()
 def get_popular_games():
-    # ... (code is fine for future use)
-    pass
+    # Placeholder for future implementation
+    return jsonify({"games": []}), 200  # Add actual logic later
 
 @gaming.route('/stats/user', methods=['GET'])
 @jwt_required()
 def get_user_gaming_stats():
-    # ... (code is fine for future use)
-    pass
+    # Placeholder for future implementation
+    current_user_id = get_jwt_identity()
+    return jsonify({"stats": {}}), 200  # Add actual logic later
 
 @gaming.route('/groups/<int:group_id>/stats', methods=['GET'])
 @jwt_required()
 def get_group_stats(group_id):
-    # ... (code is fine for future use)
-    pass
+    # Placeholder for future implementation
+    return jsonify({"stats": {}}), 200  # Add actual logic later
