@@ -51,7 +51,7 @@ app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1) 
 
 jwt = JWTManager(app)
-CORS(app)
+CORS(app, origins=["*"], supports_credentials=True)
 
 # Database
 db_url = os.getenv("DATABASE_URL")
@@ -158,7 +158,14 @@ def token_not_fresh_callback(jwt_header, jwt_payload):
 
 @app.after_request
 def after_request(response):
-    """Add comprehensive security headers"""
+    """Add comprehensive security headers and CORS support"""
+    # CORS headers
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    # Security headers
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
