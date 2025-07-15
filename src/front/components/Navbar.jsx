@@ -104,7 +104,8 @@ export const Navbar = () => {
                     </svg>
                   </button>
 
-                  <div className={`nav-dropdown ${showUserMenu ? 'active' : ''}`}>
+                  {/* Dropdown menu */}
+                  <div className={`absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg z-50 transition-all duration-200 ${showUserMenu ? '' : 'hidden'}`}>
                     <Link to="/profile" className="dropdown-item">
                       <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
                     </Link>
