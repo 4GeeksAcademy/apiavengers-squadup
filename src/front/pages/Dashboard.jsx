@@ -4,6 +4,7 @@ import authService from '../store/authService.js'
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { Navigate } from 'react-router-dom';
 import { ConnectSteamButton } from "../components/ConnectSteamButton";
+import { steamApi } from '../store/steamapi';
 
 export const Dashboard = () => {
     const [user, setUser] = useState(null);
@@ -14,90 +15,109 @@ export const Dashboard = () => {
         winRate: 0
     });
     const [recentSessions, setRecentSessions] = useState([]);
-  const [loading, setLoading]               = useState(true);
-    const navigate   = useNavigate();
+    const [loading, setLoading] = useState(true);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState("");
+    const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
-const { user: storeUser, dispatch, isAuthenticated } = useGlobalReducer();
-    
-    
-useEffect(() => {
-  let cancelled = false;
-
-  const fetchAll = async () => {
-    try {
-      
-      if (!storeUser) {
-        const prof = await authService.makeAuthenticatedRequest(
-          `${authService.getApiUrl()}/api/auth/profile`
-        );
-
-        if (!cancelled && prof.ok) {
-          const { user } = await prof.json();
-          setUser(user);
-          dispatch({ type: 'SET_USER', payload: user }); // ✅ global cache
-        }
-      } else {
-        setUser(storeUser);
-      }
+    const { user: storeUser, dispatch, isAuthenticated } = useGlobalReducer();
 
 
-      if (!cancelled) {
-          setStats({
-            totalSessions : 12,
-            totalVotes    : 47,
-            favoriteGame  : 'Valorant',
-            winRate       : 73
-          });
-        }
+    useEffect(() => {
+        let cancelled = false;
 
-        if (!cancelled) {
-          setRecentSessions([
-            {
-              id: 1,
-              gameName    : 'Valorant',
-              participants: ['You', 'Player2', 'Player3'],
-              winner      : 'Valorant',
-              date        : '2024-01-15',
-              status      : 'completed'
-            },
-            {
-              id: 2,
-              gameName    : 'Apex Legends',
-              participants: ['You', 'GamerTag1'],
-              winner      : 'Apex Legends',
-              date        : '2024-01-14',
-              status      : 'completed'
-            },
-            {
-              id: 3,
-              gameName    : 'CS2',
-              participants: ['You', 'Friend1', 'Friend2', 'Friend3'],
-              winner      : 'Pending',
-              date        : '2024-01-16',
-              status      : 'active'
+        const fetchAll = async () => {
+            try {
+
+                if (!storeUser) {
+                    const prof = await authService.makeAuthenticatedRequest(
+                        `${authService.getApiUrl()}/api/auth/profile`
+                    );
+
+                    if (!cancelled && prof.ok) {
+                        const { user } = await prof.json();
+                        setUser(user);
+                        dispatch({ type: 'SET_USER', payload: user }); // ✅ global cache
+                    }
+                } else {
+                    setUser(storeUser);
+                }
+
+
+                if (!cancelled) {
+                    setStats({
+                        totalSessions: 12,
+                        totalVotes: 47,
+                        favoriteGame: 'Valorant',
+                        winRate: 73
+                    });
+                }
+
+                if (!cancelled) {
+                    setRecentSessions([
+                        {
+                            id: 1,
+                            gameName: 'Valorant',
+                            participants: ['You', 'Player2', 'Player3'],
+                            winner: 'Valorant',
+                            date: '2024-01-15',
+                            status: 'completed'
+                        },
+                        {
+                            id: 2,
+                            gameName: 'Apex Legends',
+                            participants: ['You', 'GamerTag1'],
+                            winner: 'Apex Legends',
+                            date: '2024-01-14',
+                            status: 'completed'
+                        },
+                        {
+                            id: 3,
+                            gameName: 'CS2',
+                            participants: ['You', 'Friend1', 'Friend2', 'Friend3'],
+                            winner: 'Pending',
+                            date: '2024-01-16',
+                            status: 'active'
+                        }
+                    ]);
+                }
+            } catch (err) {
+                console.error('Dashboard load failed:', err);
+            } finally {
+                if (!cancelled) setLoading(false);
             }
-          ]);
-        }
-      } catch (err) {
-        console.error('Dashboard load failed:', err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+        };
 
-    fetchAll();
+        fetchAll();
 
-    /* clean-up to avoid setState on unmounted component            */
-    return () => { cancelled = true; };
-  }, []);
+        /* clean-up to avoid setState on unmounted component            */
+        return () => { cancelled = true; };
+    }, []);
 
 
 
-const toSessions = () => navigate('/sessions');
-const toProfile  = () => navigate('/profile');
+    const toSessions = () => navigate('/sessions');
+    const toProfile = () => navigate('/profile');
 
     const createNewSession = () => {
         console.log('Create new session - implement later');
+    };
+
+    const handleSyncLibrary = async () => {
+        setIsSyncing(true);
+        setSyncMessage("");
+        try {
+            const res = await steamApi.syncLibrary();
+            if (res.ok) {
+                setSyncMessage("Library synced!");
+            } else {
+                setSyncMessage("Sync failed");
+            }
+        } catch (err) {
+            setSyncMessage("Sync error");
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     if (loading) {
@@ -120,7 +140,7 @@ const toProfile  = () => navigate('/profile');
             {/* Floating Particles Background */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 {[...Array(30)].map((_, i) => (
-                    <div 
+                    <div
                         key={i}
                         className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
                         style={{
@@ -134,7 +154,7 @@ const toProfile  = () => navigate('/profile');
             </div>
 
             <div className="max-w-6xl mx-auto relative z-10">
-                
+
                 {/* Welcome Header */}
                 <div className="mb-8">
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
@@ -167,7 +187,7 @@ const toProfile  = () => navigate('/profile');
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    
+
                     {/* Total Sessions */}
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 shadow-xl hover:bg-white/15 transition-all duration-300">
                         <div className="flex items-center justify-between">
@@ -223,7 +243,7 @@ const toProfile  = () => navigate('/profile');
 
                 {/* Main Content Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    
+
                     {/* Recent Sessions */}
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                         <div className="flex items-center justify-between mb-6">
@@ -235,17 +255,16 @@ const toProfile  = () => navigate('/profile');
                                 View All →
                             </button>
                         </div>
-                        
+
                         <div className="space-y-4">
                             {recentSessions.map((session) => (
                                 <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition-all duration-300">
                                     <div className="flex items-center justify-between mb-2">
                                         <h3 className="font-semibold text-white">{session.gameName}</h3>
-                                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                                            session.status === 'completed' 
-                                                ? 'bg-green-500/20 text-green-300' 
-                                                : 'bg-yellow-500/20 text-yellow-300'
-                                        }`}>
+                                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${session.status === 'completed'
+                                            ? 'bg-green-500/20 text-green-300'
+                                            : 'bg-yellow-500/20 text-yellow-300'
+                                            }`}>
                                             {session.status === 'completed' ? 'Completed' : 'Active'}
                                         </span>
                                     </div>
@@ -280,11 +299,11 @@ const toProfile  = () => navigate('/profile');
 
                     {/* Quick Actions & Steam Integration */}
                     <div className="space-y-6">
-                        
+
                         {/* Quick Actions */}
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                             <h2 className="text-2xl font-bold text-white mb-6">Quick Actions</h2>
-                            
+
                             <div className="space-y-4">
                                 <button
                                     onClick={createNewSession}
@@ -292,12 +311,12 @@ const toProfile  = () => navigate('/profile');
                                 >
                                     🎯 Create New Session
                                 </button>
-                                
+
                                 <button className="w-full p-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2">
                                     <span>👥</span>
                                     <span>Find Friends</span>
                                 </button>
-                                
+
                                 <button className="w-full p-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2">
                                     <span>🔍</span>
                                     <span>Browse Public Sessions</span>
@@ -308,7 +327,7 @@ const toProfile  = () => navigate('/profile');
                         {/* Steam Integration */}
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                             <h2 className="text-2xl font-bold text-white mb-6">Steam Integration</h2>
-                            
+
                             {user?.is_steam_connected ? (
                                 <div className="space-y-4">
                                     <div className="flex items-center space-x-3 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">
@@ -320,10 +339,17 @@ const toProfile  = () => navigate('/profile');
                                             <p className="text-green-300/70 text-sm">Your game library is synced</p>
                                         </div>
                                     </div>
-                                    
-                                    <button className="w-full p-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300">
-                                        🔄 Sync Game Library
+
+                                    <button
+                                        onClick={handleSyncLibrary}
+                                        disabled={isSyncing}
+                                        className="w-full p-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50"
+                                    >
+                                        {isSyncing ? 'Syncing...' : '🔄 Sync Game Library'}
                                     </button>
+                                    {syncMessage && (
+                                        <div className={`mt-2 text-center text-sm ${syncMessage.includes('error') || syncMessage.includes('fail') ? 'text-red-300' : 'text-green-300'}`}>{syncMessage}</div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -334,38 +360,38 @@ const toProfile  = () => navigate('/profile');
                                         <p className="text-white/70 mb-2">Connect your Steam account</p>
                                         <p className="text-white/50 text-sm">Access your game library and find sessions with games you own</p>
                                     </div>
-                                   {/* Steam Integration */}
-<div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-  <h2 className="text-2xl font-bold text-white mb-6">Steam Integration</h2>
+                                    {/* Steam Integration */}
+                                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+                                        <h2 className="text-2xl font-bold text-white mb-6">Steam Integration</h2>
 
-  {user?.is_steam_connected ? (
-    <>
-      {/* already linked */}
-      <div className="flex items-center space-x-3 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">
-        <div className="w-10 h-10 bg-green-500/30 rounded-full flex items-center justify-center">
-          <span className="text-lg">✅</span>
-        </div>
-        <div>
-          <p className="text-green-300 font-medium">Steam Connected</p>
-          <p className="text-green-300/70 text-sm">Your game library is synced</p>
-        </div>
-      </div>
+                                        {user?.is_steam_connected ? (
+                                            <>
+                                                {/* already linked */}
+                                                <div className="flex items-center space-x-3 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">
+                                                    <div className="w-10 h-10 bg-green-500/30 rounded-full flex items-center justify-center">
+                                                        <span className="text-lg">✅</span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-green-300 font-medium">Steam Connected</p>
+                                                        <p className="text-green-300/70 text-sm">Your game library is synced</p>
+                                                    </div>
+                                                </div>
 
-      <button
-        /* TODO: add real handler when ready */
-        className="w-full p-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300"
-      >
-        🔄 Sync Game Library
-      </button>
-    </>
-  ) : (
-    <div className="w-full">              
-                            <ConnectSteamButton className="w-full p-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 
+                                                <button
+                                                    /* TODO: add real handler when ready */
+                                                    className="w-full p-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300"
+                                                >
+                                                    🔄 Sync Game Library
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <div className="w-full">
+                                                <ConnectSteamButton className="w-full p-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 
                             hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg 
                             hover:shadow-blue-500/25 flex items-center justify-center space-x-2"/>
-                            </div>
-                            )}
-                            </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>

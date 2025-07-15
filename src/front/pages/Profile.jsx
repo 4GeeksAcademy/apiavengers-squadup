@@ -4,6 +4,7 @@ import authService from '../store/authService.js'
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store';
 import { ConnectSteamButton } from "../components/ConnectSteamButton";
+import { steamApi } from '../store/steamapi';
 
 export const Profile = () => {
     const [user, setUser] = useState(null);
@@ -21,6 +22,11 @@ export const Profile = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
     const { user: storeUser, dispatch } = useGlobalReducer();
+    const [gameList, setGameList] = useState([]);
+    const [isGamesLoading, setIsGamesLoading] = useState(false);
+    const [gamesError, setGamesError] = useState("");
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState("");
 
     const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
@@ -48,7 +54,7 @@ export const Profile = () => {
 
             // Check if we have cached user data in localStorage
             const cachedUser = authService.getCurrentUser();
-            if (cachedUser) {
+            if (cachedUser && cachedUser.steam_id && cachedUser.is_steam_connected) {
                 setFormData({
                     username: cachedUser.username ?? '',
                     email: cachedUser.email ?? '',
@@ -93,8 +99,7 @@ export const Profile = () => {
                     gaming_style: u.gaming_style ?? '',
                     favorite_genres: u.favorite_genres ?? [],
                     created_at: u.created_at ?? '',
-                    total_games: u.total_games || 0,
-                    created_at: u.created_at || ''
+                    total_games: u.total_games || 0
                 });
             } catch (err) {
                 console.error(err);
@@ -108,6 +113,32 @@ export const Profile = () => {
 
         return () => { mounted = false; };
     }, [backendUrl, navigate, dispatch, storeUser]);
+
+    useEffect(() => {
+        // Fetch user's game library if Steam is connected
+        const fetchGames = async () => {
+            if (storeUser?.is_steam_connected) {
+                setIsGamesLoading(true);
+                setGamesError("");
+                try {
+                    const res = await steamApi.getMyLibrary();
+                    if (res.ok) {
+                        const data = await res.json();
+                        setGameList(data.games || []);
+                    } else {
+                        setGamesError("Failed to load game library");
+                    }
+                } catch (err) {
+                    setGamesError("Error loading game library");
+                } finally {
+                    setIsGamesLoading(false);
+                }
+            } else {
+                setGameList([]);
+            }
+        };
+        fetchGames();
+    }, [storeUser?.is_steam_connected]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -203,58 +234,85 @@ export const Profile = () => {
     ];
 
     const handleDisconnectSteam = async () => {
-  try {
-    const accessToken = authService.getAccessToken();
-    const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+        try {
+            const accessToken = authService.getAccessToken();
+            const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
 
-    if (!res.ok) {
-      throw new Error("Steam disconnect failed");
-    }
+            if (!res.ok) {
+                throw new Error("Steam disconnect failed");
+            }
 
-    // ✅ Clear Steam info from global state
-    dispatch({
-      type: ACTION_TYPES.SET_USER,
-      payload: {
-        steam_id: 'none',
-        is_steam_connected: false,
-        steam_avatar_url: 'none',
-        steam_username: 'none',
-        steamlinked: false
-      },
-    });
+            // ✅ Clear Steam info from global state
+            dispatch({
+                type: ACTION_TYPES.SET_USER,
+                payload: {
+                    steam_id: 'none',
+                    is_steam_connected: false,
+                    steam_avatar_url: 'none',
+                    steam_username: 'none',
+                    steamlinked: false
+                },
+            });
 
-  } catch (err) {
-    console.error("❌ Failed to disconnect Steam:", err);
-    alert("Failed to disconnect Steam.");
-  }
-  const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${accessToken}`,
-  },
-});
+        } catch (err) {
+            console.error("❌ Failed to disconnect Steam:", err);
+            alert("Failed to disconnect Steam.");
+        }
+        const res = await fetch(`${backendUrl}/api/steam/disconnect`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken}`,
+            },
+        });
 
-if (!res.ok) throw new Error("Steam disconnect failed");
+        if (!res.ok) throw new Error("Steam disconnect failed");
 
-const userRes = await fetch(`${backendUrl}/api/me`, {
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-  },
-});
+        const userRes = await fetch(`${backendUrl}/api/me`, {
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+            },
+        });
 
-if (!userRes.ok) throw new Error("Failed to refresh user");
+        if (!userRes.ok) throw new Error("Failed to refresh user");
 
-const updatedUser = await userRes.json();
+        const updatedUser = await userRes.json();
 
-dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
-};
+        dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+    };
+
+    // Add sync handler
+    const handleSyncLibrary = async () => {
+        setIsSyncing(true);
+        setSyncMessage("");
+        try {
+            const res = await steamApi.syncLibrary();
+            if (res.ok) {
+                setSyncMessage("Library synced!");
+                // Refresh game list
+                const gamesRes = await steamApi.getMyLibrary();
+                if (gamesRes.ok) {
+                    const data = await gamesRes.json();
+                    setGameList(data.games || []);
+                } else {
+                    setGamesError("Failed to refresh game list");
+                }
+            } else {
+                setSyncMessage("Sync failed");
+            }
+        } catch (err) {
+            setSyncMessage("Sync error");
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     if (isLoading) {
         return (
@@ -289,7 +347,7 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                 ))}
             </div>
 
-            <div className="max-w-4xl mx-auto relative z-10">
+            <div className="max-w-6xl mx-auto relative z-10">
 
                 {/* Header */}
                 <div className="mb-8">
@@ -323,7 +381,7 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
 
                     {/* Profile Overview */}
                     <div className="lg:col-span-1">
@@ -547,6 +605,49 @@ dispatch({ type: ACTION_TYPES.SET_USER, payload: updatedUser });
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Game List Panel */}
+                    <div className="lg:col-span-1 hidden lg:block">
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 shadow-2xl h-full flex flex-col">
+                            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                <span role="img" aria-label="games">🎮</span> My Games
+                            </h3>
+                            <button
+                                onClick={handleSyncLibrary}
+                                disabled={isSyncing || isGamesLoading}
+                                className="mb-4 w-full p-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50"
+                            >
+                                {isSyncing ? 'Syncing...' : '🔄 Sync Game Library'}
+                            </button>
+                            {syncMessage && (
+                                <div className={`mb-2 text-center text-sm ${syncMessage.includes('error') || syncMessage.includes('fail') ? 'text-red-300' : 'text-green-300'}`}>{syncMessage}</div>
+                            )}
+                            {isGamesLoading ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <span className="text-white/70">Loading games...</span>
+                                </div>
+                            ) : gamesError ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <span className="text-red-300">{gamesError}</span>
+                                </div>
+                            ) : gameList.length === 0 ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <span className="text-white/70">No games found.</span>
+                                </div>
+                            ) : (
+                                <ul className="overflow-y-auto flex-1 space-y-2 pr-2 max-h-[120vh]">
+                                    {gameList.map((game) => (
+                                        <li key={game.id} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white/90 flex items-center gap-2">
+                                            {game.icon_url && (
+                                                <img src={game.icon_url} alt={game.name} className="w-8 h-8 rounded mr-2" />
+                                            )}
+                                            <span className="truncate">{game.name}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                     </div>
                 </div>

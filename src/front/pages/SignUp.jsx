@@ -358,7 +358,6 @@ export const SignUp = () => {
                             <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group">
                                 <span className="text-lg">🎮</span>
                                 <span className="group-hover:text-blue-300 transition-colors duration-300">Connect with Steam</span>
-                                disabled={isLoading}
                             </button>
 
                             {/* Login Link */}
