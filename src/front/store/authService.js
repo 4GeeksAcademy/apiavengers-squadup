@@ -1,4 +1,4 @@
-// src/front/store/authService.js - FIXED VERSION with correct action types
+// src/front/store/authService.js - FULLY FIXED VERSION
 
 class AuthService {
     constructor() {
@@ -20,47 +20,91 @@ class AuthService {
         console.log('✅ Dispatch function injected into AuthService.');
         this.dispatch = dispatch;
         
-        // CRITICAL FIX: Always run auth check when dispatch is available
-        this.checkAuthOnStartup();
+        // CRITICAL FIX: Only run auth check once per session
+        if (!this.authCheckCompleted) {
+            this.checkAuthOnStartup();
+        }
     }
 
     async checkAuthOnStartup() {
-        if (this.authCheckCompleted) return;
+        if (this.authCheckCompleted) {
+            console.log('🔍 Auth check already completed, skipping...');
+            return;
+        }
+        
+        console.log('🔍 Starting auth check on startup...');
         
         if (this.dispatch) {
             this.dispatch({ type: 'set_loading', payload: true });
         }
         
         const accessToken = this.getAccessToken();
-        const user = this.getUser();
+        const storedUser = this.getUser();
         
-        if (accessToken && user) {
+        // ENHANCED: More thorough validation
+        if (accessToken && storedUser && this.isValidTokenFormat(accessToken)) {
             try {
+                console.log('🔍 Found stored credentials, verifying with server...');
                 const isValid = await this.verifyToken();
+                
                 if (isValid && this.dispatch) {
-                    // Ensure both token AND user are set atomically
+                    console.log('✅ Token verified, setting authenticated state');
                     this.dispatch({ 
                         type: 'login_success',
-                        payload: { user, token: accessToken, refreshToken: this.getRefreshToken() }
+                        payload: { 
+                            user: storedUser, 
+                            token: accessToken, 
+                            refreshToken: this.getRefreshToken() 
+                        }
                     });
                     this.scheduleTokenRefresh(accessToken);
                 } else {
+                    console.log('❌ Token verification failed, clearing auth');
                     this.clearAuth();
                 }
             } catch (error) {
+                console.error('💥 Auth verification error:', error);
                 this.clearAuth();
             }
         } else {
+            console.log('🚫 No valid stored credentials found');
             if (this.dispatch) {
                 this.dispatch({ type: 'logout' });
             }
         }
         
-        // CRITICAL: Always set this flag
+        // CRITICAL: Mark as completed
         this.authCheckCompleted = true;
         
         if (this.dispatch) {
             this.dispatch({ type: 'set_loading', payload: false });
+        }
+        
+        console.log('🔍 Auth check completed');
+    }
+
+    // NEW: Validate token format before making API calls
+    isValidTokenFormat(token) {
+        if (!token || typeof token !== 'string') return false;
+        
+        try {
+            // JWT tokens have 3 parts separated by dots
+            const parts = token.split('.');
+            if (parts.length !== 3) return false;
+            
+            // Try to decode the payload to check if it's valid JSON
+            const payload = JSON.parse(atob(parts[1]));
+            
+            // Check if token has expiry and it's not expired
+            if (payload.exp && payload.exp * 1000 < Date.now()) {
+                console.log('🚫 Token is expired');
+                return false;
+            }
+            
+            return true;
+        } catch (error) {
+            console.log('🚫 Invalid token format:', error);
+            return false;
         }
     }
 
@@ -78,18 +122,39 @@ class AuthService {
             return userStr ? JSON.parse(userStr) : null; 
         } catch (e) { 
             console.error('Error parsing user data:', e);
+            // ENHANCED: Clear corrupted user data
+            this.clearUserData();
             return null; 
         } 
     }
 
+    clearUserData() {
+        [localStorage, sessionStorage].forEach(s => {
+            s.removeItem(this.userKey);
+        });
+    }
+
     setTokens(accessToken, refreshToken, user, remember = false) { 
         const storage = remember ? localStorage : sessionStorage; 
-        storage.setItem(this.tokenKey, accessToken); 
-        if (refreshToken) { 
-            storage.setItem(this.refreshTokenKey, refreshToken); 
-        } 
-        storage.setItem(this.userKey, JSON.stringify(user)); 
-        this.scheduleTokenRefresh(accessToken); 
+        
+        // ENHANCED: Validate inputs before storing
+        if (!accessToken || !user) {
+            console.error('❌ Invalid tokens or user data provided to setTokens');
+            return false;
+        }
+        
+        try {
+            storage.setItem(this.tokenKey, accessToken); 
+            if (refreshToken) { 
+                storage.setItem(this.refreshTokenKey, refreshToken); 
+            } 
+            storage.setItem(this.userKey, JSON.stringify(user)); 
+            this.scheduleTokenRefresh(accessToken);
+            return true;
+        } catch (error) {
+            console.error('❌ Error storing tokens:', error);
+            return false;
+        }
     }
 
     clearAuth() { 
@@ -110,8 +175,8 @@ class AuthService {
         
         // Update global state
         if (this.dispatch) {
-            this.dispatch({ type: 'logout' }); // FIXED: lowercase
-            this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+            this.dispatch({ type: 'logout' });
+            this.dispatch({ type: 'set_loading', payload: false });
             console.log('✅ Global state cleared with logout');
         }
         
@@ -180,7 +245,7 @@ class AuthService {
                     this.setTokens(newAccessToken, refreshToken, user, remember);
                     
                     this.dispatch({
-                        type: 'set_token', // FIXED: lowercase
+                        type: 'set_token',
                         payload: newAccessToken
                     });
                     
@@ -217,7 +282,7 @@ class AuthService {
             console.log('🔐 Starting login process...');
             
             if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: true }); // FIXED: lowercase
+                this.dispatch({ type: 'set_loading', payload: true });
             }
             
             const response = await fetch(`${this.apiUrl}/api/auth/login`, { 
@@ -239,11 +304,15 @@ class AuthService {
                 }
                 
                 console.log('✅ Login successful, storing tokens and updating global state...');
-                this.setTokens(accessToken, refreshToken, data.user, remember);
+                const tokensStored = this.setTokens(accessToken, refreshToken, data.user, remember);
+                
+                if (!tokensStored) {
+                    throw new Error('Failed to store authentication tokens');
+                }
                 
                 if (this.dispatch) {
                     this.dispatch({ 
-                        type: 'login_success', // FIXED: lowercase
+                        type: 'login_success',
                         payload: { 
                             user: data.user, 
                             token: accessToken, 
@@ -256,14 +325,14 @@ class AuthService {
                 return { success: true, user: data.user };
             } else { 
                 if (this.dispatch) {
-                    this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+                    this.dispatch({ type: 'set_loading', payload: false });
                 }
                 return { success: false, error: data.error || 'Login failed' }; 
             }
         } catch (error) { 
             console.error('Login error:', error);
             if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+                this.dispatch({ type: 'set_loading', payload: false });
             }
             return { success: false, error: error.message || 'Network error' }; 
         }
@@ -274,7 +343,7 @@ class AuthService {
             console.log('📝 Starting registration process...');
             
             if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: true }); // FIXED: lowercase
+                this.dispatch({ type: 'set_loading', payload: true });
             }
             
             const response = await fetch(`${this.apiUrl}/api/auth/register`, { 
@@ -293,11 +362,15 @@ class AuthService {
                 }
                 
                 console.log('✅ Registration successful, storing tokens and updating global state...');
-                this.setTokens(accessToken, refreshToken, data.user, remember);
+                const tokensStored = this.setTokens(accessToken, refreshToken, data.user, remember);
+                
+                if (!tokensStored) {
+                    throw new Error('Failed to store authentication tokens');
+                }
                 
                 if (this.dispatch) {
                     this.dispatch({ 
-                        type: 'login_success', // FIXED: lowercase
+                        type: 'login_success',
                         payload: { 
                             user: data.user, 
                             token: accessToken, 
@@ -310,14 +383,14 @@ class AuthService {
                 return { success: true, user: data.user };
             } else { 
                 if (this.dispatch) {
-                    this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+                    this.dispatch({ type: 'set_loading', payload: false });
                 }
                 return { success: false, error: data.error || 'Registration failed' }; 
             }
         } catch (error) { 
             console.error('Registration error:', error);
             if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: false }); // FIXED: lowercase
+                this.dispatch({ type: 'set_loading', payload: false });
             }
             return { success: false, error: error.message || 'Network error' }; 
         }
@@ -346,6 +419,12 @@ class AuthService {
             return false; 
         }
         
+        // ENHANCED: Check token format before making API call
+        if (!this.isValidTokenFormat(token)) {
+            console.log('🚫 Invalid token format, not making API call');
+            return false;
+        }
+        
         try { 
             console.log('🔍 Verifying token with server...');
             const res = await fetch(`${this.apiUrl}/api/auth/verify`, { 
@@ -358,7 +437,7 @@ class AuthService {
                 
                 // Update user data if it changed
                 if (data.user && this.dispatch) {
-                    this.dispatch({ type: 'set_user', payload: data.user }); // FIXED: lowercase
+                    this.dispatch({ type: 'set_user', payload: data.user });
                 }
                 return true;
             } else if (res.status === 401) {
@@ -374,7 +453,7 @@ class AuthService {
         } 
     }
     
-    // FIXED: Only return true if token is valid AND not checking
+    // ENHANCED: More reliable authentication check
     isAuthenticated() { 
         const token = this.getAccessToken();
         const user = this.getUser();
@@ -385,10 +464,16 @@ class AuthService {
             return false;
         }
         
-        const result = !!(token && user);
+        // Enhanced validation
+        const hasValidToken = token && this.isValidTokenFormat(token);
+        const hasValidUser = user && typeof user === 'object' && user.id;
+        
+        const result = !!(hasValidToken && hasValidUser);
         console.log('🔍 AuthService.isAuthenticated():', { 
             hasToken: !!token, 
-            hasUser: !!user, 
+            hasValidToken,
+            hasUser: !!user,
+            hasValidUser,
             authCheckCompleted: this.authCheckCompleted,
             result 
         });
@@ -397,6 +482,10 @@ class AuthService {
     
     getCurrentUser() { 
         return this.getUser(); 
+    }
+
+    getApiUrl() {
+        return this.apiUrl;
     }
 
     async authenticatedFetch(url, options = {}) {
@@ -438,20 +527,21 @@ class AuthService {
         }
     }
 
-// Added method for Steam integration
+    // ENHANCED: Steam integration with better error handling
     async connectSteam(steamId) {
         if (!steamId) {
             throw new Error('Steam ID is required');
         }
 
         try {
-            const response = await this.authenticatedFetch(`${this.apiUrl}/api/auth/steam/connect`, {  // FIXED: Added /auth/
+            const response = await this.authenticatedFetch(`${this.apiUrl}/api/auth/steam/connect`, {
                 method: 'POST',
                 body: JSON.stringify({ steam_id: steamId })
             });
 
             if (!response.ok) {
-                throw new Error('Failed to connect Steam account');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to connect Steam account');
             }
 
             const data = await response.json();
@@ -459,7 +549,7 @@ class AuthService {
             // Update user in store if backend returns updated user
             if (data.user && this.dispatch) {
                 this.dispatch({ 
-                    type: 'set_user',  // Assuming your store has this action
+                    type: 'set_user',
                     payload: data.user 
                 });
             }
