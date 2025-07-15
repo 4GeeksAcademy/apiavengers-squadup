@@ -26,7 +26,7 @@ def steam_login():
         # Use the VITE_BACKEND_URL to construct frontend URL
         backend_url = request.url_root.rstrip('/')
         # Replace port 3001 with 3000 for frontend
-        frontend_url = backend_url.replace('-3001.', '-3000.') + '/dashboard'
+        frontend_url = backend_url.replace('-3001.', '-3000.') + '/steam/callback'
     
     current_user_id = get_jwt_identity()
     
@@ -49,7 +49,7 @@ def steam_login():
 def steam_callback():
     """Handle Steam OpenID callback - no JWT required here"""
     user_id = request.args.get('user_id')
-    frontend_return = request.args.get('return_to', 'http://localhost:3000/dashboard')
+    frontend_return = request.args.get('return_to', 'http://localhost:3000/steam/callback')
     
     if not user_id:
         return redirect(f"{frontend_return}?steam_error=no_user")
@@ -83,22 +83,24 @@ def steam_callback():
                 steam_id = match.group(1)
                 
                 try:
-                    # Connect Steam account using existing service
-                    # Note: steam_service needs STEAM_API_KEY in environment
-                    success = steam_service.connect_user_steam(int(user_id), steam_id)
+                    # Get Steam profile data
+                    profile = steam_service.get_user_profile(steam_id)
                     
-                    if success:
-                        # Auto-sync library after connection
-                        try:
-                            new_games, updated_games = steam_service.sync_user_library(int(user_id))
-                            current_app.logger.info(f"Synced {new_games} new games and updated {updated_games} for user {user_id}")
-                        except Exception as sync_error:
-                            current_app.logger.error(f"Library sync error: {str(sync_error)}")
-                            # Don't fail the whole connection if sync fails
-                        
-                        return redirect(f"{frontend_return}?steam_connected=true")
-                    else:
-                        return redirect(f"{frontend_return}?steam_error=connection_failed")
+                    # Create a payload for the frontend
+                    payload = {
+                        'steamid': steam_id,
+                        'profile': profile
+                    }
+                    
+                    # Encode payload for URL safety
+                    import base64
+                    import json
+                    payload_str = json.dumps(payload)
+                    encoded_payload = base64.b64encode(payload_str.encode()).decode()
+                    # Make URL safe
+                    encoded_payload = encoded_payload.replace('+', '-').replace('/', '_').rstrip('=')
+                    
+                    return redirect(f"{frontend_return}?d={encoded_payload}")
                         
                 except Exception as e:
                     current_app.logger.error(f"Steam connection error: {str(e)}")

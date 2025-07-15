@@ -79,8 +79,10 @@ class User(db.Model):
             "favorite_genres": json.loads(self.favorite_genres or "[]"),
             "created_at":      self.created_at.isoformat() if self.created_at else None,
             "is_steam_connected": self.is_steam_connected,
-            "total_games":     len(self.steam.games) if self.steam and self.steam.games else 0,  # 👈 this line
-
+            "steam_id":        self.steam_id,
+            "steam_username":  self.steam_username,
+            "steam_avatar_url": self.steam_avatar_url,
+            "total_games":     len(self.owned_games) if self.owned_games else 0,
         }
     
 # ────────────────────────────────────────────────────────────

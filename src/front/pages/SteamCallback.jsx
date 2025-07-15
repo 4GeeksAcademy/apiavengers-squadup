@@ -19,7 +19,7 @@ export const SteamCallback = () => {
         console.log("🔄 Starting Steam callback process...");
         console.log("🔍 Current URL:", window.location.href);
         console.log("🔍 Search params:", Object.fromEntries(params.entries()));
-        
+
         /* 1️⃣ Decode the payload ------------------------------------------------ */
         const raw = params.get("d");
         if (!raw) {
@@ -28,11 +28,11 @@ export const SteamCallback = () => {
         }
 
         console.log("📦 Decoding Steam payload...");
-        
+
         // url-safe → normal base64
         let s = raw.replace(/-/g, "+").replace(/_/g, "/");
         while (s.length % 4) s += "=";
-        
+
         let payload;
         try {
           payload = JSON.parse(atob(s));
@@ -40,61 +40,61 @@ export const SteamCallback = () => {
           console.error("❌ Failed to decode payload:", decodeError);
           throw new Error("Invalid Steam authentication payload");
         }
-        
+
         const { steamid, profile } = payload;
-        
+
         if (!steamid || !profile) {
           console.error("❌ Missing steamid or profile in payload");
           throw new Error("Incomplete Steam authentication data");
         }
-        
+
         console.log("✅ Steam payload decoded successfully:", { steamid, profile: profile.personaname });
         setPhase("connecting");
 
         /* 2️⃣ Tell backend to connect this SteamID ----------------------------- */
         console.log("🔗 Connecting Steam account to backend...");
-        
+
         // Debug authentication state
         console.log("🔍 Auth state check:");
         console.log("  - Access token exists:", !!authService.getAccessToken());
         console.log("  - Refresh token exists:", !!authService.getRefreshToken());
         console.log("  - User authenticated:", authService.isAuthenticated());
         console.log("  - Current user:", authService.getCurrentUser());
-        
+
         // Ensure we have a valid token before making the request
         const accessToken = authService.getAccessToken();
         if (!accessToken) {
           console.error("❌ No access token available for Steam connection");
           throw new Error("Authentication required. Please log in again.");
         }
-        
+
         console.log("🔍 Making Steam connect request to:", `${authService.getApiUrl()}/api/gaming/steam/connect`);
-        
+
         const res = await steamApi.connectSteam(steamid);
-        
+
         console.log("🔍 Steam connect response:", res.status, res.statusText);
-        
 
-      if (!res.ok) {
-        console.error("❌ Backend connect failed:", res.status, res.body);
 
-        if (res.status === 401) {
-          console.log("🔄 Authentication expired, redirecting to login...");
-          authService.clearTokens();
-          navigate("/login", { replace: true });
-          return;
+        if (!res.ok) {
+          console.error("❌ Backend connect failed:", res.status, res.body);
+
+          if (res.status === 401) {
+            console.log("🔄 Authentication expired, redirecting to login...");
+            authService.clearTokens();
+            navigate("/login", { replace: true });
+            return;
+          }
+
+          throw new Error(res.body?.msg || `Steam connection failed (${res.status})`);
         }
 
-        throw new Error(res.body?.msg || `Steam connection failed (${res.status})`);
-      }
 
-        
         console.log("✅ Steam account connected successfully");
 
         /* 3️⃣ (First-time) library sync  -------------------------------------- */
         setPhase("syncing");
         console.log("📚 Syncing Steam library...");
-        
+
         try {
           await steamApi.syncLibrary();
           console.log("✅ Steam library synced successfully");
@@ -106,27 +106,29 @@ export const SteamCallback = () => {
         /* 4️⃣ Update global store  --------------------------------------------- */
         console.log("🔄 Updating global store...");
         dispatch({ type: ACTION_TYPES.STEAM_LINKED, payload });        // Use proper action type
-        dispatch({ type: ACTION_TYPES.SET_USER, payload: {            // keep user fresh
-          is_steam_connected: true,
-          steam_id: steamid,
-          steam_avatar_url: profile.avatarfull,
-          steam_username: profile.personaname,
-        }});
+        dispatch({
+          type: ACTION_TYPES.SET_USER, payload: {            // keep user fresh
+            is_steam_connected: true,
+            steam_id: steamid,
+            steam_avatar_url: profile.avatarfull,
+            steam_username: profile.personaname,
+          }
+        });
 
         /* 5️⃣ All done → go back  --------------------------------------------- */
         setPhase("done");
         console.log("✅ Steam authentication complete! Redirecting to dashboard...");
-        
+
         // Small delay to show success message
         setTimeout(() => {
           navigate("/dashboard", { replace: true });
         }, 1000);
-        
+
       } catch (err) {
         console.error("❌ Steam callback error:", err);
         setError(err.message || "Steam authentication failed");
         setPhase("error");
-        
+
         // Redirect to profile page after error
         setTimeout(() => {
           navigate("/profile", { replace: true });
@@ -142,7 +144,7 @@ export const SteamCallback = () => {
     if (error) {
       return `Error: ${error}`;
     }
-    
+
     const messages = {
       decoding: "Decoding Steam authentication data...",
       connecting: "Linking your Steam account...",
@@ -150,7 +152,7 @@ export const SteamCallback = () => {
       done: "Steam linked successfully! Redirecting...",
       error: "Steam authentication failed. Redirecting to profile...",
     };
-    
+
     return messages[phase] || "Processing...";
   };
 
@@ -170,17 +172,17 @@ export const SteamCallback = () => {
             <div className="w-12 h-12 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
           )}
         </div>
-        
+
         <h2 className="text-xl font-bold text-white mb-2">
           {phase === "error" ? "Authentication Failed" : "Steam Authentication"}
         </h2>
-        
+
         <p className="text-white/70 text-sm">
           {getMessage()}
         </p>
-        
+
         {phase === "error" && (
-          <button 
+          <button
             onClick={() => navigate("/profile")}
             className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors duration-200"
           >
