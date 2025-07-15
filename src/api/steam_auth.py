@@ -1,5 +1,5 @@
 """
-Steam OpenID authentication for MVP
+Steam OpenID authentication for MVP - FIXED VERSION
 """
 from flask import Blueprint, request, redirect, url_for, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -30,7 +30,7 @@ def steam_login():
     state_data = f"{current_user_id}:{frontend_url}"
     state = base64.urlsafe_b64encode(state_data.encode()).decode()
     
-    app_base = os.getenv('APP_BASE_URL', request.url_root)
+    app_base = os.getenv('APP_BASE_URL', request.url_root.rstrip('/'))
     
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
@@ -80,7 +80,7 @@ def steam_callback():
                 params[key] = request.args.get(key)
         
         # Verify with Steam
-        response = requests.post(STEAM_OPENID_URL, data=params)
+        response = requests.post(STEAM_OPENID_URL, data=params, timeout=30)
         
         if 'is_valid:true' in response.text:
             # Extract Steam ID from claimed_id
@@ -95,15 +95,18 @@ def steam_callback():
                     success = steam_service.connect_user_steam(user_id, steam_id)
                     
                     if success:
-                        # Auto-sync library after connection
+                        # CRITICAL FIX: Auto-sync library after connection
                         try:
                             new_games, updated_games = steam_service.sync_user_library(user_id)
-                            current_app.logger.info(f"Synced {new_games} new games and updated {updated_games} for user {user_id}")
+                            current_app.logger.info(f"Steam connected for user {user_id}: {new_games} new games, {updated_games} updated")
+                            
+                            # Success redirect with sync info
+                            return redirect(f"{frontend_return}?steam_connected=true&new_games={new_games}&updated_games={updated_games}")
                         except Exception as sync_error:
-                            current_app.logger.error(f"Library sync error: {str(sync_error)}")
-                            # Don't fail the whole connection if sync fails
+                            current_app.logger.error(f"Library sync error after connection: {str(sync_error)}")
+                            # Still redirect as success since connection worked, just mention sync issue
+                            return redirect(f"{frontend_return}?steam_connected=true&sync_warning=true")
                         
-                        return redirect(f"{frontend_return}?steam_connected=true")
                     else:
                         return redirect(f"{frontend_return}?steam_error=connection_failed")
                         
@@ -162,7 +165,7 @@ def disconnect_steam():
 @steam_auth.route('/connect', methods=['POST'])
 @jwt_required()
 def connect_steam_manual():
-    """Manual Steam ID connection endpoint for frontend prompt"""
+    """Manual Steam ID connection endpoint with automatic library sync"""
     try:
         current_user_id = get_jwt_identity()
         data = request.get_json()
@@ -171,24 +174,43 @@ def connect_steam_manual():
         if not steam_id:
             raise APIException("Steam ID required", status_code=400)
         
+        # Validate Steam ID format (17 digits)
+        if not re.match(r'^\d{17}$', steam_id):
+            raise APIException("Invalid Steam ID format. Must be 17 digits.", status_code=400)
+        
         # Connect using steam_service
         success = steam_service.connect_user_steam(current_user_id, steam_id)
         
         if success:
-            # Auto-sync library
-            new_games, updated_games = steam_service.sync_user_library(current_user_id)
-            current_app.logger.info(f"Connected Steam and synced {new_games} new/{updated_games} updated games for user {current_user_id}")
-            
-            # Get updated user
-            user = User.query.get(current_user_id)
-            
-            return jsonify({
-                "success": True,
-                "message": "Steam account connected and library synced",
-                "user": user.serialize(),
-                "new_games": new_games,
-                "updated_games": updated_games
-            }), 200
+            # CRITICAL FIX: Auto-sync library after manual connection
+            try:
+                new_games, updated_games = steam_service.sync_user_library(current_user_id)
+                current_app.logger.info(f"Manual Steam connect for user {current_user_id}: {new_games} new/{updated_games} updated games")
+                
+                # Get updated user data
+                user = User.query.get(current_user_id)
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Steam account connected and library synced",
+                    "user": user.serialize(),
+                    "new_games": new_games,
+                    "updated_games": updated_games
+                }), 200
+            except Exception as sync_error:
+                current_app.logger.error(f"Library sync failed after manual connect: {str(sync_error)}")
+                
+                # Get user data even if sync failed
+                user = User.query.get(current_user_id)
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Steam account connected, but library sync failed. Try syncing manually.",
+                    "user": user.serialize(),
+                    "new_games": 0,
+                    "updated_games": 0,
+                    "sync_error": str(sync_error)
+                }), 200
         else:
             raise APIException("Failed to connect Steam account", status_code=500)
             

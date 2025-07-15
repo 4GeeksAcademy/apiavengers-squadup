@@ -1,4 +1,4 @@
-# src/api/steam_service.py
+# src/api/steam_service.py - FIXED VERSION
 
 import requests
 import json
@@ -8,6 +8,7 @@ from typing import List, Dict, Optional, Tuple
 from api.models import db, User, SteamGame, user_games
 from api.utils import APIException
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 class SteamService:
     def __init__(self):
@@ -39,16 +40,20 @@ class SteamService:
         }
         
         try:
+            print(f"🔍 Getting Steam profile for ID: {steam_id}")
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
             
             if 'response' in data and 'players' in data['response'] and data['response']['players']:
-                return data['response']['players'][0]
+                profile = data['response']['players'][0]
+                print(f"✅ Steam profile found: {profile.get('personaname', 'Unknown')}")
+                return profile
             else:
                 raise APIException("Steam profile not found", status_code=404)
                 
         except requests.exceptions.RequestException as e:
+            print(f"❌ Steam API error for profile: {str(e)}")
             raise APIException(f"Steam API error: {str(e)}", status_code=500)
     
     def get_user_games(self, steam_id: str) -> List[Dict]:
@@ -64,16 +69,21 @@ class SteamService:
         }
         
         try:
+            print(f"🎮 Getting Steam games for ID: {steam_id}")
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             
             if 'response' in data and 'games' in data['response']:
-                return data['response']['games']
+                games = data['response']['games']
+                print(f"✅ Found {len(games)} games in Steam library")
+                return games
             else:
+                print("⚠️ No games found in Steam response")
                 return []
                 
         except requests.exceptions.RequestException as e:
+            print(f"❌ Steam API error for games: {str(e)}")
             raise APIException(f"Steam API error: {str(e)}", status_code=500)
     
     def get_game_details(self, app_id: int) -> Dict:
@@ -99,12 +109,14 @@ class SteamService:
     
     def connect_user_steam(self, user_id: int, steam_id: str) -> bool:
         try:
+            print(f"🔗 Connecting Steam ID {steam_id} to user {user_id}")
             profile = self.get_user_profile(steam_id)
             
             user = User.query.get(user_id)
             if not user:
                 raise APIException("User not found", status_code=404)
             
+            # Update user with Steam info
             user.steam_id = steam_id
             user.steam_username = profile.get('personaname')
             user.steam_avatar_url = profile.get('avatarfull')
@@ -112,53 +124,112 @@ class SteamService:
             user.is_steam_connected = True
             
             db.session.commit()
+            print(f"✅ Steam account connected for user {user_id}")
             return True
             
         except Exception as e:
             db.session.rollback()
+            print(f"❌ Failed to connect Steam account: {str(e)}")
             raise APIException(f"Failed to connect Steam account: {str(e)}", status_code=500)
     
     def sync_user_library(self, user_id: int) -> Tuple[int, int]:
+        """FIXED: Sync user's Steam library with proper error handling"""
         user = User.query.get(user_id)
         if not user or not user.steam_id:
             raise APIException("User not found or Steam not connected", status_code=404)
         
         try:
+            print(f"🔄 Starting library sync for user {user_id} (Steam ID: {user.steam_id})")
+            
+            # Get games from Steam API
             steam_games = self.get_user_games(user.steam_id)
+            
+            if not steam_games:
+                print("⚠️ No games returned from Steam API")
+                user.steam_library_synced_at = datetime.utcnow()
+                db.session.commit()
+                return 0, 0
             
             new_games = 0
             updated_games = 0
             
+            # Clear existing associations
+            print("🧹 Clearing existing game associations...")
+            db.session.execute(
+                text("DELETE FROM user_games WHERE user_id = :user_id"),
+                {'user_id': user_id}
+            )
+            
             for game_data in steam_games:
                 app_id = game_data['appid']
+                game_name = game_data.get('name', f'Game {app_id}')
                 
+                print(f"  Processing: {game_name} (ID: {app_id})")
+                
+                # Find or create game
                 game = SteamGame.query.filter_by(steam_appid=app_id).first()
                 
                 if not game:
+                    # Create new game
                     game = SteamGame(
                         steam_appid=app_id,
-                        name=game_data.get('name', f'Game {app_id}'),
+                        name=game_name,
                         header_image=f"https://steamcdn-a.akamaihd.net/steam/apps/{app_id}/header.jpg"
                     )
                     db.session.add(game)
+                    db.session.flush()  # Get the ID
                     new_games += 1
+                    print(f"    ✅ Created new game: {game_name}")
                     
-                    self._enrich_game_data(game, app_id)
+                    # Try to enrich with more details (non-blocking)
+                    try:
+                        self._enrich_game_data(game, app_id)
+                        print(f"    📝 Enriched game data for: {game_name}")
+                    except Exception as enrich_error:
+                        print(f"    ⚠️ Could not enrich {game_name}: {enrich_error}")
+                else:
+                    print(f"    ♻️ Using existing game: {game_name}")
                 
-                if game not in user.owned_games:
-                    user.owned_games.append(game)
+                # Add to user's library using raw SQL for reliability
+                playtime = game_data.get('playtime_forever', 0)
+                last_played = None
+                if game_data.get('rtime_last_played'):
+                    last_played = datetime.fromtimestamp(game_data['rtime_last_played'])
+                
+                try:
+                    db.session.execute(
+                        text("""
+                            INSERT INTO user_games (user_id, game_id, hours_played, last_played, added_at)
+                            VALUES (:user_id, :game_id, :hours_played, :last_played, :added_at)
+                        """),
+                        {
+                            'user_id': user_id,
+                            'game_id': game.id,
+                            'hours_played': playtime,
+                            'last_played': last_played,
+                            'added_at': datetime.utcnow()
+                        }
+                    )
+                    print(f"    💾 Added to user library: {game_name}")
                     updated_games += 1
+                except Exception as db_error:
+                    print(f"    ❌ Failed to add to library {game_name}: {db_error}")
+                    # Continue with other games even if one fails
             
+            # Update sync timestamp
             user.steam_library_synced_at = datetime.utcnow()
             db.session.commit()
             
+            print(f"✅ Library sync completed: {new_games} new games, {updated_games} total games")
             return new_games, updated_games
             
         except Exception as e:
             db.session.rollback()
+            print(f"❌ Library sync failed: {str(e)}")
             raise APIException(f"Failed to sync library: {str(e)}", status_code=500)
     
     def _enrich_game_data(self, game: SteamGame, app_id: int):
+        """Enrich game with additional details from Steam Store API"""
         try:
             details = self.get_game_details(app_id)
             
@@ -174,8 +245,10 @@ class SteamService:
                     categories = [cat['description'] for cat in details['categories']]
                     game.categories = json.dumps(categories)
                     
-                    game.multiplayer = any('Multi-player' in cat for cat in categories)
-                    game.co_op = any('Co-op' in cat for cat in categories)
+                    # Check for multiplayer categories
+                    cat_descriptions = [cat.lower() for cat in categories]
+                    game.multiplayer = any('multi-player' in cat or 'multiplayer' in cat for cat in cat_descriptions)
+                    game.co_op = any('co-op' in cat or 'cooperative' in cat for cat in cat_descriptions)
                 
                 if 'release_date' in details and details['release_date'].get('date'):
                     try:
@@ -188,7 +261,7 @@ class SteamService:
                     game.price = details['price_overview'].get('final_formatted')
                 
         except Exception as e:
-            print(f"Error enriching game {app_id}: {e}")
+            print(f"Warning: Could not enrich game {app_id}: {e}")
     
     def find_common_games(self, user_ids: List[int]) -> List[Dict]:
         if len(user_ids) < 2:
@@ -199,13 +272,25 @@ class SteamService:
         if len(users) != len(user_ids):
             raise APIException("One or more users not found", status_code=404)
         
-        user_game_sets = [set(game.id for game in user.owned_games) for user in users]
+        # Get game IDs for each user
+        user_game_sets = []
+        for user in users:
+            if user.steam_id:
+                # Get user's games via raw SQL for reliability
+                result = db.session.execute(
+                    text("SELECT game_id FROM user_games WHERE user_id = :user_id"),
+                    {'user_id': user.id}
+                )
+                game_ids = {row[0] for row in result}
+                user_game_sets.append(game_ids)
+            else:
+                user_game_sets.append(set())
         
+        # Find intersections and coverage
         common_game_ids = set.intersection(*user_game_sets) if user_game_sets else set()
-        
         all_game_ids = set.union(*user_game_sets) if user_game_sets else set()
-        game_coverage = {}
         
+        game_coverage = {}
         for game_id in all_game_ids:
             owners = sum(1 for user_set in user_game_sets if game_id in user_set)
             coverage_percentage = (owners / len(users)) * 100
@@ -215,6 +300,7 @@ class SteamService:
                 'coverage_percentage': coverage_percentage
             }
         
+        # Get game details
         all_games = SteamGame.query.filter(SteamGame.id.in_(all_game_ids)).all()
         
         result = []

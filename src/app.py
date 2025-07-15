@@ -34,16 +34,31 @@ app = Flask(__name__)
 app.url_map.strict_slashes = False
 
 # ============================================================================
-# CORS Configuration for GitHub Codespaces
+# CORS Configuration for GitHub Codespaces - FIXED
 # ============================================================================
 CODESPACE_NAME = os.getenv('CODESPACE_NAME')
 GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')
-allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+# More permissive CORS for development
+allowed_origins = [
+    "http://localhost:3000", 
+    "http://127.0.0.1:3000",
+    "https://localhost:3000"
+]
+
 if CODESPACE_NAME and GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:
     codespace_frontend_url = f"https://{CODESPACE_NAME}-3000.{GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
     allowed_origins.append(codespace_frontend_url)
     print(f"🌐 Codespace frontend origin added: {codespace_frontend_url}")
-CORS(app, origins=allowed_origins, supports_credentials=True)
+
+# FIXED: More permissive CORS configuration
+CORS(app, 
+     origins=allowed_origins,
+     supports_credentials=True,
+     allow_headers=['Content-Type', 'Authorization'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+)
+
 print(f"🔧 CORS configured for origins: {allowed_origins}")
 
 # ============================================================================
@@ -95,9 +110,6 @@ def missing_token_callback(error):
 def revoked_token_callback(jwt_header, jwt_payload):
     return jsonify({'message': 'The token has been revoked.', 'error': 'token_revoked'}), 401
 
-# Rate Limiting & Other hooks...
-# (All other code from your file is correct)
-
 # ============================================================================
 # Blueprint & Route Registration
 # ============================================================================
@@ -109,10 +121,10 @@ app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')
 app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Specific for Steam auth
 app.register_blueprint(steam, url_prefix='/api/steam')  # For library/sync/common
+
 # ============================================================================
 # Route Configuration & Main Entry Point
 # ============================================================================
-# (All other code from your file is correct)
 @app.route('/')
 def redirect_to_admin():
     return redirect(url_for('admin.index'))
@@ -124,6 +136,16 @@ def serve_any_other_file(path):
     response = send_from_directory(static_file_dir, path)
     response.cache_control.max_age = 0
     return response
+
+# FIXED: Add CORS headers manually for OPTIONS requests
+@app.before_request
+def handle_options():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
 
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
