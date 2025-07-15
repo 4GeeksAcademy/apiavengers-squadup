@@ -19,8 +19,9 @@ export const steamApi = {
       console.error("❌ No user ID available for Steam login");
       throw new Error("User authentication required for Steam login");
     }
-    
-    window.location.href = `${API}/api/steam/login?user_id=${userId}`;
+    // Set return_to to /steam/callback on the current frontend
+    const returnTo = encodeURIComponent(window.location.origin + "/steam/callback");
+    window.location.href = `${API}/api/steam/login?user_id=${userId}&return_to=${returnTo}`;
   },
 
   /** POST /gaming/steam/connect after callback */

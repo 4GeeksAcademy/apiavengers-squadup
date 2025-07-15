@@ -14,12 +14,21 @@ from flask_jwt_extended import JWTManager
 app = Blueprint('app', __name__)
 
 # Allow CORS requests to this API - Updated with your GitHub Codespace URLs
-CORS(app, origins=[
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+backend_url = os.getenv("VITE_BACKEND_URL", "http://localhost:3001")
+
+# You can allow both frontend and backend URLs, and optionally localhost for dev
+allowed_origins = [
+    frontend_url,
+    backend_url,
     "http://localhost:3000",
-    "https://animated-eureka-5grpx4q7wvpgf66g-3000.app.github.dev",
-    "https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev",
-    "*"  # Allow all origins for development - remove in production
-])
+    "http://localhost:3001"
+]
+
+# Remove duplicates and empty strings
+allowed_origins = list({origin for origin in allowed_origins if origin})
+
+CORS(app, origins=allowed_origins)
 
 @app.route('/hello', methods=['POST', 'GET'])
 def handle_hello():
