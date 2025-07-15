@@ -1,24 +1,37 @@
-// Import necessary hooks and functions from React.
-import { useContext, useReducer, createContext } from "react";
-import storeReducer, { initialStore } from "../store"  // Import the reducer and the initial state.
+// src/front/hooks/useGlobalReducer.jsx
 
-// Create a context to hold the global state of the application
-// We will call this global state the "store" to avoid confusion while using local states
-const StoreContext = createContext()
+import React, { useContext, useReducer, createContext } from "react";
+// REVISED: We ONLY import the reducer logic, not any old action creators.
+import storeReducer, { initialStore } from "../store/store";
 
-// Define a provider component that encapsulates the store and warps it in a context provider to 
-// broadcast the information throught all the app pages and components.
+const StoreContext = createContext();
+
+// This is the main component that will wrap your entire application.
 export function StoreProvider({ children }) {
-    // Initialize reducer with the initial state.
-    const [store, dispatch] = useReducer(storeReducer, initialStore())
-    // Provide the store and dispatch method to all child components.
-    return <StoreContext.Provider value={{ store, dispatch }}>
-        {children}
-    </StoreContext.Provider>
+    // REVISED: The provider's ONLY job now is to create the 'store' and 'dispatch'
+    // function. All of the conflicting useEffects and authentication logic
+    // have been completely removed from this file.
+    const [store, dispatch] = useReducer(storeReducer, initialStore());
+
+    // The value provided to all child components is now simple and clean.
+    const contextValue = { store, dispatch };
+    
+    return (
+        <StoreContext.Provider value={contextValue}>
+            {children}
+        </StoreContext.Provider>
+    );
 }
 
-// Custom hook to access the global state and dispatch function.
-export default function useGlobalReducer() {
-    const { dispatch, store } = useContext(StoreContext)
-    return { dispatch, store };
+// This is the custom hook that your components will use to access the store.
+function useGlobalReducer() {
+    const context = useContext(StoreContext);
+    if (!context) {
+        throw new Error('useGlobalReducer must be used within a StoreProvider');
+    }
+    // REVISED: The hook now returns the raw context. Components that use this
+    // hook will destructure what they need (e.g., const { store } = useGlobalReducer();).
+    return context;
 }
+
+export default useGlobalReducer;

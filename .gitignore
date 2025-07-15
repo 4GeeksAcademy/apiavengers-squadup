@@ -1,55 +1,76 @@
-# ignore all files starting with .
+# Ignore all files starting with . (dotfiles)
 .*
 
-# track this file .gitignore (i.e. do NOT ignore it)
+# Unignore essential dotfiles (do NOT ignore them)
 !.gitignore
 !.github
-php_errorlog
-.log
-
-# do not ignore gitpod and render files
 !.gitpod.Dockerfile
+!.gitpod.yml
 !.welcome
 !.devcontainer
 !.devcontainer/*
 !Dockerfile.render
-!.gitpod.yml
-!render.yml
 !.render-buildpacks.json
+!render.yml
+!.env.example
+!.eslintrc
+!.htaccess
 
-# track webpack configs (i.e. do NOT ignore it)
-!composer.json
-!webpack.config.js
-!package.json
-!webpack.production.js
-!webpack.development.js
+# Python/Flask ignores
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+*.egg
+*.eggs/
+*.db  # Local databases (e.g., SQLite)
+database.database
+database.db
+migrations/  # If not committing Alembic migrations
+.venv/  # Pipenv virtualenv
+env/
+venv/
+ENV/
+*.pot
+*.pyx
 
-# track readme.md in the root (i.e. do NOT ignore it)
-!README.md
+# Node/React ignores
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+.yarn/install-state.gz
+build/  # React build output (if using Create React App)
+dist/  # Alternative build output
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# ignore OS generated files
-ehthumbs.db
+# Logs and temp files
+*.log
+php_errorlog
+.log
+diagram.png  # If this is generated
+
+# OS/editor/compiled files
+.DS_Store
 Thumbs.db
-
-# ignore Editor files
+ehthumbs.db
 *.sublime-project
 *.sublime-workspace
 *.komodoproject
-
-# ignore log files and databases
-*.log
-*.sql
-*.sqlite
-
-# ignore compiled files
 *.com
 *.class
 *.dll
 *.exe
 *.o
 *.so
-
-# ignore packaged files
 *.7z
 *.dmg
 *.gz
@@ -58,25 +79,14 @@ Thumbs.db
 *.rar
 *.tar
 *.zip
+*.sql
+*.sqlite
 
-# ignore node/grunt dependency directories
-node_modules/
+# Deployment/Prod ignores
+.now  # Vercel/Now.sh
 
-# webpack output
-dist/*
-!public/
-!public/*
-
-# ignore the dist directory were our bundle files are going to be
-!.gitkeep
-!.htaccess
-!.eslintrc
-!.env.example
-.now
-
-# backend stuff
-.venv
-database.database
-database.db
-diagram.png
-__pycache__/
+# Unignore project essentials (e.g., configs, README)
+!README.md
+!package.json  # Frontend package.json
+!Pipfile  # Pipenv (commit for deps)
+!Pipfile.lock  # Usually commit for reproducibility

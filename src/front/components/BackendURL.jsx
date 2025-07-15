@@ -1,5 +1,9 @@
 import React, { Component } from "react";
 import envFile from "../../../docs/assets/env-file.png"
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 const Dark = ({children}) => <span className="bg-dark text-white px-1 rounded">{children}</span>;
 export const BackendURL = () => (
