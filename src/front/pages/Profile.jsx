@@ -35,43 +35,6 @@ export const Profile = () => {
         let mounted = true;
 
         const loadProfile = async () => {
-            // If the user is already in global state, use it
-            if (storeUser) {
-                setFormData({
-                    username: storeUser.username ?? '',
-                    email: storeUser.email ?? '',
-                    bio: storeUser.bio ?? '',
-                    avatar_url: storeUser.avatar_url ?? '',
-                    gaming_style: storeUser.gaming_style ?? '',
-                    favorite_genres: storeUser.favorite_genres ?? [],
-                    created_at: storeUser.created_at ?? '',
-                    total_games: storeUser.total_games || 0
-                });
-                setUser(storeUser); // Set local user state
-                setIsLoading(false);
-                return;
-            }
-
-            // Check if we have cached user data in localStorage
-            const cachedUser = authService.getCurrentUser();
-            if (cachedUser && cachedUser.steam_id && cachedUser.is_steam_connected) {
-                setFormData({
-                    username: cachedUser.username ?? '',
-                    email: cachedUser.email ?? '',
-                    bio: cachedUser.bio ?? '',
-                    avatar_url: cachedUser.avatar_url ?? '',
-                    gaming_style: cachedUser.gaming_style ?? '',
-                    favorite_genres: cachedUser.favorite_genres ?? [],
-                    created_at: cachedUser.created_at ?? '',
-                    total_games: cachedUser.total_games || 0
-                });
-                setUser(cachedUser);
-                dispatch({ type: ACTION_TYPES.SET_USER, payload: cachedUser });
-                setIsLoading(false);
-                return;
-            }
-
-            // Only fetch from backend if we don't have any cached data
             try {
                 const res = await authService.authenticatedFetch(
                     `${backendUrl}/api/auth/profile`
@@ -80,6 +43,7 @@ export const Profile = () => {
                 if (!res.ok) {
                     if (res.status === 401) {
                         authService.clearTokens();
+                        dispatch({ type: ACTION_TYPES.LOGOUT });
                         navigate('/login', { replace: true });
                         return;
                     }
@@ -89,7 +53,9 @@ export const Profile = () => {
                 const { user: u } = await res.json();
                 if (!mounted) return;
 
+                // Update both global store and storage
                 dispatch({ type: ACTION_TYPES.SET_USER, payload: u });
+                authService.setTokens(authService.getAccessToken(), authService.getRefreshToken(), u, true);
                 setUser(u);
                 setFormData({
                     username: u.username ?? '',
@@ -112,7 +78,7 @@ export const Profile = () => {
         loadProfile();
 
         return () => { mounted = false; };
-    }, [backendUrl, navigate, dispatch, storeUser]);
+    }, [backendUrl, navigate, dispatch]);
 
     useEffect(() => {
         // Fetch user's game library if Steam is connected
@@ -188,8 +154,9 @@ export const Profile = () => {
                 total_games: updated.total_games || 0
             });
 
-            // Update global state
+            // Update both global store and storage
             dispatch({ type: ACTION_TYPES.SET_USER, payload: updated });
+            authService.setTokens(authService.getAccessToken(), authService.getRefreshToken(), updated, true);
 
             setIsEditing(false);
             setMessage({ type: 'success', text: 'Profile updated successfully!' });
