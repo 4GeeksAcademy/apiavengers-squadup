@@ -17,7 +17,6 @@ steam_auth = Blueprint('steam_auth', __name__)
 STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
 
 @steam_auth.route('/steam/login', methods=['GET'])
-@jwt_required()
 def steam_login():
     """Redirect user to Steam for authentication"""
     # Get the frontend URL from the request or use default
@@ -28,7 +27,8 @@ def steam_login():
         # Replace port 3001 with 3000 for frontend
         frontend_url = backend_url.replace('-3001.', '-3000.') + '/steam/callback'
     
-    current_user_id = get_jwt_identity()
+    # Get user ID from query parameter instead of JWT
+    current_user_id = request.args.get('user_id')
     
     # Store user ID in session for callback
     params = {

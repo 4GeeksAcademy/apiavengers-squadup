@@ -6,7 +6,21 @@ const API = authService.getApiUrl();
 export const steamApi = {
   /** redirect user to the backend → Steam OpenID flow */
   goToSteamLogin() {
-    window.location.href = `${API}/api/steam/login`;
+    // Get user ID from authService or sessionStorage
+    let userId = null;
+    try {
+      const user = authService.getCurrentUser();
+      userId = user?.id;
+    } catch (error) {
+      console.warn("⚠️ Could not get user from authService:", error);
+    }
+    
+    if (!userId) {
+      console.error("❌ No user ID available for Steam login");
+      throw new Error("User authentication required for Steam login");
+    }
+    
+    window.location.href = `${API}/api/steam/login?user_id=${userId}`;
   },
 
   /** POST /gaming/steam/connect after callback */
