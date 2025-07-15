@@ -32,10 +32,8 @@ export const Navbar = () => {
   }, [user, isAuthPage, dispatch]);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
-    setUser(null);
-    setIsAuthenticated(false);
+    // Use authService to properly clear tokens and state
+    authService.logout();
     setShowUserMenu(false);
     navigate('/');
   };

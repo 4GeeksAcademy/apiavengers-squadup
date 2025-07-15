@@ -1,32 +1,46 @@
 // src/front/store/store.js - FIXED VERSION with debugging
 
 // Initial state function
-export const initialStore = () => ({
-    message: null,
-    // Authentication state
-    user: null,
-    token: localStorage.getItem('squadup_access_token') || sessionStorage.getItem('squadup_access_token') || null, // FIXED: Use correct token key
-    isAuthenticated: false,
-    authLoading: false,
-    authError: null,
-    // Animation state
-    animationsEnabled: true, 
-    // Demo data for existing functionality
-    todos: [
-        {
-            id: 1,
-            title: "FIRST",
-            background: "white",
-            initial: "white"
-        },
-        {
-            id: 2,
-            title: "SECOND", 
-            background: "white",
-            initial: "white"
+export const initialStore = () => {
+    const token = localStorage.getItem('squadup_access_token') || sessionStorage.getItem('squadup_access_token') || null;
+    const userStr = localStorage.getItem('squadup_user') || sessionStorage.getItem('squadup_user') || null;
+    let user = null;
+    
+    try {
+        if (userStr) {
+            user = JSON.parse(userStr);
         }
-    ]
-});
+    } catch (e) {
+        console.error('Error parsing user data:', e);
+    }
+    
+    return {
+        message: null,
+        // Authentication state
+        user: user,
+        token: token,
+        isAuthenticated: !!(token && user), // Only authenticated if both token and user exist
+        authLoading: false,
+        authError: null,
+        // Animation state
+        animationsEnabled: true, 
+        // Demo data for existing functionality
+        todos: [
+            {
+                id: 1,
+                title: "FIRST",
+                background: "white",
+                initial: "white"
+            },
+            {
+                id: 2,
+                title: "SECOND", 
+                background: "white",
+                initial: "white"
+            }
+        ]
+    };
+};
 
 // Action types
 export const ACTION_TYPES = {

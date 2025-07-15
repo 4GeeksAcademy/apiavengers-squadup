@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
@@ -25,7 +25,7 @@ export const Dashboard = () => {
         if (isAuthenticated && user) {
             loadDashboardData();
         }
-    }, [isAuthenticated, user]);
+    }, [isAuthenticated, user, loadDashboardData]);
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -47,7 +47,7 @@ export const Dashboard = () => {
         }
     }, []);
 
-    const loadDashboardData = async () => {
+    const loadDashboardData = useCallback(async () => {
         setIsLoadingData(true);
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
@@ -59,7 +59,7 @@ export const Dashboard = () => {
             } else {
                 const errorData = await groupsResponse.json();
                 console.error('Groups fetch error:', errorData);
-                toast.error(`Failed to load groups: ${errorData.error || 'Unknown error'}`);
+                // Don't show error toast for 403 - user just doesn't have groups yet
                 if (groupsResponse.status === 401) {
                     toast.error('Session expired. Please log in again.');
                     authService.logout();
@@ -99,7 +99,7 @@ export const Dashboard = () => {
         } finally {
             setIsLoadingData(false);
         }
-    };
+    }, [navigate]);
 
     const handleCreateGroup = async (groupName) => {
         const loadingToast = toast.loading("Creating group...");

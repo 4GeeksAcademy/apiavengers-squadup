@@ -25,7 +25,7 @@ class AuthService {
     
     #verifyLatch = null; 
     #verifiedAt = 0;       
-    #verificationThrottle = 60000; 
+    #verificationThrottle = 300000; // 5 minutes instead of 1 minute
     
     // Request deduplication for concurrent calls
     #pendingRequests = new Map();
@@ -34,7 +34,7 @@ class AuthService {
         // local check first – fast
         if (!this.isAuthenticated()) return false;
 
-        // throttle network hit to once every 60 s unless forced
+        // throttle network hit to once every 5 minutes unless forced
         const now = Date.now();
         if (!force && now - this.#verifiedAt < this.#verificationThrottle) {
             console.log('🚀 Using cached auth status (throttled)');
@@ -147,15 +147,15 @@ class AuthService {
     // ============================================================================
 
     setupTokenRefresh() {
-        // Check token every 10 minutes (increased from 5 to reduce API calls)
+        // Check token every 15 minutes (increased to reduce API calls)
         setInterval(() => {
             this.checkAndRefreshToken();
-        }, 10 * 60 * 1000);
+        }, 15 * 60 * 1000);
 
         // Check immediately when service is created, but with longer delay to avoid rate limiting
         setTimeout(() => {
             this.checkAndRefreshToken();
-        }, 5000); // Increased delay to 5 seconds to avoid rate limiting
+        }, 10000); // Increased delay to 10 seconds to avoid rate limiting
     }
 
     async checkAndRefreshToken() {
@@ -168,10 +168,26 @@ class AuthService {
             hasUser: !!user,
             hasRefresh: !!refreshToken,
             hasDispatch: !!this.dispatch,
+            authCheckCompleted: this.authCheckCompleted,
             user: user
         });
         
         if (accessToken && user) {
+            // If auth check is already completed and we have valid data, skip verification
+            if (this.authCheckCompleted && this.dispatch) {
+                console.log('✅ Auth already verified, updating global state');
+                this.dispatch({ 
+                    type: 'login_success',
+                    payload: { 
+                        user, 
+                        token: accessToken, 
+                        refreshToken 
+                    } 
+                });
+                this.scheduleTokenRefresh(accessToken);
+                return;
+            }
+            
             try {
                 console.log('🔐 Verifying existing token...');
                 const isValid = await this.verifyToken();
