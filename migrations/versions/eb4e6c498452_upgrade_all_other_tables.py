@@ -131,27 +131,60 @@ def upgrade():
     sa.PrimaryKeyConstraint('user_id', 'group_id')
     )
     
+    # Check which columns already exist in the user table
+    user_columns = [col['name'] for col in inspector.get_columns('user')]
+    
     with op.batch_alter_table('user', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('avatar_url', sa.String(length=300), nullable=True))
-        batch_op.add_column(sa.Column('bio', sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column('created_at', sa.DateTime(), nullable=True))
-        batch_op.add_column(sa.Column('last_login', sa.DateTime(), nullable=True))
-        batch_op.add_column(sa.Column('steam_id', sa.String(length=17), nullable=True))
-        batch_op.add_column(sa.Column('steam_username', sa.String(length=100), nullable=True))
-        batch_op.add_column(sa.Column('steam_avatar_url', sa.String(length=300), nullable=True))
-        batch_op.add_column(sa.Column('steam_profile_url', sa.String(length=300), nullable=True))
-        batch_op.add_column(sa.Column('is_steam_connected', sa.Boolean(), nullable=True))
-        batch_op.add_column(sa.Column('steam_library_synced_at', sa.DateTime(), nullable=True))
-        batch_op.add_column(sa.Column('gaming_preferences', sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column('favorite_genres', sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column('gaming_style', sa.String(length=50), nullable=True))
-        batch_op.alter_column('username',
-               existing_type=sa.VARCHAR(length=80),
-               nullable=True,
-               existing_server_default=sa.text("'temp_user'::character varying"))
-        batch_op.create_unique_constraint(None, ['username'])
-        batch_op.create_unique_constraint(None, ['steam_id'])
-        batch_op.drop_column('password')
+        if 'avatar_url' not in user_columns:
+            batch_op.add_column(sa.Column('avatar_url', sa.String(length=300), nullable=True))
+        if 'bio' not in user_columns:
+            batch_op.add_column(sa.Column('bio', sa.Text(), nullable=True))
+        if 'created_at' not in user_columns:
+            batch_op.add_column(sa.Column('created_at', sa.DateTime(), nullable=True))
+        if 'last_login' not in user_columns:
+            batch_op.add_column(sa.Column('last_login', sa.DateTime(), nullable=True))
+        if 'steam_id' not in user_columns:
+            batch_op.add_column(sa.Column('steam_id', sa.String(length=17), nullable=True))
+        if 'steam_username' not in user_columns:
+            batch_op.add_column(sa.Column('steam_username', sa.String(length=100), nullable=True))
+        if 'steam_avatar_url' not in user_columns:
+            batch_op.add_column(sa.Column('steam_avatar_url', sa.String(length=300), nullable=True))
+        if 'steam_profile_url' not in user_columns:
+            batch_op.add_column(sa.Column('steam_profile_url', sa.String(length=300), nullable=True))
+        if 'is_steam_connected' not in user_columns:
+            batch_op.add_column(sa.Column('is_steam_connected', sa.Boolean(), nullable=True))
+        if 'steam_library_synced_at' not in user_columns:
+            batch_op.add_column(sa.Column('steam_library_synced_at', sa.DateTime(), nullable=True))
+        if 'gaming_preferences' not in user_columns:
+            batch_op.add_column(sa.Column('gaming_preferences', sa.Text(), nullable=True))
+        if 'favorite_genres' not in user_columns:
+            batch_op.add_column(sa.Column('favorite_genres', sa.Text(), nullable=True))
+        if 'gaming_style' not in user_columns:
+            batch_op.add_column(sa.Column('gaming_style', sa.String(length=50), nullable=True))
+        
+        # Only alter username if it exists and needs modification
+        if 'username' in user_columns:
+            batch_op.alter_column('username',
+                   existing_type=sa.VARCHAR(length=80),
+                   nullable=True,
+                   existing_server_default=sa.text("'temp_user'::character varying"))
+        
+        # Only create constraints if they don't exist
+        existing_constraints = [constraint['name'] for constraint in inspector.get_unique_constraints('user')]
+        if 'uq_user_username' not in existing_constraints:
+            try:
+                batch_op.create_unique_constraint('uq_user_username', ['username'])
+            except Exception:
+                pass
+        if 'uq_user_steam_id' not in existing_constraints:
+            try:
+                batch_op.create_unique_constraint('uq_user_steam_id', ['steam_id'])
+            except Exception:
+                pass
+        
+        # Only drop password column if it exists
+        if 'password' in user_columns:
+            batch_op.drop_column('password')
 
     # ### end Alembic commands ###
 
