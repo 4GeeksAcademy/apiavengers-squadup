@@ -68,7 +68,7 @@ export const Profile = () => {
 
             // Only fetch from backend if we don't have any cached data
             try {
-                const res = await authService.makeAuthenticatedRequest(
+                const res = await authService.authenticatedFetch(
                     `${backendUrl}/api/auth/profile`
                 );
 
@@ -133,7 +133,7 @@ export const Profile = () => {
         const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
         try {
-            const res = await authService.makeAuthenticatedRequest(
+            const res = await authService.authenticatedFetch(
                 `${backendUrl}/api/auth/profile`,
                 {
                     method: 'PUT',
@@ -158,6 +158,9 @@ export const Profile = () => {
                 favorite_genres: updated.favorite_genres ?? [],
                 total_games: updated.total_games || 0
             });
+
+            // Update global state
+            dispatch({ type: ACTION_TYPES.SET_USER, payload: updated });
 
             setIsEditing(false);
             setMessage({ type: 'success', text: 'Profile updated successfully!' });

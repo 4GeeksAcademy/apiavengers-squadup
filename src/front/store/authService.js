@@ -392,51 +392,8 @@ class AuthService {
     // ============================================================================
 
     async makeAuthenticatedRequest(url, options = {}) {
-        const accessToken = this.getAccessToken();
-        
-        if (!accessToken) {
-            throw new Error('No access token available');
-        }
-
-        // Create a unique key for this request to deduplicate
-        const requestKey = `${options.method || 'GET'}:${url}`;
-        
-        // Check if we have a pending request for this URL
-        if (this.#pendingRequests.has(requestKey)) {
-            console.log('🔄 Reusing pending request:', requestKey);
-            return this.#pendingRequests.get(requestKey);
-        }
-
-        // Check if token needs refresh
-        if (this.isTokenExpired()) {
-            if (this.isRefreshing) {
-                // Wait for refresh to complete
-                const refreshPromise = new Promise((resolve, reject) => {
-                    this.failedQueue.push({ resolve, reject });
-                });
-                
-                const token = await refreshPromise;
-                return this.makeRequest(url, { ...options, token });
-            } else {
-                const refreshed = await this.refreshTokenSilently();
-                if (!refreshed) {
-                    throw new Error('Unable to refresh token');
-                }
-            }
-        }
-
-        // Create the request promise
-        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
-        
-        // Store it for deduplication
-        this.#pendingRequests.set(requestKey, requestPromise);
-        
-        // Clean up after request completes
-        requestPromise.finally(() => {
-            this.#pendingRequests.delete(requestKey);
-        });
-
-        return requestPromise;
+        // Use the existing authenticatedFetch method instead
+        return this.authenticatedFetch(url, options);
     }
 
     async login(credentials, remember = false) {
