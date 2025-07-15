@@ -7,9 +7,11 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from api.models import db, User, SteamGame, user_games
 from api.utils import APIException
+from dotenv import load_dotenv
 
 class SteamService:
     def __init__(self):
+        load_dotenv()
         self.api_key = os.getenv('STEAM_API_KEY')
         self.base_url = 'https://api.steampowered.com'
         

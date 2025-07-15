@@ -56,7 +56,10 @@ export const Navbar = () => {
             return;
         }
         try {
-            await authService.connectSteam(steamId);
+            const result = await authService.connectSteam(steamId);
+            if (result.success && result.user) {
+                dispatch({ type: 'set_user', payload: result.user });
+            }
             alert('Steam integration initiated!');
             setShowUserMenu(false);
         } catch (error) {

@@ -483,15 +483,15 @@ class AuthService {
                 throw new Error('Failed to connect Steam account');
             }
 
-            const data = await response.json();
-            
-            // Optionally update user in store if backend returns updated user
-            if (data.user && this.dispatch) {
-                this.dispatch({ 
-                    type: 'set_user', 
-                    payload: data.user 
-                });
-            }
+        const data = await response.json();
+        
+        // Update user in store if backend returns updated user
+        if (data.user && this.dispatch) {
+            this.dispatch({ 
+                type: 'set_user',  // Assuming your store has this action
+                payload: data.user 
+            });
+        }
 
             return data;
         } catch (error) {

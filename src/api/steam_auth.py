@@ -151,3 +151,42 @@ def disconnect_steam():
         db.session.rollback()
         current_app.logger.error(f"Steam disconnect error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
+
+@steam_auth.route('/steam/connect', methods=['POST'])
+@jwt_required()
+def connect_steam_manual():
+    """Manual Steam ID connection endpoint for frontend prompt"""
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        steam_id = data.get('steam_id')
+        
+        if not steam_id:
+            raise APIException("Steam ID required", status_code=400)
+        
+        # Connect using steam_service
+        success = steam_service.connect_user_steam(current_user_id, steam_id)
+        
+        if success:
+            # Auto-sync library
+            new_games, updated_games = steam_service.sync_user_library(current_user_id)
+            current_app.logger.info(f"Connected Steam and synced {new_games} new/{updated_games} updated games for user {current_user_id}")
+            
+            # Get updated user
+            user = User.query.get(current_user_id)
+            
+            return jsonify({
+                "success": True,
+                "message": "Steam account connected and library synced",
+                "user": user.serialize(),
+                "new_games": new_games,
+                "updated_games": updated_games
+            }), 200
+        else:
+            raise APIException("Failed to connect Steam account", status_code=500)
+            
+    except APIException as e:
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        current_app.logger.error(f"Manual Steam connect error: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
