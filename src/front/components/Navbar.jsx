@@ -31,6 +31,11 @@ export const Navbar = () => {
     }
   }, [user, isAuthPage, dispatch]);
 
+  // Close dropdown on route change
+  useEffect(() => {
+    setShowUserMenu(false);
+  }, [location.pathname]);
+
   const handleLogout = () => {
     // Use authService to properly clear tokens and state
     authService.logout();
