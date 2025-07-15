@@ -50,7 +50,7 @@ class AuthService {
         console.log('🌐 Making network auth verification');
         
         // real network verify
-        this.#verifyLatch = fetch(`${API_BASE_URL}/api/auth/verify`, {
+        this.#verifyLatch = fetch(`${this.apiUrl}/api/auth/verify`, {
             headers: { Authorization: `Bearer ${this.getAccessToken()}` },
         })
             .then(r => r.ok ? r.json() : Promise.reject())
@@ -152,10 +152,10 @@ class AuthService {
             this.checkAndRefreshToken();
         }, 10 * 60 * 1000);
 
-        // Check immediately when service is created
+        // Check immediately when service is created, but with longer delay to avoid rate limiting
         setTimeout(() => {
             this.checkAndRefreshToken();
-        }, 2000); // Increased delay to avoid immediate refresh
+        }, 5000); // Increased delay to 5 seconds to avoid rate limiting
     }
 
     async checkAndRefreshToken() {
@@ -555,6 +555,13 @@ class AuthService {
             return false; 
         }
         
+        // Rate limiting: Don't verify if we just verified recently
+        const now = Date.now();
+        if (now - this.#verifiedAt < this.#verificationThrottle) {
+            console.log('🚀 Using cached verification (throttled)');
+            return true;
+        }
+        
         try { 
             console.log('🔍 Verifying token with server...');
             const res = await fetch(`${this.apiUrl}/api/auth/verify`, { 
@@ -564,6 +571,7 @@ class AuthService {
             if (res.ok) {
                 const data = await res.json();
                 console.log('✅ Token verification successful');
+                this.#verifiedAt = now; // Update verification timestamp
                 
                 // Update user data if it changed
                 if (data.user && this.dispatch) {
@@ -573,6 +581,9 @@ class AuthService {
             } else if (res.status === 401) {
                 console.log('❌ Token verification failed: 401 Unauthorized (expired/invalid token)');
                 return false;
+            } else if (res.status === 429) {
+                console.log('⚠️ Token verification rate limited (429), will retry later');
+                return true; // Assume token is still valid if rate limited
             } else {
                 console.log('❌ Token verification failed with status:', res.status);
                 return false;
