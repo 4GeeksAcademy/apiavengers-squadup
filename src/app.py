@@ -62,7 +62,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 Migrate(app, db, compare_type=True)
 
-app.config["SERVER_NAME"] = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"
+app.config["SERVER_NAME"] = os.getenv("DATABASE_URL")
 app.config["PREFERRED_URL_SCHEME"] = "https"
 
 # Admin & custom CLI commands
