@@ -12,7 +12,8 @@ from flask_jwt_extended import (
 import re
 import json
 from datetime import datetime, timedelta
-from sqlalchemy import or_, IntegrityError, ProgrammingError
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
