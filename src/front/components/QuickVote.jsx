@@ -1,10 +1,12 @@
-// src/front/components/QuickVote.jsx - COMPLETE FIXED VERSION
+// src/front/components/QuickVote.jsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom'; // Add this import
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
 import GameImage from './GameImage';
 
 const QuickVote = ({ groupId }) => {
+    const navigate = useNavigate(); // Add this hook
     const [votableGames, setVotableGames] = useState([]);
     const [selectedGames, setSelectedGames] = useState([]);
     const [sessionId, setSessionId] = useState(null);
@@ -156,10 +158,13 @@ const QuickVote = ({ groupId }) => {
                 setSubmitted(true);
                 toast.success('Votes submitted successfully!');
                 
-                // Navigate to results page after short delay
+                // FIXED: Use React Router navigation instead of window.location
+                console.log('🔄 Navigating to results page:', `/sessions/${sessionId}/results`);
+                
+                // Small delay to ensure the vote is processed
                 setTimeout(() => {
-                    window.location.href = `/sessions/${sessionId}/results`;
-                }, 2000);
+                    navigate(`/sessions/${sessionId}/results`);
+                }, 1000);
             } else {
                 const errorData = await response.json();
                 setError(errorData.error || 'Failed to submit votes');
@@ -241,7 +246,7 @@ const QuickVote = ({ groupId }) => {
                 
                 <div className="mt-6">
                     <button 
-                        onClick={() => window.location.href = `/sessions/${sessionId}/results`}
+                        onClick={() => navigate(`/sessions/${sessionId}/results`)}
                         className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
                     >
                         View Results Now
@@ -261,7 +266,7 @@ const QuickVote = ({ groupId }) => {
         );
     }
 
-    // Main voting interface
+    // Main voting interface - rest of the component remains the same...
     return (
         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
             <div className="mb-6">

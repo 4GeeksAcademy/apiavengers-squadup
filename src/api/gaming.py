@@ -10,7 +10,7 @@ from api.utils import APIException
 import secrets
 import string
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 gaming = Blueprint('gaming', __name__)
 

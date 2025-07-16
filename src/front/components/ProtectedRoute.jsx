@@ -1,4 +1,4 @@
-// src/front/components/ProtectedRoute.jsx - FIXED to prevent infinite checking
+// src/front/components/ProtectedRoute.jsx - OPTIMIZED VERSION
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
@@ -9,9 +9,10 @@ const ProtectedRoute = ({ children }) => {
     const { store, dispatch } = useGlobalReducer();
     const location = useLocation();
     
-    // CRITICAL FIX: Use refs to prevent infinite loops
+    // Use refs to prevent infinite loops
     const checkCompleteRef = useRef(false);
     const lastAuthStateRef = useRef(null);
+    const timeoutRef = useRef(null);
     
     const [authState, setAuthState] = useState({
         isChecking: true,
@@ -20,6 +21,11 @@ const ProtectedRoute = ({ children }) => {
     });
 
     useEffect(() => {
+        // Clear any existing timeout
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+
         // Create a stable auth state key for comparison
         const currentAuthState = `${store?.isAuthenticated}-${!!store?.user}-${store?.authLoading}-${authService.authCheckCompleted}`;
         
@@ -34,10 +40,14 @@ const ProtectedRoute = ({ children }) => {
 
         const performAuthCheck = async () => {
             try {
-                // Wait for auth service to be ready if not already
-                if (!authService.authCheckCompleted) {
+                // OPTIMIZATION: Set a maximum wait time of 3 seconds
+                const maxWaitTime = 3000;
+                const startTime = Date.now();
+
+                // Wait for auth service to be ready, but not too long
+                while (!authService.authCheckCompleted && (Date.now() - startTime < maxWaitTime)) {
                     console.log('⏳ ProtectedRoute: Waiting for auth service completion...');
-                    await authService.waitForInitialization();
+                    await new Promise(resolve => setTimeout(resolve, 100));
                 }
 
                 const serviceAuth = authService.isAuthenticated();
@@ -51,16 +61,32 @@ const ProtectedRoute = ({ children }) => {
                     hasUser,
                     isLoading,
                     authCheckCompleted: authService.authCheckCompleted,
-                    pathname: location.pathname
+                    pathname: location.pathname,
+                    timeElapsed: Date.now() - startTime
                 });
 
-                // If still loading, keep waiting
-                if (isLoading || !authService.authCheckCompleted) {
+                // OPTIMIZATION: If we've waited too long and still loading, proceed with local auth
+                const waitedTooLong = Date.now() - startTime >= maxWaitTime;
+                
+                if ((isLoading || !authService.authCheckCompleted) && !waitedTooLong) {
                     console.log('⏳ ProtectedRoute: Still loading auth state...');
                     setAuthState({
                         isChecking: true,
                         isAuthenticated: false,
                         error: null
+                    });
+                    return;
+                }
+
+                // If we waited too long, use local auth state
+                if (waitedTooLong) {
+                    console.log('⚠️ ProtectedRoute: Auth check timeout, using local state');
+                    const hasLocalAuth = serviceAuth && storeAuth && hasUser;
+                    
+                    setAuthState({
+                        isChecking: false,
+                        isAuthenticated: hasLocalAuth,
+                        error: hasLocalAuth ? null : 'Authentication timeout'
                     });
                     return;
                 }
@@ -129,10 +155,28 @@ const ProtectedRoute = ({ children }) => {
             }
         };
 
+        // OPTIMIZATION: Add a timeout to prevent infinite checking
+        timeoutRef.current = setTimeout(() => {
+            console.log('⏰ ProtectedRoute: Auth check timeout, stopping check');
+            setAuthState({
+                isChecking: false,
+                isAuthenticated: false,
+                error: 'Authentication check timeout'
+            });
+            checkCompleteRef.current = true;
+        }, 5000); // 5 second max wait
+
         performAuthCheck();
+
+        // Cleanup timeout on unmount
+        return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        };
     }, [store?.isAuthenticated, store?.user?.id, store?.authLoading, location.pathname, dispatch]);
 
-    // Handle loading state
+    // Handle loading state with a more user-friendly timeout
     if (authState.isChecking) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
@@ -140,6 +184,23 @@ const ProtectedRoute = ({ children }) => {
                     <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-white text-lg">Verifying access...</p>
                     <p className="text-white/60 text-sm mt-2">Please wait</p>
+                    
+                    {/* Add a progress indicator or escape hatch */}
+                    <div className="mt-4">
+                        <button 
+                            onClick={() => {
+                                console.log('🔄 User clicked continue anyway');
+                                setAuthState({
+                                    isChecking: false,
+                                    isAuthenticated: authService.isAuthenticated() && !!store?.user,
+                                    error: null
+                                });
+                            }}
+                            className="text-coral-400 hover:text-coral-300 text-sm underline transition-colors"
+                        >
+                            Continue anyway
+                        </button>
+                    </div>
                 </div>
             </div>
         );
