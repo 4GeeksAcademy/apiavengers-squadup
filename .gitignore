@@ -36,6 +36,7 @@ venv/
 ENV/
 *.pot
 *.pyx
+.env
 
 # Node/React ignores
 node_modules/
