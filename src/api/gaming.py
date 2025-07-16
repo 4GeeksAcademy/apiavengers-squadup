@@ -1,3 +1,7 @@
+"""
+Gaming group management routes - PROPER LEAVE/DELETE LOGIC
+Creator can DELETE group, members can LEAVE, auto-cleanup empty groups
+"""
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 # 🔧 FIXED: Removed 'Vote' from imports since it doesn't exist
@@ -392,7 +396,7 @@ def get_group(group_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         print(f"❌ Error getting group: {str(e)}")
-        return jupytext({"success": False, "error": "Internal server error"}), 500
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @gaming.route('/groups/join/<invite_code>', methods=['POST'])
@@ -433,6 +437,10 @@ def join_group_by_invite(invite_code):
         print(f"❌ Error joining group: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
+
+# ============================================================================
+# VOTING SYSTEM IMPLEMENTATION
+# ============================================================================
 
 @gaming.route('/groups/<int:group_id>/active-session', methods=['GET'])
 @jwt_required()
@@ -713,36 +721,6 @@ def get_session_results(session_id):
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
-def get_group_common_games(group_id):
-    """Helper function to get common games for a group"""
-    try:
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            return []
-        
-        # Get Steam-connected members
-        steam_members = [m for m in group.members if m.steam_id and m.is_steam_connected]
-        if len(steam_members) < 2:
-            return []
-        
-        # Get user IDs
-        user_ids = [m.id for m in steam_members]
-        
-        # Use steam_service to find common games
-        from api.steam_service import steam_service
-        if steam_service:
-            common_games = steam_service.find_common_games(user_ids)
-            # Filter for multiplayer games only
-            multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
-            return multiplayer_games[:20]  # Limit to 20 games
-        
-        return []
-        
-    except Exception as e:
-        print(f"❌ Error getting common games: {str(e)}")
-        return []
-
-
 @gaming.route('/sessions/<int:session_id>/close', methods=['POST'])
 @jwt_required()
 def close_voting_session(session_id):
@@ -782,6 +760,36 @@ def close_voting_session(session_id):
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
+def get_group_common_games(group_id):
+    """Helper function to get common games for a group"""
+    try:
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return []
+        
+        # Get Steam-connected members
+        steam_members = [m for m in group.members if m.steam_id and m.is_steam_connected]
+        if len(steam_members) < 2:
+            return []
+        
+        # Get user IDs
+        user_ids = [m.id for m in steam_members]
+        
+        # Use steam_service to find common games
+        from api.steam_service import steam_service
+        if steam_service:
+            common_games = steam_service.find_common_games(user_ids)
+            # Filter for multiplayer games only
+            multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
+            return multiplayer_games[:20]  # Limit to 20 games
+        
+        return []
+        
+    except Exception as e:
+        print(f"❌ Error getting common games: {str(e)}")
+        return []
+
+
 # ============================================================================
 # SUMMARY OF THE LOGIC:
 # ============================================================================
@@ -790,16 +798,30 @@ def close_voting_session(session_id):
 #    - DELETE group (removes everyone, deletes all sessions)
 #    - KICK any member
 #    - LEAVE group (transfers ownership or auto-deletes if empty)
+#    - CLOSE voting sessions
 
 # 👤 MEMBER POWERS:
 #    - LEAVE group (just removes them)
+#    - START voting sessions
+#    - VOTE in sessions
+#    - VIEW results
+
+# 🗳️ VOTING FEATURES:
+#    - Start voting sessions for game selection
+#    - Submit ranked votes for multiple games
+#    - View real-time results
+#    - Auto-complete when all members vote
+#    - Creator can manually close sessions
 
 # 🤖 AUTO-CLEANUP:
 #    - Empty groups are automatically deleted
 #    - Ownership is transferred if creator leaves but others remain
+#    - Sessions auto-complete when all members vote
 
 # 🚫 PREVENTS:
 #    - Orphaned empty groups
 #    - Members deleting groups (only creators can)
 #    - Kicking yourself (use leave/delete instead)
+#    - Multiple active voting sessions per group
+#    - Double voting in same session
 # """
