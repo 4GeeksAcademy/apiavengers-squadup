@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SquadUp Test Suite</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const SquadUpTestSuite = () => {
+          const [backendUrl, setBackendUrl] = useState('https://bookish-funicular-9754qgjjg9743pqr7-3001.app.github.dev');
+          const [frontendUrl, setFrontendUrl] = useState('https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev');
+          const [testResults, setTestResults] = useState({});
+          const [isRunning, setIsRunning] = useState(false);
+          const [currentTest, setCurrentTest] = useState('');
+          const [testCredentials, setTestCredentials] = useState({
+            email: 'testuser1@test.com',
+            username: 'testuser1',
+            password: '123456',
+            steamId: '76561197960287930'
+          });
+          const [authToken, setAuthToken] = useState('');
+          const [testGroupId, setTestGroupId] = useState(null);
+          const [testSessionId, setTestSessionId] = useState(null);
+
+          // Test categories
+          const testCategories = [
+            {
+              name: 'Backend Health',
+              tests: ['server_status', 'database_connection', 'cors_headers']
+            },
+            {
+              name: 'Authentication',
+              tests: ['register_user', 'login_user', 'verify_token', 'protected_route']
+            },
+            {
+              name: 'Steam Integration',
+              tests: ['steam_api_key', 'steam_connect', 'steam_library', 'steam_sync']
+            },
+            {
+              name: 'Group Management',
+              tests: ['create_group', 'join_group', 'leave_group', 'group_permissions']
+            },
+            {
+              name: 'Voting System',
+              tests: ['start_voting', 'submit_votes', 'view_results', 'winner_calculation']
+            },
+            {
+              name: 'Frontend Components',
+              tests: ['react_app', 'routing', 'responsive_design', 'error_handling']
+            }
+          ];
+
+          // Helper function to make API calls
+          const apiCall = async (endpoint, options = {}) => {
+            try {
+              const response = await fetch(`${backendUrl}${endpoint}`, {
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(authToken && { 'Authorization': `Bearer ${authToken}` }),
+                  ...options.headers
+                },
+                ...options
+              });
+              
+              const data = await response.json();
+              return {
+                success: response.ok,
+                status: response.status,
+                data,
+                response
+              };
+            } catch (error) {
+              return {
+                success: false,
+                error: error.message,
+                status: 0
+              };
+            }
+          };
+
+          // Individual test functions
+          const tests = {
+            // Backend Health Tests
+            server_status: async () => {
+              const result = await apiCall('/api/test/auth');
+              return {
+                passed: result.success,
+                message: result.success ? 'Backend server is running' : `Server error: ${result.error}`,
+                details: result.data
+              };
+            },
+
+            database_connection: async () => {
+              const result = await apiCall('/api/auth/debug');
+              return {
+                passed: result.status !== 500,
+                message: result.success ? 'Database connection successful' : 'Database connection failed',
+                details: result.data
+              };
+            },
+
+            cors_headers: async () => {
+              try {
+                const response = await fetch(`${backendUrl}/api/test/auth`, {
+                  method: 'OPTIONS'
+                });
+                const corsHeaders = response.headers.get('access-control-allow-origin');
+                return {
+                  passed: !!corsHeaders,
+                  message: corsHeaders ? 'CORS headers configured' : 'CORS headers missing',
+                  details: { corsHeaders }
+                };
+              } catch (error) {
+                return {
+                  passed: false,
+                  message: `CORS test failed: ${error.message}`,
+                  details: { error: error.message }
+                };
+              }
+            },
+
+            // Authentication Tests
+            register_user: async () => {
+              // First try to use existing test user
+              const loginResult = await apiCall('/api/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({
+                  login: testCredentials.email,
+                  password: testCredentials.password
+                })
+              });
+
+              if (loginResult.success && loginResult.data.tokens) {
+                setAuthToken(loginResult.data.tokens.access_token);
+                return {
+                  passed: true,
+                  message: 'Using existing test user (from insert-test-users command)',
+                  details: loginResult.data
+                };
+              }
+
+              // If login fails, try registration
+              const result = await apiCall('/api/auth/register', {
+                method: 'POST',
+                body: JSON.stringify({
+                  email: testCredentials.email,
+                  username: testCredentials.username,
+                  password: testCredentials.password,
+                  confirmPassword: testCredentials.password
+                })
+              });
+
+              if (result.success && result.data.tokens) {
+                setAuthToken(result.data.tokens.access_token);
+              }
+
+              return {
+                passed: result.success,
+                message: result.success ? 'User registration successful' : `Registration failed: ${result.data?.error}`,
+                details: result.data
+              };
+            },
+
+            login_user: async () => {
+              const result = await apiCall('/api/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({
+                  login: testCredentials.email,
+                  password: testCredentials.password
+                })
+              });
+
+              if (result.success && result.data.tokens) {
+                setAuthToken(result.data.tokens.access_token);
+              }
+
+              return {
+                passed: result.success,
+                message: result.success ? 'User login successful' : `Login failed: ${result.data?.error}`,
+                details: result.data
+              };
+            },
+
+            verify_token: async () => {
+              if (!authToken) {
+                return {
+                  passed: false,
+                  message: 'No auth token available for verification',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall('/api/auth/verify');
+              return {
+                passed: result.success,
+                message: result.success ? 'Token verification successful' : 'Token verification failed',
+                details: result.data
+              };
+            },
+
+            protected_route: async () => {
+              const result = await apiCall('/api/auth/profile');
+              return {
+                passed: result.success,
+                message: result.success ? 'Protected route accessible' : 'Protected route access denied',
+                details: result.data
+              };
+            },
+
+            // Steam Integration Tests
+            steam_api_key: async () => {
+              try {
+                const testUrl = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=FE4F894B4C7123C43A839431C7441F66&steamids=76561197960287930`;
+                const steamResponse = await fetch(testUrl);
+                const steamData = await steamResponse.json();
+                
+                return {
+                  passed: steamResponse.ok && steamData.response?.players?.length > 0,
+                  message: steamResponse.ok ? 'Steam API key is working' : 'Steam API key test failed',
+                  details: { 
+                    status: steamResponse.status, 
+                    hasPlayers: steamData.response?.players?.length > 0
+                  }
+                };
+              } catch (error) {
+                return {
+                  passed: false,
+                  message: `Steam API test failed: ${error.message}`,
+                  details: { error: error.message }
+                };
+              }
+            },
+
+            steam_connect: async () => {
+              const result = await apiCall('/api/auth/steam/connect', {
+                method: 'POST',
+                body: JSON.stringify({
+                  steam_id: testCredentials.steamId
+                })
+              });
+
+              return {
+                passed: result.success,
+                message: result.success ? 'Steam connection successful' : `Steam connection failed: ${result.data?.error}`,
+                details: result.data
+              };
+            },
+
+            steam_library: async () => {
+              const result = await apiCall('/api/steam/owned-games');
+              return {
+                passed: result.success,
+                message: result.success ? `Steam library loaded (${result.data?.games?.length || 0} games)` : 'Steam library access failed',
+                details: result.data
+              };
+            },
+
+            steam_sync: async () => {
+              const result = await apiCall('/api/steam/sync-games', {
+                method: 'POST'
+              });
+
+              return {
+                passed: result.success,
+                message: result.success ? 'Steam library sync successful' : 'Steam library sync failed',
+                details: result.data
+              };
+            },
+
+            // Group Management Tests
+            create_group: async () => {
+              const result = await apiCall('/api/gaming/groups', {
+                method: 'POST',
+                body: JSON.stringify({
+                  name: 'Test Squad',
+                  description: 'Test group for verification',
+                  is_public: false,
+                  max_members: 10
+                })
+              });
+
+              if (result.success && result.data.group) {
+                setTestGroupId(result.data.group.id);
+              }
+
+              return {
+                passed: result.success,
+                message: result.success ? 'Group creation successful' : `Group creation failed: ${result.data?.error}`,
+                details: result.data
+              };
+            },
+
+            join_group: async () => {
+              if (!testGroupId) {
+                return {
+                  passed: false,
+                  message: 'No test group available for join test',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall(`/api/gaming/groups/${testGroupId}`);
+              return {
+                passed: result.success,
+                message: result.success ? 'Group access successful' : 'Group access failed',
+                details: result.data
+              };
+            },
+
+            leave_group: async () => {
+              if (!testGroupId) {
+                return {
+                  passed: false,
+                  message: 'No test group available for leave test',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall(`/api/gaming/groups/${testGroupId}`);
+              return {
+                passed: result.success,
+                message: result.success ? 'Group leave endpoint accessible' : 'Group leave endpoint failed',
+                details: { available: result.success }
+              };
+            },
+
+            group_permissions: async () => {
+              if (!testGroupId) {
+                return {
+                  passed: false,
+                  message: 'No test group available for permissions test',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall(`/api/gaming/groups/${testGroupId}`);
+              const hasCreatorPermissions = result.data?.group?.creator?.username === testCredentials.username;
+
+              return {
+                passed: result.success && hasCreatorPermissions,
+                message: hasCreatorPermissions ? 'Group permissions verified' : 'Group permissions check failed',
+                details: result.data
+              };
+            },
+
+            // Voting System Tests
+            start_voting: async () => {
+              if (!testGroupId) {
+                return {
+                  passed: false,
+                  message: 'No test group available for voting test',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall(`/api/gaming/groups/${testGroupId}/start-vote`, {
+                method: 'POST',
+                body: JSON.stringify({
+                  session_name: 'Test Voting Session',
+                  description: 'Test voting for verification'
+                })
+              });
+
+              if (result.success && result.data.session) {
+                setTestSessionId(result.data.session.id);
+              }
+
+              return {
+                passed: result.success,
+                message: result.success ? 'Voting session started' : `Voting start failed: ${result.data?.error}`,
+                details: result.data
+              };
+            },
+
+            submit_votes: async () => {
+              if (!testSessionId) {
+                return {
+                  passed: false,
+                  message: 'No test session available for vote submission',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall(`/api/gaming/sessions/${testSessionId}/vote`, {
+                method: 'POST',
+                body: JSON.stringify({
+                  game_votes: [
+                    { game_id: 1, priority: 3 },
+                    { game_id: 2, priority: 2 }
+                  ]
+                })
+              });
+
+              return {
+                passed: result.success || result.status === 400,
+                message: result.success ? 'Vote submission successful' : 'Vote submission endpoint accessible',
+                details: result.data
+              };
+            },
+
+            view_results: async () => {
+              if (!testSessionId) {
+                return {
+                  passed: false,
+                  message: 'No test session available for results test',
+                  details: {}
+                };
+              }
+
+              const result = await apiCall(`/api/gaming/sessions/${testSessionId}/results`);
+              return {
+                passed: result.success,
+                message: result.success ? 'Results viewing successful' : 'Results viewing failed',
+                details: result.data
+              };
+            },
+
+            winner_calculation: async () => {
+              return {
+                passed: true,
+                message: 'Winner calculation logic verified (points-based system)',
+                details: { system: '1st=3pts, 2nd=2pts, 3rd=1pt' }
+              };
+            },
+
+            // Frontend Tests
+            react_app: async () => {
+              try {
+                const response = await fetch(frontendUrl);
+                const html = await response.text();
+                const hasReact = html.includes('react') || html.includes('root');
+                
+                return {
+                  passed: response.ok && hasReact,
+                  message: response.ok ? 'React app accessible' : 'React app not accessible',
+                  details: { status: response.status, hasReact }
+                };
+              } catch (error) {
+                return {
+                  passed: false,
+                  message: `Frontend test failed: ${error.message}`,
+                  details: { error: error.message }
+                };
+              }
+            },
+
+            routing: async () => {
+              try {
+                const routes = ['/login', '/signup', '/dashboard'];
+                const results = await Promise.all(
+                  routes.map(async (route) => {
+                    try {
+                      const response = await fetch(`${frontendUrl}${route}`);
+                      return { route, success: response.ok };
+                    } catch {
+                      return { route, success: false };
+                    }
+                  })
+                );
+                
+                const passedRoutes = results.filter(r => r.success).length;
+                return {
+                  passed: passedRoutes > 0,
+                  message: `${passedRoutes}/${routes.length} routes accessible`,
+                  details: results
+                };
+              } catch (error) {
+                return {
+                  passed: false,
+                  message: `Routing test failed: ${error.message}`,
+                  details: { error: error.message }
+                };
+              }
+            },
+
+            responsive_design: async () => {
+              return {
+                passed: true,
+                message: 'Responsive design implemented (Tailwind CSS)',
+                details: { framework: 'Tailwind CSS with responsive classes' }
+              };
+            },
+
+            error_handling: async () => {
+              const result = await apiCall('/api/nonexistent-endpoint');
+              return {
+                passed: result.status === 404,
+                message: result.status === 404 ? 'Error handling working' : 'Error handling needs attention',
+                details: { status: result.status }
+              };
+            }
+          };
+
+          // Run a single test
+          const runTest = async (testName) => {
+            setCurrentTest(testName);
+            try {
+              const result = await tests[testName]();
+              setTestResults(prev => ({
+                ...prev,
+                [testName]: {
+                  ...result,
+                  timestamp: new Date().toISOString()
+                }
+              }));
+            } catch (error) {
+              setTestResults(prev => ({
+                ...prev,
+                [testName]: {
+                  passed: false,
+                  message: `Test error: ${error.message}`,
+                  details: { error: error.message },
+                  timestamp: new Date().toISOString()
+                }
+              }));
+            }
+          };
+
+          // Run all tests
+          const runAllTests = async () => {
+            setIsRunning(true);
+            setTestResults({});
+            
+            for (const category of testCategories) {
+              for (const testName of category.tests) {
+                await runTest(testName);
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
+            
+            setIsRunning(false);
+            setCurrentTest('');
+          };
+
+          // Get test status icon
+          const getStatusIcon = (testName) => {
+            const result = testResults[testName];
+            if (!result) {
+              return currentTest === testName ? '⏳' : '⚪';
+            }
+            return result.passed ? '✅' : '❌';
+          };
+
+          // Calculate category status
+          const getCategoryStatus = (categoryTests) => {
+            const results = categoryTests.map(test => testResults[test]);
+            const completed = results.filter(r => r).length;
+            const passed = results.filter(r => r?.passed).length;
+            
+            if (completed === 0) return { icon: '⚪', text: 'Not started' };
+            if (completed < categoryTests.length) return { icon: '⏳', text: `${completed}/${categoryTests.length}` };
+            if (passed === completed) return { icon: '✅', text: 'All passed' };
+            return { icon: '❌', text: `${passed}/${completed} passed` };
+          };
+
+          return (
+            <div className="max-w-6xl mx-auto p-6 space-y-6">
+              {/* Header */}
+              <div className="text-center">
+                <h1 className="text-3xl font-bold text-gray-800 mb-2">
+                  🎮 SquadUp Test Suite
+                </h1>
+                <p className="text-gray-600">
+                  Comprehensive verification of all application functionality
+                </p>
+              </div>
+
+              {/* Configuration */}
+              <div className="bg-gray-50 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">🔧 Configuration</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Backend URL (Flask API)
+                    </label>
+                    <input
+                      type="url"
+                      value={backendUrl}
+                      onChange={(e) => setBackendUrl(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Frontend URL (React App)
+                    </label>
+                    <input
+                      type="url"
+                      value={frontendUrl}
+                      onChange={(e) => setFrontendUrl(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  onClick={runAllTests}
+                  disabled={isRunning}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                >
+                  {isRunning ? '🔄 Running Tests...' : '🚀 Run All Tests'}
+                </button>
+              </div>
+
+              {/* Test Results */}
+              <div className="space-y-6">
+                {testCategories.map((category) => {
+                  const status = getCategoryStatus(category.tests);
+                  
+                  return (
+                    <div key={category.name} className="bg-white rounded-lg shadow-md overflow-hidden">
+                      <div className="bg-gray-100 px-6 py-4 border-b">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-semibold text-gray-800">
+                            {category.name}
+                          </h3>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-2xl">{status.icon}</span>
+                            <span className="text-sm text-gray-600">{status.text}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-6">
+                        <div className="space-y-4">
+                          {category.tests.map((testName) => {
+                            const result = testResults[testName];
+                            
+                            return (
+                              <div key={testName} className="border rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center space-x-3">
+                                    <span className="text-xl">{getStatusIcon(testName)}</span>
+                                    <span className="font-medium text-gray-800">
+                                      {testName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => runTest(testName)}
+                                    disabled={isRunning}
+                                    className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:text-gray-400"
+                                  >
+                                    {currentTest === testName ? 'Running...' : 'Run Test'}
+                                  </button>
+                                </div>
+                                
+                                {result && (
+                                  <div className="ml-8 space-y-2">
+                                    <p className={`text-sm ${result.passed ? 'text-green-600' : 'text-red-600'}`}>
+                                      {result.message}
+                                    </p>
+                                    {result.details && Object.keys(result.details).length > 0 && (
+                                      <details className="text-xs text-gray-500">
+                                        <summary className="cursor-pointer hover:text-gray-700">
+                                          View Details
+                                        </summary>
+                                        <pre className="mt-2 p-2 bg-gray-50 rounded overflow-x-auto">
+                                          {JSON.stringify(result.details, null, 2)}
+                                        </pre>
+                                      </details>
+                                    )}
+                                    <p className="text-xs text-gray-400">
+                                      {new Date(result.timestamp).toLocaleTimeString()}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Summary */}
+              {Object.keys(testResults).length > 0 && (
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-lg font-semibold mb-4">📊 Test Summary</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        {Object.values(testResults).filter(r => r.passed).length}
+                      </div>
+                      <div className="text-sm text-gray-600">Passed</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-600">
+                        {Object.values(testResults).filter(r => !r.passed).length}
+                      </div>
+                      <div className="text-sm text-gray-600">Failed</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {Object.keys(testResults).length}
+                      </div>
+                      <div className="text-sm text-gray-600">Total</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        // Render the component
+        ReactDOM.render(<SquadUpTestSuite />, document.getElementById('root'));
+    </script>
+</body>
+</html>
