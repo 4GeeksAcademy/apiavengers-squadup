@@ -51,7 +51,14 @@ app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1) 
 
 jwt = JWTManager(app)
-CORS(app)
+
+# Configure CORS for development
+if ENV == "development":
+    CORS(app, origins=["*"], supports_credentials=True)
+    print("🔧 CORS configured for development (all origins)")
+else:
+    CORS(app)
+    print("🔧 CORS configured for production")
 
 # Database
 db_url = os.getenv("DATABASE_URL")
@@ -63,13 +70,23 @@ Migrate(app, db, compare_type=True)
 
 # Use environment variables for server configuration
 backend_url = os.getenv('VITE_BACKEND_URL', 'http://localhost:3001')
+frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+
+print(f"🔧 Backend URL: {backend_url}")
+print(f"🔧 Frontend URL: {frontend_url}")
+
 if backend_url.startswith('https://'):
     app.config["PREFERRED_URL_SCHEME"] = "https"
 else:
     app.config["PREFERRED_URL_SCHEME"] = "http"
 
-# Only set SERVER_NAME in production or if explicitly configured
-if ENV == "production" and os.getenv('SERVER_NAME'):
+# For Codespaces, we need to extract the hostname from the backend URL
+if 'github.dev' in backend_url:
+    from urllib.parse import urlparse
+    parsed_url = urlparse(backend_url)
+    app.config["SERVER_NAME"] = parsed_url.netloc
+    print(f"🔧 Set SERVER_NAME to: {parsed_url.netloc}")
+elif ENV == "production" and os.getenv('SERVER_NAME'):
     app.config["SERVER_NAME"] = os.getenv('SERVER_NAME')
 
 # Admin & custom CLI commands
@@ -81,6 +98,11 @@ app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(steam_auth, url_prefix="/api/auth")
 app.register_blueprint(genre_bp, url_prefix="/api")
 app.register_blueprint(gaming, url_prefix='/api/gaming')
+
+# Debug: Print all registered routes
+print("🔧 Registered routes:")
+for rule in app.url_map.iter_rules():
+    print(f"  {rule.rule} -> {rule.endpoint}")
 
 # Enable CORS for your GitHub Codespace frontend
 #CORS(app, origins=[
@@ -190,7 +212,11 @@ def rate_limit():
     if request.endpoint and 'auth' in request.endpoint:
         client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
         
+        # Debug rate limiting
+        print(f"🔍 Rate limit check for endpoint: {request.endpoint}, IP: {client_ip}")
+        
         if is_rate_limited(client_ip, max_requests=20, window_minutes=15):
+            print(f"❌ Rate limited: {client_ip}")
             return jsonify({
                 'error': 'rate_limit_exceeded',
                 'message': 'Too many requests. Please try again later.',

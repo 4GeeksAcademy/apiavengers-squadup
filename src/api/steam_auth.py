@@ -20,6 +20,12 @@ def steam_test():
     """Test route to verify steam_auth blueprint is working"""
     return jsonify({"message": "Steam auth blueprint is working!", "blueprint": "steam_auth"}), 200
 
+@steam_auth.route('/login-test', methods=['GET'])
+# @jwt_required()  # Temporarily disabled for testing
+def steam_login_test():
+    """Test login route without JWT for debugging"""
+    return jsonify({"message": "Steam login endpoint accessible!", "jwt_disabled": True}), 200
+
 
 
 @steam_auth.route('/login', methods=['GET'])
