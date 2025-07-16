@@ -1,4 +1,4 @@
-# src/api/steam_auth.py - ENHANCED VERSION with better error handling
+# src/api/steam_auth.py - COMPLETE FIXED VERSION with Enhanced Error Handling
 
 from flask import Blueprint, request, redirect, url_for, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity

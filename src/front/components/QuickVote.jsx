@@ -1,4 +1,4 @@
-// src/front/components/QuickVote.jsx - FIXED VERSION
+// src/front/components/QuickVote.jsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
@@ -11,8 +11,9 @@ const QuickVote = ({ groupId }) => {
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
     const [sessionStarted, setSessionStarted] = useState(false);
+    const [error, setError] = useState(null);
 
-    // 🔧 FIXED: Check for existing voting session on component mount
+    // Check for existing voting session on component mount
     useEffect(() => {
         checkExistingSession();
     }, [groupId]);
@@ -28,11 +29,42 @@ const QuickVote = ({ groupId }) => {
                     setSessionId(data.session.id);
                     setSessionStarted(true);
                     setVotableGames(data.votable_games || []);
+                    
+                    // Check if this user has already voted
+                    checkUserVoteStatus(data.session.id);
+                    
                     toast.info('Voting session already active!');
                 }
             }
         } catch (error) {
             console.error('Error checking existing session:', error);
+            setError('Failed to check for existing voting session');
+        }
+    };
+
+    const checkUserVoteStatus = async (sessionId) => {
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${sessionId}/results`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                const voteResults = data.session?.vote_results || '{}';
+                
+                try {
+                    const results = JSON.parse(voteResults);
+                    const currentUserId = authService.getCurrentUser()?.id;
+                    
+                    if (results.voters && currentUserId && results.voters[currentUserId.toString()]) {
+                        setSubmitted(true);
+                        toast.info('You have already voted in this session');
+                    }
+                } catch (parseError) {
+                    console.error('Error parsing vote results:', parseError);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking vote status:', error);
         }
     };
 
@@ -43,10 +75,11 @@ const QuickVote = ({ groupId }) => {
         }
 
         setLoading(true);
+        setError(null);
+        
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
             
-            // 🔧 FIXED: Create a game session first
             const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/start-vote`, {
                 method: 'POST',
                 body: JSON.stringify({
@@ -66,10 +99,12 @@ const QuickVote = ({ groupId }) => {
                 toast.success('Voting session started! Select up to 3 games.');
             } else {
                 const errorData = await response.json();
+                setError(errorData.error || 'Failed to start voting session');
                 toast.error(errorData.error || 'Failed to start voting session.');
             }
         } catch (error) {
             console.error('Error starting vote:', error);
+            setError('Network error occurred while starting voting session');
             toast.error('A network error occurred.');
         } finally {
             setLoading(false);
@@ -101,10 +136,11 @@ const QuickVote = ({ groupId }) => {
         }
 
         setLoading(true);
+        setError(null);
+        
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
             
-            // 🔧 FIXED: Submit votes with proper data structure
             const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${sessionId}/vote`, {
                 method: 'POST',
                 body: JSON.stringify({ 
@@ -120,23 +156,55 @@ const QuickVote = ({ groupId }) => {
                 setSubmitted(true);
                 toast.success('Votes submitted successfully!');
                 
-                // 🔧 FIXED: Navigate to results page after short delay
+                // Navigate to results page after short delay
                 setTimeout(() => {
                     window.location.href = `/sessions/${sessionId}/results`;
                 }, 2000);
             } else {
                 const errorData = await response.json();
+                setError(errorData.error || 'Failed to submit votes');
                 toast.error(errorData.error || 'Failed to submit votes.');
             }
         } catch (error) {
             console.error('Error submitting votes:', error);
+            setError('Network error occurred while submitting votes');
             toast.error('A network error occurred.');
         } finally {
             setLoading(false);
         }
     };
 
-    // 🔧 FIXED: If no session started yet, show start button
+    // Show error state
+    if (error && !sessionStarted) {
+        return (
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+                <div className="text-center">
+                    <div className="text-6xl mb-4">⚠️</div>
+                    <h2 className="text-2xl font-bold text-white mb-4">Something went wrong</h2>
+                    <p className="text-white/70 mb-6">{error}</p>
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                        <button
+                            onClick={() => {
+                                setError(null);
+                                checkExistingSession();
+                            }}
+                            className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
+                        >
+                            Try Again
+                        </button>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-colors duration-200"
+                        >
+                            Refresh Page
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // If no session started yet, show start button
     if (!sessionStarted && !loading) {
         return (
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl text-center">
@@ -206,7 +274,17 @@ const QuickVote = ({ groupId }) => {
                 </p>
             </div>
 
-            {/* 🔧 FIXED: Better error handling for no games */}
+            {/* Error banner */}
+            {error && (
+                <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">
+                    <div className="flex items-center space-x-2">
+                        <span>⚠️</span>
+                        <span>{error}</span>
+                    </div>
+                </div>
+            )}
+
+            {/* No games available */}
             {votableGames.length === 0 ? (
                 <div className="text-center py-8">
                     <div className="text-4xl mb-4">🎮</div>
@@ -217,10 +295,19 @@ const QuickVote = ({ groupId }) => {
                     <p className="text-white/60 text-sm">
                         Make sure everyone has connected their Steam accounts and has some multiplayer games.
                     </p>
+                    <div className="mt-6">
+                        <button
+                            onClick={checkExistingSession}
+                            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors duration-200"
+                        >
+                            🔄 Refresh Games
+                        </button>
+                    </div>
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto mb-6">
+                    {/* Games grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto mb-6 custom-scrollbar">
                         {votableGames.map((game) => {
                             const isSelected = selectedGames.includes(game.id);
                             const selectionIndex = selectedGames.indexOf(game.id);
@@ -270,6 +357,7 @@ const QuickVote = ({ groupId }) => {
                         })}
                     </div>
 
+                    {/* Submit section */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <div className="text-white/60 text-sm">
                             <p>🏆 Games are ranked by preference</p>
@@ -289,6 +377,22 @@ const QuickVote = ({ groupId }) => {
                                 `Submit ${selectedGames.length} Vote${selectedGames.length !== 1 ? 's' : ''}`
                             )}
                         </button>
+                    </div>
+
+                    {/* Help text */}
+                    <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-sm">
+                        <div className="flex items-start space-x-2">
+                            <span className="text-blue-400 mt-0.5">💡</span>
+                            <div>
+                                <strong>Voting Tips:</strong>
+                                <ul className="mt-2 space-y-1">
+                                    <li>• Select games in order of preference (1st, 2nd, 3rd choice)</li>
+                                    <li>• You can change your selections before submitting</li>
+                                    <li>• Only multiplayer games owned by multiple squad members are shown</li>
+                                    <li>• The game with the most points wins!</li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </>
             )}

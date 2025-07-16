@@ -1,4 +1,4 @@
-# src/api/steam_service.py - FIXED VERSION
+# src/api/steam_service.py - COMPLETE FIXED VERSION
 
 import requests
 import json
@@ -31,6 +31,7 @@ class SteamService:
             )
     
     def get_user_profile(self, steam_id: str) -> Dict:
+        """Get Steam user profile information"""
         self._check_api_key()
         
         url = f"{self.base_url}/ISteamUser/GetPlayerSummaries/v0002/"
@@ -57,6 +58,7 @@ class SteamService:
             raise APIException(f"Steam API error: {str(e)}", status_code=500)
     
     def get_user_games(self, steam_id: str) -> List[Dict]:
+        """Get user's owned games from Steam"""
         self._check_api_key()
         
         url = f"{self.base_url}/IPlayerService/GetOwnedGames/v0001/"
@@ -87,6 +89,7 @@ class SteamService:
             raise APIException(f"Steam API error: {str(e)}", status_code=500)
     
     def get_game_details(self, app_id: int) -> Dict:
+        """Get detailed game information from Steam Store API"""
         url = f"https://store.steampowered.com/api/appdetails"
         params = {
             'appids': app_id,
@@ -108,6 +111,7 @@ class SteamService:
             return {}
     
     def connect_user_steam(self, user_id: int, steam_id: str) -> bool:
+        """Connect a user's account to Steam"""
         try:
             print(f"🔗 Connecting Steam ID {steam_id} to user {user_id}")
             profile = self.get_user_profile(steam_id)
@@ -133,7 +137,7 @@ class SteamService:
             raise APIException(f"Failed to connect Steam account: {str(e)}", status_code=500)
     
     def sync_user_library(self, user_id: int) -> Tuple[int, int]:
-        """FIXED: Sync user's Steam library with proper error handling"""
+        """Sync user's Steam library with proper error handling"""
         user = User.query.get(user_id)
         if not user or not user.steam_id:
             raise APIException("User not found or Steam not connected", status_code=404)
@@ -264,6 +268,7 @@ class SteamService:
             print(f"Warning: Could not enrich game {app_id}: {e}")
     
     def find_common_games(self, user_ids: List[int]) -> List[Dict]:
+        """Find common games among multiple users"""
         if len(user_ids) < 2:
             raise APIException("At least 2 users required", status_code=400)
         
@@ -319,6 +324,7 @@ class SteamService:
         return result
     
     def _get_coverage_level(self, percentage: float) -> str:
+        """Get coverage level string based on percentage"""
         if percentage == 100:
             return 'all'
         elif percentage >= 75:
@@ -329,6 +335,7 @@ class SteamService:
             return 'few'
     
     def filter_games(self, games: List[Dict], filters: Dict) -> List[Dict]:
+        """Filter games based on various criteria"""
         filtered = games
         
         if 'coverage' in filters:
@@ -359,6 +366,7 @@ class SteamService:
         
         return filtered
 
+# Initialize the steam service
 try:
     steam_service = SteamService()
 except Exception as e:
