@@ -1,4 +1,4 @@
-# src/api/models.py
+# src/api/models.py - FIXED VERSION with proper cascade relationships
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey
@@ -128,15 +128,19 @@ class GamingGroup(db.Model):
     max_members: Mapped[int] = mapped_column(Integer, default=10)
     invite_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=True)
     
-    # 🔧 FIXED: Allow NULL creator_id and handle cascade properly
+    # 🔧 FIXED: Proper cascade configuration for creator relationship
     creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
     
     preferred_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
     
-    # Updated relationships with proper foreign_keys specification
+    # 🔧 FIXED: Proper relationships with cascade
     creator = relationship('User', back_populates='created_groups', foreign_keys=[creator_id])
     members = relationship('User', secondary=group_members, back_populates='groups')
+    
+    # 🔧 CRITICAL FIX: Add cascade relationship to sessions
+    # This will automatically delete all game sessions when a group is deleted
+    sessions = relationship('GameSession', back_populates='group', cascade='all, delete-orphan', passive_deletes=True)
 
     def serialize(self):
         return {
@@ -157,7 +161,11 @@ class GamingGroup(db.Model):
 
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
-    group_id: Mapped[int] = mapped_column(Integer, ForeignKey('gaming_group.id'), nullable=False)
+    
+    # 🔧 CRITICAL FIX: Add CASCADE to foreign key constraint
+    # This tells the database to delete sessions when the group is deleted
+    group_id: Mapped[int] = mapped_column(Integer, ForeignKey('gaming_group.id', ondelete='CASCADE'), nullable=False)
+    
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
     session_name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
@@ -167,7 +175,9 @@ class GameSession(db.Model):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     vote_results: Mapped[str] = mapped_column(Text, nullable=True)
-    group = relationship('GamingGroup')
+    
+    # 🔧 FIXED: Updated relationships
+    group = relationship('GamingGroup', back_populates='sessions')
     game = relationship('SteamGame')
 
     def serialize(self):
