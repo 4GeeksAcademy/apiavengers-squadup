@@ -61,8 +61,16 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 Migrate(app, db, compare_type=True)
 
-app.config["SERVER_NAME"] = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"
-app.config["PREFERRED_URL_SCHEME"] = "https"
+# Use environment variables for server configuration
+backend_url = os.getenv('VITE_BACKEND_URL', 'http://localhost:3001')
+if backend_url.startswith('https://'):
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+else:
+    app.config["PREFERRED_URL_SCHEME"] = "http"
+
+# Only set SERVER_NAME in production or if explicitly configured
+if ENV == "production" and os.getenv('SERVER_NAME'):
+    app.config["SERVER_NAME"] = os.getenv('SERVER_NAME')
 
 # Admin & custom CLI commands
 setup_admin(app)  # Re-enabled after fixing blueprint conflicts

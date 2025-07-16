@@ -15,12 +15,18 @@ steam_auth = Blueprint('steam_auth', __name__)
 
 STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
 
+@steam_auth.route('/test', methods=['GET'])
+def steam_test():
+    """Test route to verify steam_auth blueprint is working"""
+    return jsonify({"message": "Steam auth blueprint is working!", "blueprint": "steam_auth"}), 200
+
 
 
 @steam_auth.route('/login', methods=['GET'])
 @jwt_required()
 def steam_login():
     """Initiate Steam authentication and return auth URL - ENHANCED"""
+    current_app.logger.info("Steam login endpoint accessed")
     try:
         return_to = request.args.get('return_to', '/dashboard')
         frontend_base = os.getenv('FRONTEND_URL', 'http://localhost:3000')
