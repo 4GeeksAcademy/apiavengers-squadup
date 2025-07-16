@@ -23,7 +23,7 @@ export const SignUp = () => {
     useEffect(() => {
         // When the store updates and isAuthenticated becomes true, this will run.
         if (isAuthenticated) {
-            console.log('✅ SignUp.jsx: isAuthenticated is now true. Navigating to dashboard...');
+            console.log('✅ SignUp.jsx: isAuthenticated is now true. Navigating to login...');
             navigate('/dashboard', { replace: true });
         }
     }, [isAuthenticated, navigate]); // This dependency array makes the effect reactive.
