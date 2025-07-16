@@ -825,3 +825,107 @@ def get_group_common_games(group_id):
 #    - Multiple active voting sessions per group
 #    - Double voting in same session
 # """
+
+# src/api/gaming.py - ADD this join endpoint to your existing file
+
+@gaming.route('/groups/join/<invite_code>', methods=['POST'])
+@jwt_required()
+def join_group_by_invite_endpoint(invite_code):
+    """
+    JOIN a group using an invite code via API endpoint
+    This is the missing endpoint that JoinGroup.jsx is trying to call
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            raise APIException("User not found", status_code=404)
+        
+        # Find group by invite code
+        group = GamingGroup.query.filter_by(invite_code=invite_code).first()
+        
+        if not group:
+            raise APIException("Invalid or expired invite code", status_code=404)
+        
+        # Check if user is already a member
+        if user in group.members:
+            return jsonify({
+                "success": True,
+                "message": f"You're already a member of '{group.name}'",
+                "group": group.serialize(),
+                "already_member": True
+            }), 200
+        
+        # Check if group is full
+        if len(group.members) >= group.max_members:
+            raise APIException("Group is full", status_code=400)
+        
+        # Add user to group
+        group.members.append(user)
+        db.session.commit()
+        
+        print(f"🎉 {user.username} joined group '{group.name}' via invite code {invite_code}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Successfully joined '{group.name}'!",
+            "group": group.serialize()
+        }), 200
+        
+    except APIException as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error in join_group_by_invite_endpoint: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@gaming.route('/groups/validate-invite/<invite_code>', methods=['GET'])
+@jwt_required()
+def validate_invite_code(invite_code):
+    """
+    VALIDATE an invite code without joining - useful for previewing group info
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            raise APIException("User not found", status_code=404)
+        
+        # Find group by invite code
+        group = GamingGroup.query.filter_by(invite_code=invite_code).first()
+        
+        if not group:
+            raise APIException("Invalid or expired invite code", status_code=404)
+        
+        # Check current status
+        is_member = user in group.members
+        is_full = len(group.members) >= group.max_members
+        can_join = not is_member and not is_full
+        
+        return jsonify({
+            "success": True,
+            "group": {
+                "id": group.id,
+                "name": group.name,
+                "description": group.description,
+                "current_members": len(group.members),
+                "max_members": group.max_members,
+                "is_public": group.is_public,
+                "creator": group.creator.serialize() if group.creator else None
+            },
+            "user_status": {
+                "is_member": is_member,
+                "is_full": is_full,
+                "can_join": can_join
+            }
+        }), 200
+        
+    except APIException as e:
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        print(f"❌ Error validating invite code: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500

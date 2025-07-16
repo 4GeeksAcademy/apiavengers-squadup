@@ -1,4 +1,4 @@
-// src/front/pages/Dashboard.jsx - FIXED to prevent infinite auth checking
+// src/front/pages/Dashboard.jsx - Enhanced with Join Group functionality
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -7,6 +7,7 @@ import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import CreateGroupModal from '../components/CreateGroupModal';
 import GroupActionButtons from '../components/GroupActionButtons';
+import JoinGroupInput from '../components/JoinGroupInput';
 
 export const Dashboard = () => {
     const navigate = useNavigate();
@@ -204,6 +205,20 @@ export const Dashboard = () => {
         }
     };
 
+    // NEW: Handle group joined functionality
+    const handleGroupJoined = async (newGroup) => {
+        console.log('🎉 Group joined successfully:', newGroup.name);
+        
+        // Add the new group to the groups state
+        setGroups(prevGroups => [...prevGroups, newGroup]);
+        
+        // Refresh common games with the new group
+        await fetchCommonGames([...groups, newGroup]);
+        
+        // Show success message
+        toast.success(`Welcome to "${newGroup.name}"! 🎉`);
+    };
+
     const handleGroupUpdate = (action, wasDeleted, groupId) => {
         console.log('🔄 Group update received:', { action, wasDeleted, groupId });
         
@@ -275,37 +290,33 @@ export const Dashboard = () => {
     const { stats } = dashboardData;
     const filteredGroups = getFilteredGroups();
 
-    // Rest of the component JSX remains the same...
     return (
         <>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
-                <div className="max-w-7xl mx-auto relative z-10">
-                    
-                    {/* Enhanced Welcome Section */}
-                    <div className="mb-8">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                            <div>
-                                <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
-                                    Welcome back, {user.username}! 👋
-                                </h1>
-                                <p className="text-white/70 text-lg">
-                                    Ready to squad up and find your next gaming session?
-                                </p>
-                            </div>
-                            <div className="mt-4 md:mt-0 flex space-x-3">
-                                <Link 
-                                    to="/sessions" 
-                                    className="px-6 py-3 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
-                                >
-                                    🎯 Find Games
-                                </Link>
-                                <button 
-                                    onClick={() => setIsModalOpen(true)}
-                                    className="px-6 py-3 bg-marine-500 hover:bg-marine-600 text-white font-semibold rounded-xl transition-colors duration-200"
-                                >
-                                    + Create Group
-                                </button>
-                            </div>
+                <div className="max-w-7xl mx-auto">
+                    {/* ENHANCED: Header with flex-wrap for better mobile layout */}
+                    <div className="flex items-center justify-between mb-12">
+                        <div>
+                            <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
+                                Welcome back, {user.username}! 👋
+                            </h1>
+                            <p className="text-white/70 text-lg">
+                                Ready to squad up and find your next gaming session?
+                            </p>
+                        </div>
+                        <div className="mt-4 md:mt-0 flex flex-wrap gap-3">
+                            <Link 
+                                to="/sessions" 
+                                className="px-6 py-3 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
+                            >
+                                🎯 Find Games
+                            </Link>
+                            <button 
+                                onClick={() => setIsModalOpen(true)}
+                                className="px-6 py-3 bg-marine-500 hover:bg-marine-600 text-white font-semibold rounded-xl transition-colors duration-200"
+                            >
+                                + Create Group
+                            </button>
                         </div>
                     </div>
 
@@ -513,12 +524,33 @@ export const Dashboard = () => {
                                         </button>
                                     ))}
                                 </div>
-                                <button 
-                                    onClick={() => setIsModalOpen(true)}
-                                    className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
-                                >
-                                    + Create New Group
-                                </button>
+                                <div className="flex space-x-3">
+                                    <button 
+                                        onClick={() => setIsModalOpen(true)}
+                                        className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
+                                    >
+                                        + Create New Group
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* NEW: Join Group Input Section */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                                <div className="lg:col-span-2 join-group-input">
+                                    <JoinGroupInput onGroupJoined={handleGroupJoined} />
+                                </div>
+                                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                                    <h3 className="text-white font-semibold mb-3 flex items-center">
+                                        <span className="text-xl mr-2">💡</span>
+                                        How to Join
+                                    </h3>
+                                    <div className="text-white/70 text-sm space-y-2">
+                                        <p>• Ask a friend for their group invite link</p>
+                                        <p>• Paste the full link or just the 8-character code</p>
+                                        <p>• Click "Join Group" to become a member</p>
+                                        <p>• Start voting on games with your squad!</p>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Groups Grid */}
@@ -718,7 +750,7 @@ export const Dashboard = () => {
                         </div>
                     )}
 
-                    {/* Global Quick Actions Bar */}
+                    {/* ENHANCED: Global Quick Actions Bar with Join Group functionality */}
                     <div className="fixed bottom-6 right-6 flex flex-col space-y-3 z-50">
                         <button 
                             onClick={() => setIsModalOpen(true)}
@@ -735,6 +767,24 @@ export const Dashboard = () => {
                         >
                             <span className="text-xl">🎯</span>
                         </Link>
+
+                        {/* NEW: Join group via invite floating button */}
+                        <button 
+                            onClick={() => {
+                                setActiveSection('groups');
+                                // Scroll to the join input section
+                                setTimeout(() => {
+                                    const joinSection = document.querySelector('.join-group-input');
+                                    if (joinSection) {
+                                        joinSection.scrollIntoView({ behavior: 'smooth' });
+                                    }
+                                }, 100);
+                            }}
+                            className="w-14 h-14 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 flex items-center justify-center"
+                            title="Join group via invite"
+                        >
+                            <span className="text-xl">🔗</span>
+                        </button>
                     </div>
                 </div>
             </div>
