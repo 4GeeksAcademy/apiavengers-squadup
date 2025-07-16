@@ -83,7 +83,7 @@ export const Footer = () => {
                     <div className="border-t border-white/10 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
                         <div className="flex items-center space-x-6 mb-4 md:mb-0">
                             <span className="text-white/60 text-sm">
-                                © 2024 SquadUp. All rights reserved.
+                                © 2025 SquadUp. All rights reserved.
                             </span>
                         </div>
                         <div className="flex items-center space-x-6">

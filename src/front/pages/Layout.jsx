@@ -1,7 +1,5 @@
-// src/front/pages/Layout.jsx - CORRECTED VERSION with fixed initialization logic
-
 import React, { useEffect, useRef } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import useGlobalReducer from "../hooks/useGlobalReducer";
@@ -10,6 +8,7 @@ import { Toaster } from "react-hot-toast";
 
 export const Layout = () => {
     const { store, dispatch } = useGlobalReducer();
+    const location = useLocation();
     const layoutInitialized = useRef(false);
     const dispatchInjected = useRef(false);
 
@@ -42,6 +41,15 @@ export const Layout = () => {
     useEffect(() => {
         // Don't run until layout is initialized
         if (!layoutInitialized.current) return;
+
+        // Skip auth checks for demo and other public pages
+        const publicPaths = ['/demo', '/', '/login', '/signup'];
+        const isPublicPath = publicPaths.some(path => location.pathname.startsWith(path));
+        
+        if (isPublicPath) {
+            console.log('📍 Public page, skipping auth checks:', location.pathname);
+            return;
+        }
         
         console.log('🏗️ Layout - Store state changed:', {
             hasUser: !!store?.user,
@@ -84,7 +92,7 @@ export const Layout = () => {
                 dispatch({ type: 'logout' });
             }
         }
-    }, [store?.user, store?.isAuthenticated, store?.authLoading, store?.token, dispatch]);
+    }, [store?.user, store?.isAuthenticated, store?.authLoading, store?.token, dispatch, location.pathname]);
 
     // ENHANCED: Handle pending invites after auth - separate effect for clarity
     useEffect(() => {

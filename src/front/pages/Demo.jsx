@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import useGlobalReducer from "../hooks/useGlobalReducer";
+import Avatar from "../components/Avatar";
 
 // Import local game images
 import valorantImage from "../assets/img/games/valorant.jpg";
@@ -23,13 +24,13 @@ export const Demo = () => {
     const [votingResults, setVotingResults] = useState({});
     const [syncingProgress, setSyncingProgress] = useState({});
 
-    // Mock Steam account data
+    // 🔧 FIXED: Mock Steam account data without placeholder URLs
     const mockSteamAccounts = [
         {
             id: "demo_user_001",
             username: "GamerPro2024",
             displayName: "Alex Rivera",
-            avatar: "https://via.placeholder.com/64x64/ff7f50/ffffff?text=AR",
+            avatar: null, // Will use Avatar component
             profileUrl: "https://steamcommunity.com/id/gamerpro2024",
             level: 42,
             totalGames: 156,
@@ -141,32 +142,36 @@ export const Demo = () => {
         }
     ];
 
-    // Mock squad members with different game ownership
+    // 🔧 FIXED: Mock squad members using emojis and names for Avatar component
     const demoSquad = [
         { 
             id: 1, 
-            name: "You (GamerPro2024)", 
+            name: "Alex Rivera (You)", 
+            displayName: "GamerPro2024",
             avatar: "🎮", 
             steamConnected: true,
             ownedGames: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] // Owns all games
         },
         { 
             id: 2, 
-            name: "Tyler_Beast", 
+            name: "Tyler Beast", 
+            displayName: "Tyler_Beast",
             avatar: "⚡", 
             steamConnected: true,
             ownedGames: [1, 2, 3, 5, 6, 9] // Missing some games
         },
         { 
             id: 3, 
-            name: "Luna_Gaming", 
+            name: "Luna Gaming", 
+            displayName: "Luna_Gaming",
             avatar: "🔥", 
             steamConnected: true,
             ownedGames: [1, 2, 4, 5, 7, 8] // Different selection
         },
         { 
             id: 4, 
-            name: "NoobMaster", 
+            name: "Noob Master", 
+            displayName: "NoobMaster",
             avatar: "💎", 
             steamConnected: false,
             ownedGames: [] // Not connected
@@ -251,11 +256,6 @@ export const Demo = () => {
         }));
     };
 
-    // Helper function for fallback images
-    const getImageWithFallback = (originalImage, gameName) => {
-        return originalImage || `https://via.placeholder.com/150x60/0066cc/ffffff?text=${gameName.slice(0,3).toUpperCase()}`;
-    };
-
     const renderStepContent = () => {
         switch (currentStep) {
             case 0:
@@ -291,14 +291,8 @@ export const Demo = () => {
                             <div className="space-y-4">
                                 <div className="glass rounded-2xl p-6 max-w-md mx-auto">
                                     <div className="flex items-center space-x-4">
-                                        <img 
-                                            src={currentUser.avatar} 
-                                            alt="Steam Avatar" 
-                                            className="w-16 h-16 rounded-full"
-                                            onError={(e) => {
-                                                e.target.src = "https://via.placeholder.com/64x64/ff7f50/ffffff?text=AR";
-                                            }}
-                                        />
+                                        {/* 🔧 FIXED: Using Avatar component instead of broken placeholder */}
+                                        <Avatar name={currentUser.displayName} size={64} />
                                         <div className="text-left">
                                             <h4 className="text-lg font-bold text-white">{currentUser.displayName}</h4>
                                             <p className="text-marine-400">@{currentUser.username}</p>
@@ -329,10 +323,11 @@ export const Demo = () => {
                                             alt={game.name}
                                             className="w-20 h-12 rounded object-cover flex-shrink-0 transition-all duration-300 transform group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-cyan-500/30 group-active:scale-95"
                                             onError={(e) => {
-                                                e.target.src = getImageWithFallback(null, game.name);
+                                                console.error(`Failed to load image for ${game.name}`);
+                                                // Hide broken image
+                                                e.target.style.display = 'none';
                                             }}
                                             onClick={() => {
-                                                // Optional: Add click sound or feedback
                                                 console.log(`Clicked on ${game.name}`);
                                             }}
                                         />
@@ -365,9 +360,10 @@ export const Demo = () => {
                                 <div key={member.id} className="glass rounded-xl p-4">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center space-x-3">
-                                            <span className="text-xl">{member.avatar}</span>
+                                            {/* 🔧 FIXED: Using Avatar component for each squad member */}
+                                            <Avatar name={member.name} size={40} />
                                             <div>
-                                                <span className="text-white font-medium">{member.name}</span>
+                                                <span className="text-white font-medium">{member.displayName}</span>
                                                 {member.steamConnected && (
                                                     <p className="text-white/70 text-sm">{member.ownedGames.length} games owned</p>
                                                 )}
@@ -442,7 +438,8 @@ export const Demo = () => {
                                                 alt={game.name}
                                                 className="w-20 h-12 rounded object-cover flex-shrink-0 transition-all duration-300 transform group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-green-500/30 group-active:scale-95"
                                                 onError={(e) => {
-                                                    e.target.src = getImageWithFallback(null, game.name);
+                                                    console.error(`Failed to load image for ${game.name}`);
+                                                    e.target.style.display = 'none';
                                                 }}
                                                 onClick={() => {
                                                     console.log(`Viewing ${game.name} - ${game.coverage}% coverage`);
@@ -499,7 +496,8 @@ export const Demo = () => {
                                                     alt={game.name}
                                                     className="w-20 h-12 rounded object-cover flex-shrink-0 transition-all duration-300 transform group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-coral-500/30 group-active:scale-95"
                                                     onError={(e) => {
-                                                        e.target.src = getImageWithFallback(null, game.name);
+                                                        console.error(`Failed to load image for ${game.name}`);
+                                                        e.target.style.display = 'none';
                                                     }}
                                                     onClick={() => {
                                                         console.log(`Ready to vote for ${game.name}!`);

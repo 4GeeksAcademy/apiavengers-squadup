@@ -45,3 +45,16 @@
   pointer-events: auto !important;
   cursor: pointer !important;
 }
+
+img[src*="via.placeholder.com"] {
+    display: none !important;
+}
+
+/* Hide broken image icons */
+img {
+    image-rendering: auto;
+}
+
+img:not([src]) {
+    display: none;
+}

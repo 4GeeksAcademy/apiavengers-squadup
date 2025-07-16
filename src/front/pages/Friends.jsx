@@ -1,62 +1,61 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import Avatar from '../components/Avatar';
 
 const Friends = () => {
     const [searchTerm, setSearchTerm] = useState('');
     
-    // Mock data for demonstration - this won't break your existing code
+    // 🔧 FIXED: Removed placeholder URLs, using names for Avatar component
     const mockFriends = [
         {
             id: 1,
-            username: 'GamerPro2024',
-            steam_username: 'Alex Rivera',
-            avatar_url: 'https://via.placeholder.com/64x64/ff7f50/ffffff?text=AR',
+            username: 'Alex Rodriguez',
+            displayName: 'Alex Rodriguez',
+            avatar_url: null, // Will use Avatar component
             status: 'online',
-            last_game: 'Valorant',
-            is_favorite: true
+            currentGame: 'Valorant',
+            mutualGroups: 3,
+            steamConnected: true
         },
         {
             id: 2,
-            username: 'Tyler_Beast',
-            steam_username: 'Tyler B',
-            avatar_url: 'https://via.placeholder.com/64x64/0ea5e9/ffffff?text=TB',
-            status: 'playing',
-            last_game: 'Apex Legends',
-            is_favorite: false
+            username: 'Tyler Brown',
+            displayName: 'Tyler Brown', 
+            avatar_url: null, // Will use Avatar component
+            status: 'away',
+            currentGame: null,
+            mutualGroups: 1,
+            steamConnected: true
         },
         {
             id: 3,
-            username: 'Luna_Gaming',
-            steam_username: 'Luna G',
-            avatar_url: 'https://via.placeholder.com/64x64/a855f7/ffffff?text=LG',
+            username: 'Lauren Garcia',
+            displayName: 'Lauren Garcia',
+            avatar_url: null, // Will use Avatar component
             status: 'offline',
-            last_game: 'Minecraft',
-            is_favorite: true
+            currentGame: null,
+            mutualGroups: 2,
+            steamConnected: false
         }
     ];
 
     const filteredFriends = mockFriends.filter(friend =>
-        friend.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        friend.steam_username.toLowerCase().includes(searchTerm.toLowerCase())
+        friend.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        friend.username.toLowerCase().includes(searchTerm.toLowerCase())
     );
-
-    const favoriteFriends = filteredFriends.filter(friend => friend.is_favorite);
-    const regularFriends = filteredFriends.filter(friend => !friend.is_favorite);
 
     const getStatusColor = (status) => {
         switch (status) {
-            case 'online': return 'bg-green-400';
-            case 'playing': return 'bg-blue-400';
-            case 'away': return 'bg-yellow-400';
-            case 'offline': return 'bg-gray-400';
-            default: return 'bg-gray-400';
+            case 'online': return 'bg-green-500';
+            case 'away': return 'bg-yellow-500';
+            case 'offline': return 'bg-gray-500';
+            default: return 'bg-gray-500';
         }
     };
 
-    const getStatusText = (status, lastGame) => {
+    const getStatusText = (status) => {
         switch (status) {
             case 'online': return 'Online';
-            case 'playing': return `Playing ${lastGame}`;
             case 'away': return 'Away';
             case 'offline': return 'Offline';
             default: return 'Unknown';
@@ -83,172 +82,141 @@ const Friends = () => {
 
                 {/* Search Bar */}
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 mb-8">
-                    <div className="flex items-center space-x-4">
-                        <div className="flex-1">
-                            <input
-                                type="text"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                placeholder="Search friends..."
-                                className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 transition-colors"
-                            />
+                    <div className="relative">
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Search friends..."
+                            className="w-full bg-white/5 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 transition-colors"
+                        />
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/40">
+                            🔍
                         </div>
-                        <button className="px-6 py-3 bg-marine-500 hover:bg-marine-600 text-white font-medium rounded-xl transition-colors duration-200">
+                    </div>
+                </div>
+
+                {/* Friends List */}
+                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-2xl font-bold text-white">
+                            Your Friends ({filteredFriends.length})
+                        </h2>
+                        <button className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl text-sm transition-colors duration-200">
                             + Add Friend
                         </button>
                     </div>
-                </div>
 
-                {/* Demo Notice */}
-                <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-sm">
-                    <div className="flex items-center space-x-2">
-                        <span>ℹ️</span>
-                        <div>
-                            <strong>Demo Mode:</strong> This page shows mock friend data for presentation purposes. 
-                            Real friend functionality will be implemented in future updates.
-                        </div>
-                    </div>
-                </div>
-
-                {/* Favorite Friends */}
-                {favoriteFriends.length > 0 && (
-                    <div className="mb-8">
-                        <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
-                            <span className="text-yellow-400 mr-2">⭐</span>
-                            Favorite Friends ({favoriteFriends.length})
-                        </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {favoriteFriends.map(friend => (
-                                <div key={friend.id} className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all duration-300">
-                                    <div className="flex items-center space-x-4">
-                                        <div className="relative">
-                                            <img 
-                                                src={friend.avatar_url} 
-                                                alt={friend.username}
-                                                className="w-16 h-16 rounded-full object-cover"
-                                            />
-                                            <div className={`absolute -bottom-1 -right-1 w-5 h-5 ${getStatusColor(friend.status)} rounded-full border-2 border-slate-800`}></div>
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className="text-white font-bold text-lg">{friend.username}</h3>
-                                            <p className="text-white/70 text-sm">{friend.steam_username}</p>
-                                            <p className="text-white/60 text-xs mt-1">
-                                                {getStatusText(friend.status, friend.last_game)}
-                                            </p>
-                                        </div>
-                                        <div className="flex flex-col space-y-2">
-                                            <button className="px-3 py-1 bg-marine-500 hover:bg-marine-600 text-white text-xs rounded-lg transition-colors">
-                                                Message
-                                            </button>
-                                            <button className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded-lg transition-colors">
-                                                Invite
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* All Friends */}
-                <div>
-                    <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
-                        <span className="text-blue-400 mr-2">👥</span>
-                        All Friends ({regularFriends.length})
-                    </h2>
-                    
-                    {regularFriends.length > 0 ? (
+                    {filteredFriends.length > 0 ? (
                         <div className="space-y-4">
-                            {regularFriends.map(friend => (
-                                <div key={friend.id} className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4 hover:bg-white/15 transition-all duration-300">
+                            {filteredFriends.map(friend => (
+                                <div key={friend.id} className="bg-white/5 rounded-xl p-6 hover:bg-white/10 transition-colors duration-200 border border-white/10">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center space-x-4">
                                             <div className="relative">
-                                                <img 
-                                                    src={friend.avatar_url} 
-                                                    alt={friend.username}
-                                                    className="w-12 h-12 rounded-full object-cover"
-                                                />
-                                                <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getStatusColor(friend.status)} rounded-full border-2 border-slate-800`}></div>
+                                                {/* 🔧 FIXED: Using Avatar component instead of broken placeholder */}
+                                                <Avatar name={friend.displayName} size={64} />
+                                                <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-800 ${getStatusColor(friend.status)}`}></div>
                                             </div>
+                                            
                                             <div>
-                                                <h3 className="text-white font-medium">{friend.username}</h3>
-                                                <p className="text-white/70 text-sm">{friend.steam_username}</p>
-                                                <p className="text-white/60 text-xs">
-                                                    {getStatusText(friend.status, friend.last_game)}
-                                                </p>
+                                                <h3 className="text-white font-bold text-lg">{friend.displayName}</h3>
+                                                <p className="text-white/60 text-sm">@{friend.username}</p>
+                                                <div className="flex items-center space-x-2 mt-1">
+                                                    <span className={`text-sm ${
+                                                        friend.status === 'online' ? 'text-green-400' :
+                                                        friend.status === 'away' ? 'text-yellow-400' :
+                                                        'text-gray-400'
+                                                    }`}>
+                                                        {getStatusText(friend.status)}
+                                                    </span>
+                                                    {friend.currentGame && (
+                                                        <>
+                                                            <span className="text-white/40">•</span>
+                                                            <span className="text-white/70 text-sm">Playing {friend.currentGame}</span>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center space-x-2">
-                                            <button className="p-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-lg transition-colors" title="Add to favorites">
-                                                ⭐
-                                            </button>
-                                            <button className="p-2 bg-marine-500/20 hover:bg-marine-500/30 text-marine-300 rounded-lg transition-colors" title="Message">
-                                                💬
-                                            </button>
-                                            <button className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg transition-colors" title="Invite to group">
-                                                ➕
-                                            </button>
+
+                                        <div className="flex items-center space-x-4">
+                                            <div className="text-right">
+                                                <p className="text-white/60 text-sm">
+                                                    {friend.mutualGroups} mutual groups
+                                                </p>
+                                                <div className="flex items-center justify-end space-x-1 mt-1">
+                                                    {friend.steamConnected ? (
+                                                        <span className="text-green-400 text-xs">🎮 Steam Connected</span>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-xs">Steam Not Connected</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex flex-col space-y-2">
+                                                <button className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                                                    Invite to Group
+                                                </button>
+                                                <button className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                                                    View Profile
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-12 text-center">
+                        <div className="text-center py-12">
                             <div className="text-6xl mb-4">👥</div>
-                            <h3 className="text-2xl font-bold text-white mb-4">No Friends Yet</h3>
-                            <p className="text-white/70 mb-6">
-                                Start connecting with other gamers by joining groups or sending friend requests
+                            <h3 className="text-xl font-bold text-white mb-2">No friends found</h3>
+                            <p className="text-white/60 mb-6">
+                                {searchTerm ? `No friends match "${searchTerm}"` : "You haven't added any friends yet"}
                             </p>
-                            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                                <Link 
-                                    to="/dashboard"
-                                    className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
-                                >
-                                    Find Groups
-                                </Link>
-                                <button className="px-6 py-3 bg-marine-500 hover:bg-marine-600 text-white font-medium rounded-xl transition-colors duration-200">
-                                    Discover Players
-                                </button>
-                            </div>
+                            <button className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200">
+                                Find Friends
+                            </button>
                         </div>
                     )}
                 </div>
 
-                {/* Future Features */}
-                <div className="mt-12 backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
-                    <h3 className="text-xl font-bold text-white mb-4">Coming Soon</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="flex items-center space-x-3">
-                            <span className="text-2xl">🔍</span>
-                            <div>
-                                <h4 className="text-white font-medium">Friend Discovery</h4>
-                                <p className="text-white/60 text-sm">Find players based on games and preferences</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                            <span className="text-2xl">💬</span>
-                            <div>
-                                <h4 className="text-white font-medium">Direct Messaging</h4>
-                                <p className="text-white/60 text-sm">Chat directly with friends</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-3">
+                {/* Quick Actions */}
+                <div className="mt-8 backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
+                    <h3 className="text-xl font-bold text-white mb-6">Quick Actions</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <Link 
+                            to="/dashboard"
+                            className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                        >
                             <span className="text-2xl">🎮</span>
                             <div>
-                                <h4 className="text-white font-medium">Activity Feed</h4>
-                                <p className="text-white/60 text-sm">See what games your friends are playing</p>
+                                <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Find Games</h4>
+                                <p className="text-white/60 text-sm">Discover common games</p>
                             </div>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                            <span className="text-2xl">📊</span>
+                        </Link>
+                        
+                        <Link 
+                            to="/dashboard"
+                            className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                        >
+                            <span className="text-2xl">👥</span>
                             <div>
-                                <h4 className="text-white font-medium">Friend Stats</h4>
-                                <p className="text-white/60 text-sm">Compare gaming stats and achievements</p>
+                                <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Create Group</h4>
+                                <p className="text-white/60 text-sm">Start a gaming squad</p>
                             </div>
-                        </div>
+                        </Link>
+                        
+                        <Link 
+                            to="/profile"
+                            className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                        >
+                            <span className="text-2xl">⚙️</span>
+                            <div>
+                                <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Settings</h4>
+                                <p className="text-white/60 text-sm">Manage your profile</p>
+                            </div>
+                        </Link>
                     </div>
                 </div>
             </div>
