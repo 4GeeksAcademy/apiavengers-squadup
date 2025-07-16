@@ -186,6 +186,7 @@ class AuthService {
         
         if (this.dispatch) {
             this.dispatch({ type: 'set_loading', payload: false });
+        }
 
         // Only refresh if token is actually expired or about to expire
         if (this.isTokenExpired(10)) { // 10 minute buffer
@@ -422,6 +423,77 @@ class AuthService {
                     throw new Error('Unable to refresh token');
                 }
             }
+        }
+
+        // Create the request promise
+        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
+        
+        // Store it for deduplication
+        this.#pendingRequests.set(requestKey, requestPromise);
+        
+        // Clean up after request completes
+        requestPromise.finally(() => {
+            this.#pendingRequests.delete(requestKey);
+        });
+
+        return requestPromise;
+    }
+
+    async makeRequest(url, options = {}) {
+        const { token, ...fetchOptions } = options;
+        
+        const config = {
+            ...fetchOptions,
+            headers: {
+                'Content-Type': 'application/json',
+                ...fetchOptions.headers,
+                ...(token && { 'Authorization': `Bearer ${token}` })
+            }
+        };
+
+        return fetch(url, config);
+    }
+
+    async refreshAccessToken() {
+        const refreshToken = this.getRefreshToken();
+        if (!refreshToken) {
+            return false;
+        }
+
+        try {
+            const response = await fetch(`${this.apiUrl}/api/auth/refresh`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${refreshToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const { access_token: newAccessToken } = data.tokens || {};
+                
+                if (newAccessToken) {
+                    const user = this.getUser();
+                    const remember = !!localStorage.getItem(this.tokenKey);
+                    this.setTokens(newAccessToken, refreshToken, user, remember);
+                    return true;
+                }
+            }
+            return false;
+        } catch (error) {
+            console.error('Token refresh failed:', error);
+            return false;
+        }
+    }
+
+    async login(credentials, remember = false) {
+        try {
+            console.log('🔐 Starting login process...');
+            
+            if (this.dispatch) {
+                this.dispatch({ type: 'set_loading', payload: true });
+            }
             
             const response = await fetch(`${this.apiUrl}/api/auth/login`, { 
                 method: 'POST', 
@@ -474,19 +546,6 @@ class AuthService {
             }
             return { success: false, error: error.message || 'Network error' }; 
         }
-
-        // Create the request promise
-        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
-        
-        // Store it for deduplication
-        this.#pendingRequests.set(requestKey, requestPromise);
-        
-        // Clean up after request completes
-        requestPromise.finally(() => {
-            this.#pendingRequests.delete(requestKey);
-        });
-
-        return requestPromise;
     }
 
     async register(userData, remember = false) {
@@ -710,81 +769,6 @@ class AuthService {
             console.error('Steam connection failed:', error);
             throw error;
         }
-    }
-
-            if (response.ok) {
-                const tokensSet = this.setTokens(data.access_token, data.refresh_token);
-                if (tokensSet) {
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                    console.log('✅ Login successful');
-                    return { success: true, user: data.user };
-                } else {
-                    return { success: false, error: 'Failed to store authentication tokens' };
-                }
-            } else {
-                console.log('❌ Login failed:', data.error);
-                return { success: false, error: data.error };
-            }
-        } catch (error) {
-            console.error('❌ Login error:', error);
-            return { success: false, error: 'Network error occurred' };
-        }
-    }
-
-    async logout() {
-        try {
-            console.log('🚪 Logging out...');
-            
-            // Clear all tokens and user data
-            this.clearTokens();
-            
-            console.log('✅ Logout successful');
-            return { success: true };
-        } catch (error) {
-            console.error('❌ Logout error:', error);
-            return { success: false, error: 'Logout failed' };
-        }
-    }
-
-    async verifyToken() {
-        try {
-            const response = await this.makeAuthenticatedRequest(`${API_BASE_URL}/api/auth/verify`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                localStorage.setItem('user', JSON.stringify(data.user));
-                return { valid: true, user: data.user };
-            } else {
-                return { valid: false };
-            }
-        } catch (error) {
-            console.error('Token verification error:', error);
-            return { valid: false };
-        }
-    }
-
-    getCurrentUser() {
-        const userStr = localStorage.getItem('user');
-        return userStr ? JSON.parse(userStr) : null;
-    }
-
-    isAuthenticated() {
-        const accessToken = this.getAccessToken();
-        const user = this.getCurrentUser();
-        return !!(accessToken && user);
-    }
-
-    getApiUrl() {
-        return API_BASE_URL;
-    }
-
-    getUserInfo() {
-        return this.getCurrentUser();
-    }
-
-    hasRole(role) {
-        const user = this.getCurrentUser();
-        return user && user.roles && user.roles.includes(role);
     }
 }
 
