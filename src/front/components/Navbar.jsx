@@ -28,7 +28,6 @@ export const Navbar = () => {
     if (isAuthPage) {
         return null;
     }
-  }
 
     const handleToggle = (event) => {
         event.stopPropagation();
@@ -103,7 +102,7 @@ export const Navbar = () => {
         <nav className="fixed top-4 left-4 right-4 z-50">
             <div className="navbar-glass">
                 <div className="flex justify-between items-center">
-                    <Link 
+                    <Link
                         to="/"
                         className="flex items-center space-x-3 group"
                     >
@@ -139,14 +138,14 @@ export const Navbar = () => {
                                 >
                                     Explore
                                 </button>
-                                
+
                                 {showExploreMenu && (
-                                    <div 
+                                    <div
                                         ref={exploreDropdownRef}
-                                        className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`} 
-                                        style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}  
+                                        className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`}
+                                        style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}
                                         onClick={(e) => e.stopPropagation()}
-                                    >  
+                                    >
                                         {/* Profile (Home) */}
                                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
                                             <div className="flex items-center mb-4">
@@ -157,7 +156,7 @@ export const Navbar = () => {
                                             </div>
                                             <p className="text-white/70">Manage your gaming profile, connect Steam, and view your game library.</p>
                                         </div>
-                                        
+
                                         {/* Features */}
                                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
                                             <div className="flex items-center mb-4">
@@ -168,7 +167,7 @@ export const Navbar = () => {
                                             </div>
                                             <p className="text-white/70">Create account, link Steam to sync games, create/join groups, vote on common games, and play the winner!</p>
                                         </div>
-                                        
+
                                         {/* Gaming */}
                                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
                                             <div className="flex items-center mb-4">
@@ -179,7 +178,7 @@ export const Navbar = () => {
                                             </div>
                                             <p className="text-white/70">Stay tuned!</p>
                                         </div>
-                                        
+
                                         {/* Community */}
                                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
                                             <div className="flex items-center mb-4">
@@ -198,7 +197,7 @@ export const Navbar = () => {
                         {isAuthenticated ? (
                             <div className="flex items-center space-x-4">
                                 <div className="relative z-[60]">  {/* Increased z-index for stacking context */}
-                                    <button 
+                                    <button
                                         onClick={handleToggle}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
                                     >
@@ -218,13 +217,13 @@ export const Navbar = () => {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
-                                    
-                                    <div 
+
+                                    <div
                                         ref={dropdownRef}
-                                        className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} 
-                                        style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}  
+                                        className={`nav-dropdown ${showUserMenu ? 'active' : ''}`}
+                                        style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}
                                         onClick={(e) => e.stopPropagation()}
-                                    >  
+                                    >
                                         <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
                                             <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
                                         </Link>
@@ -262,4 +261,5 @@ export const Navbar = () => {
             </div>
         </nav>
     );
+};
 
