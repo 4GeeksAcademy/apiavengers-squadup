@@ -1,3 +1,4 @@
+// src/front/pages/Layout.jsx - IMPROVED VERSION with better auth flow
 import React, { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
@@ -9,68 +10,76 @@ import { Toaster } from "react-hot-toast";
 export const Layout = () => {
     const { store, dispatch } = useGlobalReducer();
     const location = useLocation();
-    const layoutInitialized = useRef(false);
-    const dispatchInjected = useRef(false);
+    const initializationRef = useRef(false);
 
-    // FIXED: Single initialization effect that runs only once
+    // CRITICAL FIX: Single initialization that only runs once
     useEffect(() => {
-        if (layoutInitialized.current) return;
-        
-        console.log('🏗️ Layout mounted, initializing...');
-        layoutInitialized.current = true;
-        
-        // Inject dispatch only once
-        if (!dispatchInjected.current) {
-            console.log('💉 Injecting dispatch into authService...');
-            authService.setDispatch(dispatch);
-            dispatchInjected.current = true;
-        }
-        
-        console.log('🏗️ Layout - Initial store state:', {
-            hasUser: !!store?.user,
-            isAuthenticated: store?.isAuthenticated,
-            authLoading: store?.authLoading,
-            hasToken: !!store?.token,
-            authCheckCompleted: authService.authCheckCompleted
-        });
-        
-        console.log('🏗️ Layout initialization complete');
-    }, [dispatch]); // Only depend on dispatch, which is stable
-
-    // ENHANCED: Separate effect for store state monitoring
-    useEffect(() => {
-        // Don't run until layout is initialized
-        if (!layoutInitialized.current) return;
-
-        // Skip auth checks for demo and other public pages
-        const publicPaths = ['/demo', '/', '/login', '/signup'];
-        const isPublicPath = publicPaths.some(path => location.pathname.startsWith(path));
-        
-        if (isPublicPath) {
-            console.log('📍 Public page, skipping auth checks:', location.pathname);
+        if (initializationRef.current) {
+            console.log('🏗️ Layout: Already initialized, skipping...');
             return;
         }
+
+        console.log('🏗️ Layout: Starting initialization...');
+        initializationRef.current = true;
+
+        const initializeAuth = async () => {
+            try {
+                // Inject dispatch and wait for auth check to complete
+                console.log('💉 Injecting dispatch into authService...');
+                await authService.setDispatch(dispatch);
+                
+                console.log('✅ Layout initialization complete');
+            } catch (error) {
+                console.error('❌ Layout initialization error:', error);
+                // On initialization error, clear auth to be safe
+                if (dispatch) {
+                    dispatch({ type: 'logout' });
+                    dispatch({ type: 'set_loading', payload: false });
+                }
+            }
+        };
+
+        initializeAuth();
+    }, []); // Empty dependency array - only run once
+
+    // IMPROVED: Separate effect for monitoring auth state
+    useEffect(() => {
+        if (!initializationRef.current) return;
+
+        // Skip auth monitoring for public pages
+        const publicPaths = ['/demo', '/', '/login', '/signup'];
+        const isPublicPath = publicPaths.some(path => 
+            location.pathname === path || location.pathname.startsWith(path + '/')
+        );
         
-        console.log('🏗️ Layout - Store state changed:', {
+        if (isPublicPath) {
+            console.log('📍 Layout: Public page, skipping auth monitoring:', location.pathname);
+            return;
+        }
+
+        console.log('🏗️ Layout: Monitoring auth state for protected route:', location.pathname);
+        
+        // Log current auth state for debugging
+        console.log('🔍 Layout: Current auth state:', {
             hasUser: !!store?.user,
             isAuthenticated: store?.isAuthenticated,
             authLoading: store?.authLoading,
-            hasToken: !!store?.token,
             userName: store?.user?.username,
             authServiceAuth: authService.isAuthenticated(),
-            authCheckCompleted: authService.authCheckCompleted
+            authCheckCompleted: authService.authCheckCompleted,
+            pathname: location.pathname
         });
 
-        // ENHANCED: Detect and handle auth state mismatches
+        // IMPROVED: Handle auth state mismatches more carefully
         const serviceAuth = authService.isAuthenticated();
         const storeAuth = store?.isAuthenticated;
         
-        // Only attempt auto-fix if auth check is completed to avoid race conditions
+        // Only attempt to fix mismatches if auth check is completed
         if (authService.authCheckCompleted && serviceAuth !== storeAuth) {
             console.warn('🚨 AUTH MISMATCH DETECTED!', {
                 authService: serviceAuth,
                 globalStore: storeAuth,
-                recommendation: 'Attempting auto-fix...'
+                willAttemptFix: true
             });
             
             // Auto-fix: If authService says authenticated but store doesn't agree
@@ -84,6 +93,9 @@ export const Layout = () => {
                         type: 'login_success',
                         payload: { user, token, refreshToken: authService.getRefreshToken() }
                     });
+                } else {
+                    console.log('🔧 Auto-fixing: AuthService state is inconsistent, clearing it');
+                    authService.clearAuth();
                 }
             }
             // Auto-fix: If store says authenticated but authService doesn't agree
@@ -92,11 +104,11 @@ export const Layout = () => {
                 dispatch({ type: 'logout' });
             }
         }
-    }, [store?.user, store?.isAuthenticated, store?.authLoading, store?.token, dispatch, location.pathname]);
+    }, [store?.user, store?.isAuthenticated, store?.authLoading, dispatch, location.pathname]);
 
-    // ENHANCED: Handle pending invites after auth - separate effect for clarity
+    // IMPROVED: Handle pending invites more robustly
     useEffect(() => {
-        // Only process pending invites when user is fully authenticated and not loading
+        // Only process pending invites when user is fully authenticated
         if (store?.isAuthenticated && !store?.authLoading && authService.authCheckCompleted) {
             const pendingInvite = sessionStorage.getItem('pending_invite');
             if (pendingInvite) {
@@ -133,7 +145,6 @@ export const Layout = () => {
                         boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
                         maxWidth: '500px'
                     },
-                    // Custom styling for different toast types
                     success: {
                         style: {
                             background: 'rgba(34, 197, 94, 0.95)',
