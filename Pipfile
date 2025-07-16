@@ -6,17 +6,27 @@ name = "pypi"
 [packages]
 flask = "*"
 flask-sqlalchemy = "*"
+<<<<<<< HEAD
 flask-migrate = "*"
 flask-jwt-extended = "==4.6.0"
+=======
+flask-jwt-extended = "*"
+>>>>>>> origin/feature-1-login
 flask-cors = "*"
 flask-admin = "*"
 psycopg2-binary = "*"
-python-dotenv = "*"
 gunicorn = "*"
 cloudinary = "*"
 werkzeug = "*"
 requests = "*"
+<<<<<<< HEAD
 pyjwt = "==2.9.0"
+=======
+python-dotenv = "*"
+flask-limiter = "*"
+flask-migrate = "*"
+flask-socketio = "*"
+>>>>>>> origin/feature-1-login
 
 [dev-packages]
 

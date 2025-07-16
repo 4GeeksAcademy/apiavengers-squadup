@@ -1,26 +1,27 @@
 from flask import Flask, request, jsonify, url_for, Blueprint, current_app
 from api.models import db, User
+import os
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
+from flask_jwt_extended import JWTManager
 
-# Import steam_auth blueprint
-from .steam_auth import steam_auth
-
-api = Blueprint('api', __name__)
+app = Blueprint('app', __name__)
 
 # Allow CORS requests to this API - Updated with your GitHub Codespace URLs
-CORS(api, origins=[
-    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
+CORS(app, origins=[
     "http://localhost:3000",
-    "https://localhost:3000",
+    "https://animated-eureka-5grpx4q7wvpgf66g-3000.app.github.dev",
+    "https://animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev",
     "*"  # Allow all origins for development - remove in production
 ])
 
 # Register steam_auth blueprint under /api/auth
-api.register_blueprint(steam_auth, url_prefix='/auth')
+app.register_blueprint(steam_auth, url_prefix='/auth')
 
-@api.route('/hello', methods=['POST', 'GET'])
+@app.route('/hello', methods=['POST', 'GET'])
 def handle_hello():
     response_body = {
         "message": "Hello! I'm a message that came from the backend, check the network tab on the google inspector and you will see the GET request"
@@ -31,7 +32,7 @@ def handle_hello():
 # TEST ROUTES FOR DEVELOPMENT
 # ============================================================================
 
-@api.route('/test/auth', methods=['GET'])
+@app.route('/test/auth', methods=['GET'])
 def test_auth():
     """Test route to verify auth system is working"""
     return jsonify({

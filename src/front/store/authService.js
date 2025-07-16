@@ -1,4 +1,8 @@
-// src/front/store/authService.js - FULLY FIXED VERSION
+// src/front/services/authService.js
+// Complete Frontend Authentication Service - Optimized for 429 Prevention
+
+// ✅ CORRECT: Use import.meta.env for Vite (not process.env)
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 class AuthService {
     constructor() {
@@ -13,7 +17,58 @@ class AuthService {
         this.refreshTimer = null;
         this.authCheckCompleted = false;
         
-        console.log('🔐 AuthService initialized');
+        console.log('🔧 AuthService initialized with API URL:', API_BASE_URL);
+        
+        // Setup automatic token refresh with reduced frequency
+        this.setupTokenRefresh();
+    }
+    
+    #verifyLatch = null; 
+    #verifiedAt = 0;       
+    #verificationThrottle = 60000; 
+    
+    // Request deduplication for concurrent calls
+    #pendingRequests = new Map();
+
+    async checkAuthStatus(force = false) {
+        // local check first – fast
+        if (!this.isAuthenticated()) return false;
+
+        // throttle network hit to once every 60 s unless forced
+        const now = Date.now();
+        if (!force && now - this.#verifiedAt < this.#verificationThrottle) {
+            console.log('🚀 Using cached auth status (throttled)');
+            return true;
+        }
+
+        // reuse ongoing request
+        if (this.#verifyLatch) {
+            console.log('🔄 Reusing existing verification request');
+            return this.#verifyLatch;
+        }
+
+        console.log('🌐 Making network auth verification');
+        
+        // real network verify
+        this.#verifyLatch = fetch(`${API_BASE_URL}/api/auth/verify`, {
+            headers: { Authorization: `Bearer ${this.getAccessToken()}` },
+        })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                localStorage.setItem('user', JSON.stringify(data.user));
+                this.#verifiedAt = Date.now();
+                console.log('✅ Auth verification successful');
+                return true;
+            })
+            .catch((error) => {
+                console.log('❌ Auth verification failed:', error);
+                return false;
+            })
+            .finally(() => { 
+                this.#verifyLatch = null; 
+            });
+
+        return this.#verifyLatch;
     }
 
     setDispatch(dispatch) {
@@ -38,6 +93,59 @@ class AuthService {
             this.dispatch({ type: 'set_loading', payload: true });
         }
         
+        console.log('✅ Tokens stored successfully');
+        return true;
+    }
+
+    getAccessToken() {
+        return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    }
+
+    getRefreshToken() {
+        return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+    }
+
+    getTokenExpiration() {
+        const expiration = localStorage.getItem('token_expiration');
+        return expiration ? parseInt(expiration) : null;
+    }
+
+    isTokenExpired(bufferMinutes = 5) {
+        const expiration = this.getTokenExpiration();
+        if (!expiration) return true;
+        
+        // Consider token expired buffer minutes before actual expiration
+        return Date.now() > (expiration - bufferMinutes * 60 * 1000);
+    }
+
+    clearTokens() {
+        localStorage.removeItem('access_token');
+        sessionStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        sessionStorage.removeItem('refresh_token');
+        localStorage.removeItem('token_expiration');
+        localStorage.removeItem('user');
+        this.#verifiedAt = 0; // Reset verification timestamp
+        console.log('🧹 Tokens cleared');
+    }
+
+    // ============================================================================
+    // AUTOMATIC TOKEN REFRESH - Optimized
+    // ============================================================================
+
+    setupTokenRefresh() {
+        // Check token every 10 minutes (increased from 5 to reduce API calls)
+        setInterval(() => {
+            this.checkAndRefreshToken();
+        }, 10 * 60 * 1000);
+
+        // Check immediately when service is created
+        setTimeout(() => {
+            this.checkAndRefreshToken();
+        }, 2000); // Increased delay to avoid immediate refresh
+    }
+
+    async checkAndRefreshToken() {
         const accessToken = this.getAccessToken();
         const storedUser = this.getUser();
         
@@ -78,6 +186,11 @@ class AuthService {
         
         if (this.dispatch) {
             this.dispatch({ type: 'set_loading', payload: false });
+
+        // Only refresh if token is actually expired or about to expire
+        if (this.isTokenExpired(10)) { // 10 minute buffer
+            console.log('🔄 Token expired, attempting refresh...');
+            return await this.refreshAccessToken();
         }
         
         console.log('🔍 Auth check completed');
@@ -277,12 +390,41 @@ class AuthService {
         this.failedQueue = [];
     }
 
-    async login(credentials, remember = false) {
-        try {
-            console.log('🔐 Starting login process...');
-            
-            if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: true });
+    // ============================================================================
+    // API REQUEST HELPER WITH AUTO-REFRESH - Optimized with deduplication
+    // ============================================================================
+
+    async makeAuthenticatedRequest(url, options = {}) {
+        const accessToken = this.getAccessToken();
+        
+        if (!accessToken) {
+            throw new Error('No access token available');
+        }
+
+        // Create a unique key for this request to deduplicate
+        const requestKey = `${options.method || 'GET'}:${url}`;
+        
+        // Check if we have a pending request for this URL
+        if (this.#pendingRequests.has(requestKey)) {
+            console.log('🔄 Reusing pending request:', requestKey);
+            return this.#pendingRequests.get(requestKey);
+        }
+
+        // Check if token needs refresh
+        if (this.isTokenExpired()) {
+            if (this.isRefreshing) {
+                // Wait for refresh to complete
+                const refreshPromise = new Promise((resolve, reject) => {
+                    this.failedQueue.push({ resolve, reject });
+                });
+                
+                const token = await refreshPromise;
+                return this.makeRequest(url, { ...options, token });
+            } else {
+                const refreshed = await this.refreshAccessToken();
+                if (!refreshed) {
+                    throw new Error('Unable to refresh token');
+                }
             }
             
             const response = await fetch(`${this.apiUrl}/api/auth/login`, { 
@@ -336,6 +478,19 @@ class AuthService {
             }
             return { success: false, error: error.message || 'Network error' }; 
         }
+
+        // Create the request promise
+        const requestPromise = this.makeRequest(url, { ...options, token: this.getAccessToken() });
+        
+        // Store it for deduplication
+        this.#pendingRequests.set(requestKey, requestPromise);
+        
+        // Clean up after request completes
+        requestPromise.finally(() => {
+            this.#pendingRequests.delete(requestKey);
+        });
+
+        return requestPromise;
     }
 
     async register(userData, remember = false) {
@@ -559,6 +714,81 @@ class AuthService {
             console.error('Steam connection failed:', error);
             throw error;
         }
+    }
+
+            if (response.ok) {
+                const tokensSet = this.setTokens(data.access_token, data.refresh_token);
+                if (tokensSet) {
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    console.log('✅ Login successful');
+                    return { success: true, user: data.user };
+                } else {
+                    return { success: false, error: 'Failed to store authentication tokens' };
+                }
+            } else {
+                console.log('❌ Login failed:', data.error);
+                return { success: false, error: data.error };
+            }
+        } catch (error) {
+            console.error('❌ Login error:', error);
+            return { success: false, error: 'Network error occurred' };
+        }
+    }
+
+    async logout() {
+        try {
+            console.log('🚪 Logging out...');
+            
+            // Clear all tokens and user data
+            this.clearTokens();
+            
+            console.log('✅ Logout successful');
+            return { success: true };
+        } catch (error) {
+            console.error('❌ Logout error:', error);
+            return { success: false, error: 'Logout failed' };
+        }
+    }
+
+    async verifyToken() {
+        try {
+            const response = await this.makeAuthenticatedRequest(`${API_BASE_URL}/api/auth/verify`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem('user', JSON.stringify(data.user));
+                return { valid: true, user: data.user };
+            } else {
+                return { valid: false };
+            }
+        } catch (error) {
+            console.error('Token verification error:', error);
+            return { valid: false };
+        }
+    }
+
+    getCurrentUser() {
+        const userStr = localStorage.getItem('user');
+        return userStr ? JSON.parse(userStr) : null;
+    }
+
+    isAuthenticated() {
+        const accessToken = this.getAccessToken();
+        const user = this.getCurrentUser();
+        return !!(accessToken && user);
+    }
+
+    getApiUrl() {
+        return API_BASE_URL;
+    }
+
+    getUserInfo() {
+        return this.getCurrentUser();
+    }
+
+    hasRole(role) {
+        const user = this.getCurrentUser();
+        return user && user.roles && user.roles.includes(role);
     }
 }
 

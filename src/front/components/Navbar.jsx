@@ -5,6 +5,9 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
+import { bootstrapAuth } from '../store/actions';
+import { logOut } from '../store/actions';
+
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -25,6 +28,7 @@ export const Navbar = () => {
     if (isAuthPage) {
         return null;
     }
+  }
 
     const handleToggle = (event) => {
         event.stopPropagation();
@@ -258,4 +262,4 @@ export const Navbar = () => {
             </div>
         </nav>
     );
-};
+

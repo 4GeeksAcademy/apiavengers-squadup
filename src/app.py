@@ -9,74 +9,90 @@ load_dotenv()
 print(f"Loaded FRONTEND_URL: {os.getenv('FRONTEND_URL')}")  # Should print the codespace URL 
 
 # Third-party imports
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, current_app   
 from flask_migrate import Migrate
-from flask_jwt_extended import JWTManager, get_jwt
+
+from flask_socketio import SocketIO
+from flask_swagger import swagger
+from flask_jwt_extended import JWTManager, get_jwt, create_refresh_token
 from flask_cors import CORS
 
 # Local application imports
 from api.utils import APIException
 from api.models import db
-from api.routes import api
 from api.auth import auth
 from api.gaming import gaming
 from api.admin import setup_admin
 from api.commands import setup_commands
 from api.steam_auth import steam_auth
 from api.steam import steam
+from api.steam_auth import steam_bp
+from api.genre_routes import genre_bp
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+load_dotenv()
+SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
 
 # ============================================================================
 # App Initialization & Environment
 # ============================================================================
 ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
-static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../dist/')
-app = Flask(__name__)
+static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../dist")
+
+app = Flask(__name__, static_folder=static_file_dir, static_url_path="/")
+
 app.url_map.strict_slashes = False
 
-# ============================================================================
-# CORS Configuration for GitHub Codespaces - FIXED
-# ============================================================================
-CODESPACE_NAME = os.getenv('CODESPACE_NAME')
-GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')
 
-# More permissive CORS for development
-allowed_origins = [
-    "http://localhost:3000", 
-    "http://127.0.0.1:3000",
-    "https://localhost:3000"
-]
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-if CODESPACE_NAME and GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:
-    codespace_frontend_url = f"https://{CODESPACE_NAME}-3000.{GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
-    allowed_origins.append(codespace_frontend_url)
-    print(f"🌐 Codespace frontend origin added: {codespace_frontend_url}")
 
-# FIXED: More permissive CORS configuration
-CORS(app, 
-     origins=allowed_origins,
-     supports_credentials=True,
-     allow_headers=['Content-Type', 'Authorization'],
-     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
-)
+# JWT
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1) 
 
-print(f"🔧 CORS configured for origins: {allowed_origins}")
+jwt = JWTManager(app)
+CORS(app)
 
-# ============================================================================
-# Database Configuration
-# ============================================================================
+# Database
 db_url = os.getenv("DATABASE_URL")
-if db_url:
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace("postgres://", "postgresql://")
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    db_url.replace("postgres://", "postgresql://") if db_url else "sqlite:////tmp/test.db"
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+Migrate(app, db, compare_type=True)
+
+app.config["SERVER_NAME"] = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.dev"
+app.config["PREFERRED_URL_SCHEME"] = "https"
+
+# Admin & custom CLI commands
+setup_admin(app)
+setup_commands(app)
+
+# Blueprints
+app.register_blueprint(auth, url_prefix='/api/auth')
+app.register_blueprint(steam_bp, url_prefix="/api")
+app.register_blueprint(genre_bp, url_prefix="/api")
+app.register_blueprint(gaming, url_prefix='/api/gaming')
+
+# Enable CORS for your GitHub Codespace frontend
+#CORS(app, origins=[
+#    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
+#    "http://localhost:3000",
+#    "https://localhost:3000",
+#])
+
+# Database configuration
+
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-MIGRATE = Migrate(app, db, compare_type=True)
-db.init_app(app)
 
 # ============================================================================
-# JWT Configuration
+# PRODUCTION-READY JWT CONFIGURATION
 # ============================================================================
-# This line now correctly loads your secret key from the .env file.
+
+
+# SECURE TOKEN EXPIRATION TIMES
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 # --- MINOR IMPROVEMENT: Ensure the key was actually loaded ---
 if not app.config['JWT_SECRET_KEY']:
@@ -109,18 +125,88 @@ def missing_token_callback(error):
 def revoked_token_callback(jwt_header, jwt_payload):
     return jsonify({'message': 'The token has been revoked.', 'error': 'token_revoked'}), 401
 
+
+
+# ============================================================================
+# SECURITY HEADERS & PROTECTION
+# ============================================================================
+
+@app.after_request
+def after_request(response):
+    """Add comprehensive security headers"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # Only add HSTS in production with HTTPS
+    if ENV == "production":
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    
+    return response
+
+# ============================================================================
+# RATE LIMITING PROTECTION (Basic)
+# ============================================================================
+
+from collections import defaultdict
+from datetime import datetime
+
+# Simple rate limiting storage (use Redis in production)
+rate_limit_storage = defaultdict(list)
+
+def is_rate_limited(identifier, max_requests=100, window_minutes=15):
+    """
+    Basic rate limiting - 100 requests per 15 minutes per IP
+    In production, use Flask-Limiter or Redis
+    """
+    now = datetime.utcnow()
+    window_start = now - timedelta(minutes=window_minutes)
+    
+    # Clean old requests
+    rate_limit_storage[identifier] = [
+        req_time for req_time in rate_limit_storage[identifier] 
+        if req_time > window_start
+    ]
+    
+    # Check if over limit
+    if len(rate_limit_storage[identifier]) >= max_requests:
+        return True
+    
+    # Add current request
+    rate_limit_storage[identifier].append(now)
+    return False
+
+@app.before_request
+def rate_limit():
+    """Apply rate limiting to auth endpoints"""
+    if request.endpoint and 'auth' in request.endpoint:
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        
+        if is_rate_limited(client_ip, max_requests=20, window_minutes=15):
+            return jsonify({
+                'error': 'rate_limit_exceeded',
+                'message': 'Too many requests. Please try again later.',
+                'code': 'RATE_LIMITED'
+            }), 429
+
+# ============================================================================
+# REST OF YOUR APP CONFIGURATION
+# ============================================================================
+db.init_app(app)
+MIGRATE = Migrate(app, db, compare_type=True)
+
+# ============================================================================
+# JWT Configuration
+# ============================================================================
+# This line now correctly loads your secret key from the .env file.
+
 # ============================================================================
 # Blueprint & Route Registration
 # ============================================================================
 setup_admin(app)
 setup_commands(app)
 
-# Register blueprints - FIXED: No duplicate registrations
-app.register_blueprint(api, url_prefix='/api')           # Main API routes
-app.register_blueprint(auth, url_prefix='/api/auth')     # Auth routes  
-app.register_blueprint(gaming, url_prefix='/api/gaming') # Gaming routes
-app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Steam auth (OpenID)
-app.register_blueprint(steam, url_prefix='/api/steam')   # Steam API routes (library, sync, etc.)
 
 # ============================================================================
 # Route Configuration & Main Entry Point
@@ -129,10 +215,24 @@ app.register_blueprint(steam, url_prefix='/api/steam')   # Steam API routes (lib
 def redirect_to_admin():
     return redirect(url_for('admin.index'))
 
+
+
+# Error handler
+@app.errorhandler(APIException)
+def handle_invalid_usage(error):
+    return jsonify(error.to_dict()), error.status_code
+
+# Sitemap / SPA fall-through
+#@app.route("/")
+#def sitemap():
+    if ENV == "development":
+        return generate_sitemap(app)
+    return send_from_directory(static_file_dir, "index.html")
+
 @app.route('/<path:path>', methods=['GET'])
 def serve_any_other_file(path):
     if not os.path.isfile(os.path.join(static_file_dir, path)):
-        path = 'index.html'
+        path = "index.html"
     response = send_from_directory(static_file_dir, path)
     response.cache_control.max_age = 0
     return response
@@ -149,4 +249,4 @@ def handle_options():
 
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    socketio.run(host='0.0.0.0', port=PORT, debug=True) 

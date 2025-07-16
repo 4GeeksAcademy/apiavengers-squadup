@@ -1,308 +1,436 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Avatar from '../components/Avatar';
+import { ACTION_TYPES } from '../store/store';
+import { ConnectSteamButton } from "../components/ConnectSteamButton";
+import { steamApi } from '../store/steamapi';
 
 export const Profile = () => {
-    const { store, dispatch } = useGlobalReducer();
-    const { user: globalUser } = store;
-    const [isEditing, setIsEditing] = useState(false);
-    const [formData, setFormData] = useState({});
-    const [isLoading, setIsLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
-    const [message, setMessage] = useState({ type: '', text: '' });
-    const navigate = useNavigate();
+  const { store, dispatch } = useGlobalReducer();
+  const { user: storeUser } = store;
+  const [user, setUser] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    bio: '',
+    avatar_url: '',
+    gaming_style: '',
+    favorite_genres: [],
+    created_at: '',
+    total_games: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
+  const [gameList, setGameList] = useState([]);
+  const [isGamesLoading, setIsGamesLoading] = useState(false);
+  const [gamesError, setGamesError] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
 
-    useEffect(() => {
-        if (globalUser) {
-            setFormData({
-                username: globalUser.username || '',
-                email: globalUser.email || '',
-                bio: globalUser.bio || '',
-                avatar_url: globalUser.avatar_url || '',
-                gaming_style: globalUser.gaming_style || '',
-                favorite_genres: globalUser.favorite_genres || []
-            });
-            setIsLoading(false);
-        } else {
-            setIsLoading(true);
-        }
+  const navigate = useNavigate();
+  const backendUrl = authService.getApiUrl();
 
-        // Check for Steam connection success/error in URL params
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('steam_connected') === 'true') {
-            toast.success('Steam account connected and library synced successfully!');
-            // Refresh user data
-            refreshUserProfile();
-            // Clean URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-        } else if (urlParams.get('steam_error')) {
-            const error = urlParams.get('steam_error');
-            const errorMessages = {
-                'auth_failed': 'Steam authentication failed. Please try again.',
-                'connection_failed': 'Failed to connect Steam account.',
-                'invalid_id': 'Invalid Steam ID received.',
-                'server_error': 'Server error occurred. Please try again later.',
-                'no_user': 'Authentication session expired. Please try again.'
-            };
-            toast.error(errorMessages[error] || 'An unknown Steam connection error occurred.');
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, [globalUser]);
-
-    const refreshUserProfile = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`);
-            if (response.ok) {
-                const data = await response.json();
-                dispatch({ type: 'set_user', payload: data.user });
-            }
-        } catch (error) {
-            console.error('Error refreshing profile:', error);
-        }
-    };
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleGenreToggle = (genre) => {
-        setFormData(prev => ({
-            ...prev,
-            favorite_genres: prev.favorite_genres.includes(genre)
-                ? prev.favorite_genres.filter(g => g !== genre)
-                : [...prev.favorite_genres, genre]
-        }));
-    };
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        setMessage({ type: '', text: '' });
-        const backendUrl = import.meta.env.VITE_BACKEND_URL;
-        try {
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    bio: formData.bio,
-                    avatar_url: formData.avatar_url,
-                    gaming_style: formData.gaming_style,
-                    favorite_genres: formData.favorite_genres
-                })
-            });
-            if (response.ok) {
-                const data = await response.json();
-                dispatch({ type: 'set_user', payload: data.user });
-                setIsEditing(false);
-                toast.success('Profile updated successfully!');
-            } else {
-                const data = await response.json();
-                toast.error(data.error || 'Failed to update profile');
-            }
-        } catch (error) {
-            console.error('Error updating profile:', error);
-            toast.error('Network error updating profile');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleCancel = () => {
-        setFormData({
-            username: globalUser.username || '',
-            email: globalUser.email || '',
-            bio: globalUser.bio || '',
-            avatar_url: globalUser.avatar_url || '',
-            gaming_style: globalUser.gaming_style || '',
-            favorite_genres: globalUser.favorite_genres || []
-        });
-        setIsEditing(false);
-        setMessage({ type: '', text: '' });
-    };
-
-    const navigateToDashboard = () => {
-        navigate('/dashboard');
-    };
-
-    // FIXED: Steam Connect via OpenID
-    const handleSteamConnect = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const returnTo = encodeURIComponent('/profile');
-            
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/login?return_to=${returnTo}`, {
-                method: 'GET'
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                // Redirect to Steam OpenID
-                window.location.href = data.steam_auth_url;
-            } else {
-                const errorData = await response.json();
-                console.error('Steam connect failed:', errorData);
-                toast.error(errorData.message || 'Failed to initiate Steam connection');
-            }
-        } catch (error) {
-            console.error('Error initiating Steam connect:', error);
-            toast.error('Network error connecting to Steam');
-        }
-    };
-
-    // FIXED: Manual Steam ID connection with library sync
-    const handleManualSteamConnect = async () => {
-        const steamId = prompt('Enter your Steam ID (17-digit number):');
-        if (!steamId || steamId.trim() === '') {
-            return;
-        }
-
-        if (!/^\d{17}$/.test(steamId.trim())) {
-            toast.error('Please enter a valid 17-digit Steam ID');
-            return;
-        }
-
-        const loadingToast = toast.loading('Connecting Steam account...');
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/connect`, {
-                method: 'POST',
-                body: JSON.stringify({ steam_id: steamId.trim() })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                
-                // Update user in store
-                dispatch({ type: 'set_user', payload: data.user });
-                
-                toast.dismiss(loadingToast);
-                toast.success(`Steam connected! Synced ${data.new_games} new games and updated ${data.updated_games} games.`);
-                
-                // Refresh profile to get latest data
-                await refreshUserProfile();
-            } else {
-                const errorData = await response.json();
-                toast.dismiss(loadingToast);
-                toast.error(errorData.error || 'Failed to connect Steam account');
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error connecting Steam manually:', error);
-            toast.error('Network error connecting to Steam');
-        }
-    };
-
-    // FIXED: Steam Disconnect
-    const handleDisconnect = async () => {
-        if (!window.confirm('Are you sure you want to disconnect your Steam account? This will clear your game library.')) {
-            return;
-        }
-
-        const loadingToast = toast.loading('Disconnecting Steam account...');
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/disconnect`, {
-                method: 'POST'
-            });
-            
-            if (response.ok) {
-                // Refresh user data after disconnect
-                await refreshUserProfile();
-                
-                toast.dismiss(loadingToast);
-                toast.success('Steam account disconnected successfully!');
-            } else {
-                const errorData = await response.json();
-                toast.dismiss(loadingToast);
-                toast.error(errorData.error || 'Failed to disconnect Steam');
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error disconnecting Steam:', error);
-            toast.error('Network error disconnecting Steam');
-        }
-    };
-
-    // FIXED: Steam Library Sync
-    const handleSyncLibrary = async () => {
-        if (!globalUser.steam_connected) {
-            toast.error('Please connect your Steam account first');
-            return;
-        }
-
-        const loadingToast = toast.loading('Syncing Steam library...');
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/steam/sync-games`, {
-                method: 'POST'
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                toast.dismiss(loadingToast);
-                toast.success(data.message || `Synced ${data.new_games} new games and updated ${data.updated_games} games`);
-                
-                // Refresh user data
-                await refreshUserProfile();
-            } else {
-                const errorData = await response.json();
-                toast.dismiss(loadingToast);
-                toast.error(errorData.error || 'Failed to sync library');
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error syncing library:', error);
-            toast.error('Network error syncing library');
-        }
-    };
-
-    const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
-    const gamingStyles = ['Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'];
-
-    if (isLoading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="text-white text-xl">Loading your profile...</div>
-            </div>
-        );
+  // Move loadProfile out so it can be reused
+  const loadProfile = useCallback(async () => {
+    if (storeUser) {
+      setFormData({
+        username: storeUser.username ?? '',
+        email: storeUser.email ?? '',
+        bio: storeUser.bio ?? '',
+        avatar_url: storeUser.avatar_url ?? '',
+        gaming_style: storeUser.gaming_style ?? '',
+        favorite_genres: storeUser.favorite_genres ?? [],
+        created_at: storeUser.created_at ?? '',
+        total_games: storeUser.total_games || 0
+      });
+      setUser(storeUser);
+      setIsLoading(false);
+      return;
     }
 
-    return (
-        <>
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
-                <div className="max-w-4xl mx-auto relative z-10">
-                    <button 
-                        onClick={navigateToDashboard}
-                        className="mb-4 px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl text-sm transition-colors duration-200"
-                    >
-                        ← Back to Dashboard
-                    </button>
-                    
-                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-                        <h1 className="text-3xl font-bold text-white mb-6">Profile Settings</h1>
-                        <p className="text-white/70 mb-8">Manage your gaming profile and preferences</p>
+    const cachedUser = authService.getCurrentUser();
+    if (cachedUser && cachedUser.steam_id && cachedUser.is_steam_connected) {
+      setFormData({
+        username: cachedUser.username ?? '',
+        email: cachedUser.email ?? '',
+        bio: cachedUser.bio ?? '',
+        avatar_url: cachedUser.avatar_url ?? '',
+        gaming_style: cachedUser.gaming_style ?? '',
+        favorite_genres: cachedUser.favorite_genres ?? [],
+        created_at: cachedUser.created_at ?? '',
+        total_games: cachedUser.total_games || 0
+      });
+      setUser(cachedUser);
+      dispatch({ type: ACTION_TYPES.SET_USER, payload: cachedUser });
+      setIsLoading(false);
+      return;
+    }
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* 🔧 FIXED: Profile Image and Basic Info - Better spacing and alignment */}
-                            <div className="flex flex-col items-center space-y-4">
-                                <div className="text-center">
-                                    {/* 🔧 FIXED: Use Avatar component as fallback when no Steam avatar */}
-                                    {globalUser.steam_avatar_url || formData.avatar_url ? (
-                                        <img 
-                                            src={globalUser.steam_avatar_url || formData.avatar_url} 
-                                            alt="Profile Avatar" 
-                                            className="w-32 h-32 rounded-full mb-4 object-cover mx-auto border-4 border-white/20"
-                                            onError={(e) => {
-                                                // If image fails to load, hide it and show Avatar component
-                                                e.target.style.display = 'none';
-                                                e.target.nextElementSibling.style.display = 'flex';
-                                            }}
+    try {
+      const res = await authService.makeAuthenticatedRequest(
+        `${backendUrl}/api/auth/profile`
+      );
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          authService.clearTokens();
+          navigate('/login', { replace: true });
+          return;
+        }
+        throw new Error('Failed to load profile');
+      }
+
+      const { user: u } = await res.json();
+
+      dispatch({ type: ACTION_TYPES.SET_USER, payload: u });
+      setUser(u);
+      setFormData({
+        username: u.username ?? '',
+        email: u.email ?? '',
+        bio: u.bio ?? '',
+        avatar_url: u.avatar_url ?? '',
+        gaming_style: u.gaming_style ?? '',
+        favorite_genres: u.favorite_genres ?? [],
+        created_at: u.created_at ?? '',
+        total_games: u.total_games || 0
+      });
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [backendUrl, navigate, dispatch, storeUser]);
+
+  // Helper to refresh profile
+  const refreshUserProfile = async () => {
+    setIsLoading(true);
+    await loadProfile();
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    loadProfile();
+    // eslint-disable-next-line
+  }, [loadProfile]);
+
+  useEffect(() => {
+    const fetchGames = async () => {
+      if (storeUser?.is_steam_connected) {
+        setIsGamesLoading(true);
+        setGamesError("");
+        try {
+          const res = await steamApi.getMyLibrary();
+          if (res.ok) {
+            const data = await res.json();
+            setGameList(data.games || []);
+          } else {
+            setGamesError("Failed to load game library");
+          }
+        } catch (err) {
+          setGamesError("Error loading game library");
+        } finally {
+          setIsGamesLoading(false);
+        }
+      } else {
+        setGameList([]);
+      }
+    };
+    fetchGames();
+  }, [storeUser?.is_steam_connected]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    setMessage({ type: '', text: '' });
+  };
+
+  const handleGenreToggle = (genre) => {
+    setFormData(prev => {
+      const genres = prev.favorite_genres.includes(genre)
+        ? prev.favorite_genres.filter(g => g !== genre)
+        : [...prev.favorite_genres, genre];
+      return { ...prev, favorite_genres: genres };
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setMessage({ type: '', text: '' });
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    try {
+      const res = await authService.makeAuthenticatedRequest(
+        `${backendUrl}/api/auth/profile`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        }
+      );
+
+      if (!res.ok) {
+        const { error } = await res.json();
+        throw new Error(error || 'Failed to update profile');
+      }
+
+      const { user: updated } = await res.json();
+      setUser(updated);
+      setFormData({
+        username: updated.username ?? '',
+        email: updated.email ?? '',
+        bio: updated.bio ?? '',
+        avatar_url: updated.avatar_url ?? '',
+        gaming_style: updated.gaming_style ?? '',
+        favorite_genres: updated.favorite_genres ?? [],
+        total_games: updated.total_games || 0
+      });
+
+      setIsEditing(false);
+      setMessage({ type: 'success', text: 'Profile updated successfully!' });
+      dispatch({ type: ACTION_TYPES.SET_USER, payload: updated });
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFormData({
+      username: storeUser.username || '',
+      email: storeUser.email || '',
+      bio: storeUser.bio || '',
+      avatar_url: storeUser.avatar_url || '',
+      gaming_style: storeUser.gaming_style || '',
+      favorite_genres: storeUser.favorite_genres || [],
+      created_at: storeUser.created_at || '',
+      total_games: storeUser.total_games || 0
+    });
+    setIsEditing(false);
+    setMessage({ type: '', text: '' });
+  };
+
+  const navigateToDashboard = () => {
+    navigate('/dashboard');
+  };
+
+  // Steam Connect via OpenID
+  const handleSteamConnect = async () => {
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const returnTo = encodeURIComponent('/profile');
+
+      const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/login?return_to=${returnTo}`, {
+        method: 'GET'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        window.location.href = data.steam_auth_url;
+      } else {
+        const errorData = await response.json();
+        console.error('Steam connect failed:', errorData);
+        toast.error(errorData.message || 'Failed to initiate Steam connection');
+      }
+    } catch (error) {
+      console.error('Error initiating Steam connect:', error);
+      toast.error('Network error connecting to Steam');
+    }
+  };
+
+  // Manual Steam ID connection with library sync
+  const handleManualSteamConnect = async () => {
+    const steamId = prompt('Enter your Steam ID (17-digit number):');
+    if (!steamId || steamId.trim() === '') {
+      return;
+    }
+
+    if (!/^\d{17}$/.test(steamId.trim())) {
+      toast.error('Please enter a valid 17-digit Steam ID');
+      return;
+    }
+
+    const loadingToast = toast.loading('Connecting Steam account...');
+
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/connect`, {
+        method: 'POST',
+        body: JSON.stringify({ steam_id: steamId.trim() })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        dispatch({ type: ACTION_TYPES.SET_USER, payload: data.user });
+        toast.dismiss(loadingToast);
+        toast.success(`Steam connected! Synced ${data.new_games} new games and updated ${data.updated_games} games.`);
+        await refreshUserProfile();
+      } else {
+        const errorData = await response.json();
+        toast.dismiss(loadingToast);
+        toast.error(errorData.error || 'Failed to connect Steam account');
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      console.error('Error connecting Steam manually:', error);
+      toast.error('Network error connecting to Steam');
+    }
+  };
+
+  // Steam Disconnect
+  const handleDisconnect = async () => {
+    if (!window.confirm('Are you sure you want to disconnect your Steam account? This will clear your game library.')) {
+      return;
+    }
+
+    const loadingToast = toast.loading('Disconnecting Steam account...');
+
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/disconnect`, {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        await refreshUserProfile();
+        toast.dismiss(loadingToast);
+        toast.success('Steam account disconnected successfully!');
+      } else {
+        const errorData = await response.json();
+        toast.dismiss(loadingToast);
+        toast.error(errorData.error || 'Failed to disconnect Steam');
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      console.error('Error disconnecting Steam:', error);
+      toast.error('Network error disconnecting Steam');
+    }
+  };
+
+  // Steam Library Sync
+  const handleSyncLibrary = async () => {
+    if (!storeUser.is_steam_connected) {
+      toast.error('Please connect your Steam account first');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncMessage('');
+    const loadingToast = toast.loading('Syncing Steam library...');
+
+    try {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      const response = await authService.authenticatedFetch(`${backendUrl}/api/steam/sync-games`, {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.dismiss(loadingToast);
+        setSyncMessage(data.message || `Synced ${data.new_games} new games and updated ${data.updated_games} games`);
+        toast.success(data.message || `Synced ${data.new_games} new games and updated ${data.updated_games} games`);
+        await refreshUserProfile();
+      } else {
+        const errorData = await response.json();
+        toast.dismiss(loadingToast);
+        setSyncMessage(errorData.error || 'Failed to sync library');
+        toast.error(errorData.error || 'Failed to sync library');
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      setSyncMessage('Network error syncing library');
+      toast.error('Network error syncing library');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
+  const gamingStyles = ['Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
+        <div className="text-white text-xl">Loading your profile...</div>
+      </div>
+    );
+  }
+
+  return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 relative">
+                {/* Floating Particles Background */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+                {[...Array(30)].map((_, i) => (
+                    <div
+                    key={i}
+                    className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
+                    style={{
+                        left: `${Math.random() * 100}%`,
+                        top: `${Math.random() * 100}%`,
+                        animationDelay: `${Math.random() * 3}s`,
+                        animationDuration: `${2 + Math.random() * 3}s`
+                    }}
+                    ></div>
+                ))}
+                </div>
+
+                <div className="max-w-6xl mx-auto relative z-10">
+
+                {/* Header */}
+                <div className="mb-8">
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h1 className="text-3xl font-bold text-white mb-2">Profile Settings</h1>
+                                <p className="text-white/70">Manage your gaming profile and preferences</p>
+                            </div>
+                            <button
+                                onClick={navigateToDashboard}
+                                className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300"
+                            >
+                                ← Back to Dashboard
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Message Display */}
+                {message.text && (
+                    <div className="mb-6">
+                        <div className={`p-4 rounded-xl border ${message.type === 'success'
+                            ? 'bg-green-500/20 border-green-500/30 text-green-300'
+                            : message.type === 'error'
+                                ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                                : 'bg-blue-500/20 border-blue-500/30 text-blue-300'
+                            }`}>
+                            {message.text}
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+
+                    {/* Profile Overview */}
+                    <div className="lg:col-span-1">
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+                            <div className="text-center">
+
+                                {/* Avatar */}
+                                <div className="mb-6">
+                                    {user?.avatar_url ? (
+                                        <img
+                                            src={user.avatar_url}
+                                            alt="Profile Avatar"
+                                            className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"
                                         />
                                     ) : null}
                                     
@@ -385,6 +513,101 @@ export const Profile = () => {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* User Info */}
+                                <h2 className="text-2xl font-bold text-white mb-2">{user?.username}</h2>
+                                <p className="text-white/70 mb-4">{user?.email}</p>
+
+                                {/* Gaming Stats */}
+                                <div className="space-y-3 mb-6">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/70">Total Games:</span>
+                                        <span className="text-white font-medium">{storeUser?.total_games || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/70">Steam Connected:</span>
+                                        <span className={`font-medium ${storeUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
+                                            {storeUser?.is_steam_connected ? 'Yes' : 'No'}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/70">Member Since:</span>
+                                        <span className="text-white font-medium">
+                                            {storeUser?.created_at ? new Date(storeUser.created_at).toLocaleDateString() : 'Unknown'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Steam Integration */}
+                                {!storeUser?.is_steam_connected && (
+                                    <div className="w-full">
+                                        <ConnectSteamButton
+                                            className="
+                                        w-full py-3 px-4
+                                        bg-gradient-to-r from-blue-600 to-blue-700
+                                        hover:from-blue-700 hover:to-blue-800
+                                        text-white font-semibold rounded-xl
+                                        transition-all duration-300 transform hover:-translate-y-1
+                                        shadow-lg hover:shadow-blue-500/25
+                                        flex items-center justify-center space-x-2
+                                    "
+                                        />
+
+                                    </div>
+                                )}
+                                {storeUser?.is_steam_connected && (
+                                    <div className="text-white/70 text-sm mb-4">
+                                        <p>Steam ID: {storeUser?.steam_id || 'Not found'}</p>
+                                        <p>Steam Profile: <a href={storeUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{storeUser?.steam_profile_url || 'Not available'}</a></p>
+                                    </div>
+                                )}
+
+                                {/* Disconnect Button */}
+                                <div className="mt-6">
+                                    {storeUser?.is_steam_connected && (
+                                        <button
+                                            onClick={handleDisconnectSteam}
+                                            className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all duration-300"
+                                        >
+                                            Disconnect Steam
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Profile Details */}
+                    <div className="lg:col-span-2">
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+
+                            {/* Edit Toggle */}
+                            <div className="flex items-center justify-between mb-8">
+                                <h3 className="text-2xl font-bold text-white">Profile Details</h3>
+                                {!isEditing ? (
+                                    <button
+                                        onClick={() => setIsEditing(true)}
+                                        className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-all duration-300"
+                                    >
+                                        ✏️ Edit Profile
+                                    </button>
+                                ) : (
+                                    <div className="flex space-x-3">
+                                        <button
+                                            onClick={handleCancel}
+                                            className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-xl transition-all duration-300"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSave}
+                                            disabled={isSaving}
+                                            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-xl transition-all duration-300 disabled:opacity-50"
+                                        >
+                                            {isSaving ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                             {/* 🔧 FIXED: Profile Details - Better organization */}
@@ -521,6 +744,102 @@ export const Profile = () => {
                                                 onClick={handleSave}
                                                 disabled={isSaving}
                                                 className="flex-1 px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+
+                                {/* Basic Info */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-sm font-medium text-white/90 mb-2">Username</label>
+                                        <input
+                                            type="text"
+                                            value={formData.username}
+                                            disabled={true}
+                                            className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white/50 cursor-not-allowed"
+                                        />
+                                        <p className="text-xs text-white/50 mt-1">Username cannot be changed</p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-white/90 mb-2">Email</label>
+                                        <input
+                                            type="email"
+                                            value={formData.email}
+                                            disabled={true}
+                                            className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white/50 cursor-not-allowed"
+                                        />
+                                        <p className="text-xs text-white/50 mt-1">Email cannot be changed</p>
+                                    </div>
+                                </div>
+
+                                {/* Bio */}
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">Bio</label>
+                                    <textarea
+                                        name="bio"
+                                        value={formData.bio}
+                                        onChange={handleChange}
+                                        disabled={!isEditing}
+                                        rows={4}
+                                        placeholder="Tell other gamers about yourself..."
+                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 resize-none transition-all duration-300 ${isEditing
+                                            ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
+                                            : 'cursor-not-allowed text-white/70'
+                                            }`}
+                                    />
+                                </div>
+
+                                {/* Avatar URL */}
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">Avatar URL</label>
+                                    <input
+                                        type="url"
+                                        name="avatar_url"
+                                        value={formData.avatar_url}
+                                        onChange={handleChange}
+                                        disabled={!isEditing}
+                                        placeholder="https://example.com/your-avatar.jpg"
+                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/50 transition-all duration-300 ${isEditing
+                                            ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
+                                            : 'cursor-not-allowed text-white/70'
+                                            }`}
+                                    />
+                                </div>
+
+                                {/* Gaming Style */}
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">Gaming Style</label>
+                                    <select
+                                        name="gaming_style"
+                                        value={formData.gaming_style}
+                                        onChange={handleChange}
+                                        disabled={!isEditing}
+                                        className={`w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white transition-all duration-300 ${isEditing
+                                            ? 'focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/30'
+                                            : 'cursor-not-allowed text-white/70'
+                                            }`}
+                                    >
+                                        <option value="">Select your style</option>
+                                        {gamingStyles.map(style => (
+                                            <option key={style} value={style.toLowerCase()} className="bg-slate-800">
+                                                {style}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Favorite Genres */}
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-4">Favorite Genres</label>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        {availableGenres.map(genre => (
+                                            <button
+                                                key={genre}
+                                                type="button"
+                                                onClick={() => isEditing && handleGenreToggle(genre)}
+                                                disabled={!isEditing}
+                                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${formData.favorite_genres.includes(genre)
+                                                    ? 'bg-coral-500 text-white'
+                                                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                                                    } ${!isEditing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                             >
                                                 {isSaving ? '💾 Saving...' : '💾 Save Changes'}
                                             </button>
@@ -535,6 +854,49 @@ export const Profile = () => {
                                     </>
                                 )}
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Game List Panel */}
+                    <div className="lg:col-span-1 hidden lg:block">
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 shadow-2xl h-full flex flex-col">
+                            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                <span role="img" aria-label="games">🎮</span> My Games
+                            </h3>
+                            <button
+                                onClick={handleSyncLibrary}
+                                disabled={isSyncing || isGamesLoading}
+                                className="mb-4 w-full p-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50"
+                            >
+                                {isSyncing ? 'Syncing...' : '🔄 Sync Game Library'}
+                            </button>
+                            {syncMessage && (
+                                <div className={`mb-2 text-center text-sm ${syncMessage.includes('error') || syncMessage.includes('fail') ? 'text-red-300' : 'text-green-300'}`}>{syncMessage}</div>
+                            )}
+                            {isGamesLoading ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <span className="text-white/70">Loading games...</span>
+                                </div>
+                            ) : gamesError ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <span className="text-red-300">{gamesError}</span>
+                                </div>
+                            ) : gameList.length === 0 ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <span className="text-white/70">No games found.</span>
+                                </div>
+                            ) : (
+                                <ul className="overflow-y-auto flex-1 space-y-2 pr-2 max-h-[120vh]">
+                                    {gameList.map((game) => (
+                                        <li key={game.id} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white/90 flex items-center gap-2">
+                                            {game.icon_url && (
+                                                <img src={game.icon_url} alt={game.name} className="w-8 h-8 rounded mr-2" />
+                                            )}
+                                            <span className="truncate">{game.name}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                     </div>
                 </div>

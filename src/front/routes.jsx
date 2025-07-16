@@ -1,7 +1,5 @@
 import React from "react";
 import { createBrowserRouter, createRoutesFromElements, Route } from "react-router-dom";
-
-// Import your existing page components
 import { Layout } from "./pages/Layout";
 import { Home } from "./pages/Home";
 import { SignUp } from "./pages/SignUp";
@@ -16,6 +14,7 @@ import { Demo } from "./pages/Demo";
 import FindGames from "./pages/FindGames.jsx";
 import Friends from "./pages/Friends.jsx";
 import { GameLibrary } from "./pages/GameLibrary";
+import { SteamCallback } from "./pages/SteamCallback";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -42,6 +41,7 @@ export const router = createBrowserRouter(
                 <Route path="/sessions" element={<ProtectedRoute><FindGames /></ProtectedRoute>} /> {/* Legacy route for navbar */}
                 <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
                 <Route path="/game-library" element={<ProtectedRoute><GameLibrary /></ProtectedRoute>} />
+                <Route path= "/steam/callback" element= {<SteamCallback /> }/>
             </Route>
             
             {/* Standalone routes (no layout) */}
