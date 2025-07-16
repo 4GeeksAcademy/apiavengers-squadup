@@ -70,7 +70,7 @@ setup_commands(app)
 
 # Blueprints
 app.register_blueprint(auth, url_prefix='/api/auth')
-app.register_blueprint(steam_auth, url_prefix="/api")
+app.register_blueprint(steam_auth, url_prefix="/api/auth")
 app.register_blueprint(genre_bp, url_prefix="/api")
 app.register_blueprint(gaming, url_prefix='/api/gaming')
 
