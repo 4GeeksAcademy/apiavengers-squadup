@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, url_for, Blueprint, current_app
 from api.models import db, User
+from api.steam_auth import steam_auth
 import os
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS

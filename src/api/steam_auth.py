@@ -36,13 +36,14 @@ def steam_login():
         state_data = f"{current_user_id}:{frontend_url}"
         state = base64.urlsafe_b64encode(state_data.encode()).decode()
         
-        app_base = os.getenv('APP_BASE_URL', request.url_root.rstrip('/'))
+        # Use backend URL for the callback endpoint
+        backend_base = os.getenv('VITE_BACKEND_URL', request.url_root.rstrip('/'))
         
         params = {
             'openid.ns': 'http://specs.openid.net/auth/2.0',
             'openid.mode': 'checkid_setup',
-            'openid.return_to': f"{app_base}/api/auth/steam/callback?state={state}",
-            'openid.realm': app_base,
+            'openid.return_to': f"{backend_base}/api/auth/steam/callback?state={state}",
+            'openid.realm': backend_base,
             'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
             'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
         }
