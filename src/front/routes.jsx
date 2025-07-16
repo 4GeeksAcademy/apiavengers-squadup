@@ -14,36 +14,36 @@ import { Demo } from "./pages/Demo";
 import FindGames from "./pages/FindGames.jsx";
 import Friends from "./pages/Friends.jsx";
 import { GameLibrary } from "./pages/GameLibrary";
-import { SteamCallback } from "./pages/SteamCallback";
+
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
         <Route errorElement={<h1>Something went wrong!</h1>}>
-            
+
             {/* Routes with the main Navbar and Footer */}
             <Route element={<Layout />}>
                 <Route path="/" element={<Home />} />
-                
+
                 {/* Protected main app routes */}
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                
+
                 {/* Group-related routes */}
                 <Route path="/groups/:groupId" element={<ProtectedRoute><GroupPage /></ProtectedRoute>} />
                 <Route path="/sessions/:sessionId/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
-                
+
                 {/* Demo route - unprotected for easy access */}
                 <Route path="/demo" element={<Demo />} />
-                
-                
+
+
                 {/* Main app feature routes */}
                 <Route path="/find-games" element={<ProtectedRoute><FindGames /></ProtectedRoute>} />
                 <Route path="/sessions" element={<ProtectedRoute><FindGames /></ProtectedRoute>} /> {/* Legacy route for navbar */}
                 <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
                 <Route path="/game-library" element={<ProtectedRoute><GameLibrary /></ProtectedRoute>} />
-                <Route path= "/steam/callback" element= {<SteamCallback /> }/>
+
             </Route>
-            
+
             {/* Standalone routes (no layout) */}
             <Route path="/join/:inviteCode" element={<JoinGroup />} />
             <Route path="/login" element={<Login />} />

@@ -4,11 +4,6 @@ import authService from "../store/authService";
 const API = authService.getApiUrl();
 
 export const steamApi = {
-  /** redirect user to the backend → Steam OpenID flow */
-  goToSteamLogin() {
-    window.location.href = `${API}/api/auth/steam/login`;
-  },
-
   /** POST /auth/steam/connect after callback */
   /** POST /auth/steam/connect after callback */
 async connectSteam(steamid: string) {
