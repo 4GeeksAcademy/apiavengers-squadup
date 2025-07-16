@@ -4,6 +4,7 @@ import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import CreateGroupModal from '../components/CreateGroupModal';
+import GroupActionButtons from '../components/GroupActionButtons'; // ✅ ADDED: Import the new component
 
 export const Dashboard = () => {
     const navigate = useNavigate();
@@ -14,7 +15,6 @@ export const Dashboard = () => {
     const [groups, setGroups] = useState([]);
     const [commonGames, setCommonGames] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [loadingGroupAction, setLoadingGroupAction] = useState(null);
     const [activeSection, setActiveSection] = useState('overview');
     const [recentActivity, setRecentActivity] = useState([]);
     const [groupFilter, setGroupFilter] = useState('all'); // all, member, creator
@@ -166,90 +166,24 @@ export const Dashboard = () => {
         }
     };
 
-    const handleLeaveGroup = async (groupId, groupName) => {
-        if (!window.confirm(`Are you sure you want to leave "${groupName}"?`)) {
-            return;
-        }
-
-        setLoadingGroupAction(groupId);
-        const loadingToast = toast.loading(`Leaving ${groupName}...`);
+    // ✅ UPDATED: Replace old functions with new handleGroupUpdate
+    const handleGroupUpdate = (action, wasDeleted, groupId) => {
+        console.log('🔄 Group update received:', { action, wasDeleted, groupId });
         
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/leave`, {
-                method: 'POST'
+        if (wasDeleted || action === 'deleted') {
+            // Remove the group from state completely
+            setGroups(prevGroups => {
+                const updatedGroups = prevGroups.filter(g => g.id !== groupId);
+                console.log('🗑️ Group removed from state. Remaining groups:', updatedGroups.length);
+                return updatedGroups;
             });
-
-            toast.dismiss(loadingToast);
-
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (data.group_deleted) {
-                    toast.success(`Group "${groupName}" was deleted as you were the last member.`);
-                } else {
-                    toast.success(`Successfully left "${groupName}"`);
-                }
-                
-                // Remove group from local state
-                const updatedGroups = groups.filter(g => g.id !== groupId);
-                setGroups(updatedGroups);
-                
-                // Refresh common games
-                await fetchCommonGames(updatedGroups);
-            } else {
-                const errorData = await response.json();
-                toast.error(`Failed to leave group: ${errorData.error || 'Unknown error'}`);
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error leaving group:', error);
-            toast.error("A network error occurred.");
-        } finally {
-            setLoadingGroupAction(null);
-        }
-    };
-
-    const handleDeleteGroup = async (groupId, groupName, isCreator) => {
-        if (!isCreator) {
-            toast.error("Only the group creator can delete the group.");
-            return;
-        }
-
-        if (!window.confirm(`Are you sure you want to DELETE "${groupName}"? This action cannot be undone and will remove all members.`)) {
-            return;
-        }
-
-        setLoadingGroupAction(groupId);
-        const loadingToast = toast.loading(`Deleting ${groupName}...`);
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/delete`, {
-                method: 'DELETE'
-            });
-
-            toast.dismiss(loadingToast);
-
-            if (response.ok) {
-                toast.success(`Group "${groupName}" deleted successfully.`);
-                
-                // Remove group from local state
-                const updatedGroups = groups.filter(g => g.id !== groupId);
-                setGroups(updatedGroups);
-                
-                // Refresh common games
-                await fetchCommonGames(updatedGroups);
-            } else {
-                const errorData = await response.json();
-                toast.error(`Failed to delete group: ${errorData.error || 'Unknown error'}`);
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error deleting group:', error);
-            toast.error("A network error occurred.");
-        } finally {
-            setLoadingGroupAction(null);
+            
+            // Refresh common games after group removal
+            fetchCommonGames();
+        } else if (action === 'left') {
+            // For leaves (with ownership transfer), refresh the whole dashboard
+            console.log('👋 Member left, refreshing dashboard data...');
+            loadDashboardData();
         }
     };
 
@@ -553,7 +487,6 @@ export const Dashboard = () => {
                                 {filteredGroups.length > 0 ? (
                                     filteredGroups.map((group) => {
                                         const isCreator = group.creator?.id === user.id;
-                                        const isLoading = loadingGroupAction === group.id;
                                         
                                         return (
                                             <div 
@@ -615,24 +548,12 @@ export const Dashboard = () => {
                                                             <span>Invite</span>
                                                         </button>
                                                         
-                                                        <button
-                                                            onClick={() => handleLeaveGroup(group.id, group.name)}
-                                                            disabled={isLoading}
-                                                            className="flex-1 px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-600/30 text-yellow-300 rounded-lg text-sm transition-colors disabled:opacity-50"
-                                                        >
-                                                            {isLoading ? '...' : 'Leave'}
-                                                        </button>
-                                                        
-                                                        {isCreator && (
-                                                            <button
-                                                                onClick={() => handleDeleteGroup(group.id, group.name, isCreator)}
-                                                                disabled={isLoading}
-                                                                className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/30 text-red-300 rounded-lg text-sm transition-colors disabled:opacity-50"
-                                                                title="Delete group"
-                                                            >
-                                                                {isLoading ? '...' : '🗑️'}
-                                                            </button>
-                                                        )}
+                                                        {/* ✅ REPLACED: Use the new GroupActionButtons component */}
+                                                        <GroupActionButtons 
+                                                            group={group} 
+                                                            user={user} 
+                                                            onGroupUpdate={(action, wasDeleted) => handleGroupUpdate(action, wasDeleted, group.id)}
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>
