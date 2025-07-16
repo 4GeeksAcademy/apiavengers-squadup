@@ -8,7 +8,7 @@ from flask_jwt_extended import (
     create_access_token, create_refresh_token, jwt_required,
     get_jwt_identity, get_jwt
 )
-# No longer need to import password hashing functions here
+from werkzeug.security import generate_password_hash, check_password_hash
 import re
 import json
 from datetime import datetime, timedelta
@@ -140,7 +140,7 @@ def register():
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        current_app.logger.info(f"Generated access_token: {access_token[:20]}...")
+        current_app.logger.error(f"Registration error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
