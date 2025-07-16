@@ -21,6 +21,7 @@ flask-socketio = "*"
 flask-swagger = "*"
 sqlalchemy = "*"
 flask-limiter = "*"
+cors = "*"
 
 [dev-packages]
 
