@@ -17,10 +17,10 @@ werkzeug = "*"
 requests = "*"
 pyjwt = "==2.9.0"
 python-dotenv = "*"
-flask-limiter = "*"
 flask-socketio = "*"
 flask-swagger = "*"
 sqlalchemy = "*"
+flask-limiter = "*"
 
 [dev-packages]
 
