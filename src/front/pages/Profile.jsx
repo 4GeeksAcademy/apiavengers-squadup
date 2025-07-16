@@ -35,7 +35,7 @@ export const Profile = () => {
     const navigate = useNavigate();
     const backendUrl = authService.getApiUrl();
 
-    // Move loadProfile out so it can be reused
+    // Load profile data
     const loadProfile = useCallback(async () => {
         if (storeUser) {
             setFormData({
@@ -54,7 +54,7 @@ export const Profile = () => {
         }
 
         const cachedUser = authService.getCurrentUser();
-        if (cachedUser && cachedUser.steam_id && cachedUser.is_steam_connected) {
+        if (cachedUser) {
             setFormData({
                 username: cachedUser.username ?? '',
                 email: cachedUser.email ?? '',
@@ -116,7 +116,6 @@ export const Profile = () => {
 
     useEffect(() => {
         loadProfile();
-        // eslint-disable-next-line
     }, [loadProfile]);
 
     useEffect(() => {
@@ -165,55 +164,61 @@ export const Profile = () => {
     const handleSave = async () => {
         setIsSaving(true);
         setMessage({ type: '', text: '' });
-        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
         try {
             const res = await authService.makeAuthenticatedRequest(
                 `${backendUrl}/api/auth/profile`,
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData),
+                    body: JSON.stringify({
+                        bio: formData.bio,
+                        avatar_url: formData.avatar_url,
+                        gaming_style: formData.gaming_style,
+                        favorite_genres: formData.favorite_genres
+                    }),
                 }
             );
 
             if (!res.ok) {
-                const { error } = await res.json();
-                throw new Error(error || 'Failed to update profile');
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to update profile');
             }
 
             const { user: updated } = await res.json();
             setUser(updated);
-            setFormData({
-                username: updated.username ?? '',
-                email: updated.email ?? '',
+            setFormData(prev => ({
+                ...prev,
                 bio: updated.bio ?? '',
                 avatar_url: updated.avatar_url ?? '',
                 gaming_style: updated.gaming_style ?? '',
-                favorite_genres: updated.favorite_genres ?? [],
-                total_games: updated.total_games || 0
-            });
+                favorite_genres: updated.favorite_genres ?? []
+            }));
 
             setIsEditing(false);
             setMessage({ type: 'success', text: 'Profile updated successfully!' });
             dispatch({ type: ACTION_TYPES.SET_USER, payload: updated });
+            toast.success('Profile updated successfully!');
         } catch (err) {
             console.error(err);
             setMessage({ type: 'error', text: err.message });
+            toast.error(err.message || 'Failed to update profile');
         } finally {
             setIsSaving(false);
         }
     };
 
     const handleCancel = () => {
+        // Reset form data to current user data
         setFormData({
-            username: storeUser.username || '',
-            email: storeUser.email || '',
-            bio: storeUser.bio || '',
-            avatar_url: storeUser.avatar_url || '',
-            gaming_style: storeUser.gaming_style || '',
-            favorite_genres: storeUser.favorite_genres || [],
-            created_at: storeUser.created_at || '',
-            total_games: storeUser.total_games || 0
+            username: user?.username ?? '',
+            email: user?.email ?? '',
+            bio: user?.bio ?? '',
+            avatar_url: user?.avatar_url ?? '',
+            gaming_style: user?.gaming_style ?? '',
+            favorite_genres: user?.favorite_genres ?? [],
+            created_at: user?.created_at ?? '',
+            total_games: user?.total_games || 0
         });
         setIsEditing(false);
         setMessage({ type: '', text: '' });
@@ -223,70 +228,24 @@ export const Profile = () => {
         navigate('/dashboard');
     };
 
-    // Steam Connect via OpenID
     const handleSteamConnect = async () => {
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const returnTo = encodeURIComponent('/profile');
-
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/login?return_to=${returnTo}`, {
-                method: 'GET'
-            });
+            const response = await authService.makeAuthenticatedRequest(
+                `${backendUrl}/api/auth/steam/login`
+            );
 
             if (response.ok) {
-                const data = await response.json();
-                window.location.href = data.steam_auth_url;
+                const { steam_auth_url } = await response.json();
+                window.location.href = steam_auth_url;
             } else {
-                const errorData = await response.json();
-                console.error('Steam connect failed:', errorData);
-                toast.error(errorData.message || 'Failed to initiate Steam connection');
+                toast.error('Failed to initiate Steam connection');
             }
         } catch (error) {
-            console.error('Error initiating Steam connect:', error);
+            console.error('Error connecting Steam:', error);
             toast.error('Network error connecting to Steam');
         }
     };
 
-    // Manual Steam ID connection with library sync
-    const handleManualSteamConnect = async () => {
-        const steamId = prompt('Enter your Steam ID (17-digit number):');
-        if (!steamId || steamId.trim() === '') {
-            return;
-        }
-
-        if (!/^\d{17}$/.test(steamId.trim())) {
-            toast.error('Please enter a valid 17-digit Steam ID');
-            return;
-        }
-
-        const loadingToast = toast.loading('Connecting Steam account...');
-
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/connect`, {
-                method: 'POST',
-                body: JSON.stringify({ steam_id: steamId.trim() })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                dispatch({ type: ACTION_TYPES.SET_USER, payload: data.user });
-                toast.dismiss(loadingToast);
-                toast.success(`Steam connected! Synced ${data.new_games} new games and updated ${data.updated_games} games.`);
-                await refreshUserProfile();
-            } else {
-                const errorData = await response.json();
-                toast.dismiss(loadingToast);
-                toast.error(errorData.error || 'Failed to connect Steam account');
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error connecting Steam manually:', error);
-            toast.error('Network error connecting to Steam');
-        }
-    };
-
-    // Steam Disconnect
     const handleDisconnect = async () => {
         if (!window.confirm('Are you sure you want to disconnect your Steam account? This will clear your game library.')) {
             return;
@@ -295,10 +254,10 @@ export const Profile = () => {
         const loadingToast = toast.loading('Disconnecting Steam account...');
 
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/disconnect`, {
-                method: 'POST'
-            });
+            const response = await authService.makeAuthenticatedRequest(
+                `${backendUrl}/api/auth/steam/disconnect`,
+                { method: 'POST' }
+            );
 
             if (response.ok) {
                 await refreshUserProfile();
@@ -316,7 +275,6 @@ export const Profile = () => {
         }
     };
 
-    // Steam Library Sync
     const handleSyncLibrary = async () => {
         if (!storeUser.is_steam_connected) {
             toast.error('Please connect your Steam account first');
@@ -328,10 +286,10 @@ export const Profile = () => {
         const loadingToast = toast.loading('Syncing Steam library...');
 
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/steam/sync-games`, {
-                method: 'POST'
-            });
+            const response = await authService.makeAuthenticatedRequest(
+                `${backendUrl}/api/steam/sync-games`,
+                { method: 'POST' }
+            );
 
             if (response.ok) {
                 const data = await response.json();
@@ -432,19 +390,15 @@ export const Profile = () => {
                                             alt="Profile Avatar"
                                             className="w-24 h-24 rounded-full mx-auto border-4 border-white/20"
                                         />
-                                    ) : null}
-
-                                    {/* Avatar component fallback */}
-                                    <div
-                                        className={`${storeUser.steam_avatar_url || formData.avatar_url ? 'hidden' : 'flex'} mb-4 mx-auto border-4 border-white/20 rounded-full`}
-                                        style={{ width: '128px', height: '128px' }}
-                                    >
-                                        <Avatar
-                                            name={formData.username || 'User'}
-                                            size={120}
-                                            className="border-none"
-                                        />
-                                    </div>
+                                    ) : (
+                                        <div className="mb-4 mx-auto border-4 border-white/20 rounded-full" style={{ width: '128px', height: '128px' }}>
+                                            <Avatar
+                                                name={formData.username || 'User'}
+                                                size={120}
+                                                className="border-none"
+                                            />
+                                        </div>
+                                    )}
 
                                     <h2 className="text-2xl font-bold text-white">{formData.username}</h2>
                                     {storeUser.steam_username && (
@@ -452,19 +406,19 @@ export const Profile = () => {
                                     )}
                                 </div>
 
-                                {/* 🔧 FIXED: Steam Connection Status - Better layout */}
-                                <div className="w-full p-6 bg-white/5 rounded-xl border border-white/10">
+                                {/* Steam Connection Status */}
+                                <div className="w-full p-6 bg-white/5 rounded-xl border border-white/10 mb-6">
                                     <div className="flex items-center justify-between mb-4">
                                         <span className="text-white font-medium">Steam Status</span>
-                                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${storeUser.steam_connected
+                                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${storeUser.is_steam_connected
                                             ? 'bg-green-500/20 text-green-300 border border-green-500/30'
                                             : 'bg-red-500/20 text-red-300 border border-red-500/30'
                                             }`}>
-                                            {storeUser.steam_connected ? 'Connected' : 'Not Connected'}
+                                            {storeUser.is_steam_connected ? 'Connected' : 'Not Connected'}
                                         </span>
                                     </div>
 
-                                    {storeUser.steam_connected ? (
+                                    {storeUser.is_steam_connected ? (
                                         <div className="space-y-3">
                                             <p className="text-white/80">
                                                 <span className="text-coral-400 font-semibold">{storeUser.total_games || 0}</span> games in library
@@ -495,39 +449,18 @@ export const Profile = () => {
                                             <p className="text-white/70 text-sm">
                                                 Connect your Steam account to sync your game library and find games to play with friends
                                             </p>
-                                            <div className="flex flex-col gap-2">
-                                                <button
-                                                    onClick={handleSteamConnect}
-                                                    className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center justify-center gap-2"
-                                                >
-                                                    🎮 Connect via Steam
-                                                </button>
-                                                <button
-                                                    onClick={handleManualSteamConnect}
-                                                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center justify-center gap-2"
-                                                >
-                                                    📝 Manual Steam ID
-                                                </button>
-                                            </div>
+                                            <ConnectSteamButton
+                                                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-lg hover:shadow-blue-500/25 flex items-center justify-center space-x-2"
+                                            />
                                         </div>
                                     )}
                                 </div>
 
                                 {/* User Info */}
-                                <h2 className="text-2xl font-bold text-white mb-2">{user?.username}</h2>
-                                <p className="text-white/70 mb-4">{user?.email}</p>
-
-                                {/* Gaming Stats */}
                                 <div className="space-y-3 mb-6">
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Total Games:</span>
                                         <span className="text-white font-medium">{storeUser?.total_games || 0}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-white/70">Steam Connected:</span>
-                                        <span className={`font-medium ${storeUser?.is_steam_connected ? 'text-green-300' : 'text-red-300'}`}>
-                                            {storeUser?.is_steam_connected ? 'Yes' : 'No'}
-                                        </span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-white/70">Member Since:</span>
@@ -535,42 +468,6 @@ export const Profile = () => {
                                             {storeUser?.created_at ? new Date(storeUser.created_at).toLocaleDateString() : 'Unknown'}
                                         </span>
                                     </div>
-                                </div>
-
-                                {/* Steam Integration */}
-                                {!storeUser?.is_steam_connected && (
-                                    <div className="w-full">
-                                        <ConnectSteamButton
-                                            className="
-                                        w-full py-3 px-4
-                                        bg-gradient-to-r from-blue-600 to-blue-700
-                                        hover:from-blue-700 hover:to-blue-800
-                                        text-white font-semibold rounded-xl
-                                        transition-all duration-300 transform hover:-translate-y-1
-                                        shadow-lg hover:shadow-blue-500/25
-                                        flex items-center justify-center space-x-2
-                                    "
-                                        />
-
-                                    </div>
-                                )}
-                                {storeUser?.is_steam_connected && (
-                                    <div className="text-white/70 text-sm mb-4">
-                                        <p>Steam ID: {storeUser?.steam_id || 'Not found'}</p>
-                                        <p>Steam Profile: <a href={storeUser?.steam_profile_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{storeUser?.steam_profile_url || 'Not available'}</a></p>
-                                    </div>
-                                )}
-
-                                {/* Disconnect Button */}
-                                <div className="mt-6">
-                                    {storeUser?.is_steam_connected && (
-                                        <button
-                                            onClick={handleDisconnect}
-                                            className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all duration-300"
-                                        >
-                                            Disconnect Steam
-                                        </button>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -609,7 +506,7 @@ export const Profile = () => {
                                 )}
                             </div>
 
-                            {/* 🔧 FIXED: Profile Details - Better organization */}
+                            {/* Profile Details */}
                             <div className="space-y-6">
                                 {!isEditing ? (
                                     <>
@@ -668,13 +565,6 @@ export const Profile = () => {
                                                 </div>
                                             </div>
                                         </div>
-
-                                        <button
-                                            onClick={() => setIsEditing(true)}
-                                            className="w-full px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
-                                        >
-                                            ✏️ Edit Profile
-                                        </button>
                                     </>
                                 ) : (
                                     <>
@@ -765,13 +655,15 @@ export const Profile = () => {
                             <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                                 <span role="img" aria-label="games">🎮</span> My Games
                             </h3>
-                            <button
-                                onClick={handleSyncLibrary}
-                                disabled={isSyncing || isGamesLoading}
-                                className="mb-4 w-full p-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50"
-                            >
-                                {isSyncing ? 'Syncing...' : '🔄 Sync Game Library'}
-                            </button>
+                            {storeUser?.is_steam_connected && (
+                                <button
+                                    onClick={handleSyncLibrary}
+                                    disabled={isSyncing || isGamesLoading}
+                                    className="mb-4 w-full p-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50"
+                                >
+                                    {isSyncing ? 'Syncing...' : '🔄 Sync Game Library'}
+                                </button>
+                            )}
                             {syncMessage && (
                                 <div className={`mb-2 text-center text-sm ${syncMessage.includes('error') || syncMessage.includes('fail') ? 'text-red-300' : 'text-green-300'}`}>{syncMessage}</div>
                             )}
@@ -785,7 +677,9 @@ export const Profile = () => {
                                 </div>
                             ) : gameList.length === 0 ? (
                                 <div className="flex-1 flex items-center justify-center">
-                                    <span className="text-white/70">No games found.</span>
+                                    <span className="text-white/70">
+                                        {storeUser?.is_steam_connected ? 'No games found.' : 'Connect Steam to see your games.'}
+                                    </span>
                                 </div>
                             ) : (
                                 <ul className="overflow-y-auto flex-1 space-y-2 pr-2 max-h-[120vh]">
