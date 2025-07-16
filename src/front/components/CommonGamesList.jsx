@@ -1,6 +1,7 @@
 // src/front/components/CommonGamesList.jsx
 import React, { useState, useEffect } from 'react';
-import authService from '../store/authService'; // Assuming you use this for fetches
+import authService from '../store/authService';
+import GameImage from './GameImage'; // 🔧 MISSING IMPORT - ADDED
 
 const CommonGamesList = ({ groupId }) => {
     const [games, setGames] = useState([]);
@@ -32,7 +33,12 @@ const CommonGamesList = ({ groupId }) => {
             {games.length > 0 ? (
                 games.map(game => (
                     <div key={game.id} className="flex items-center p-3 bg-white/5 rounded-lg">
-                        <img src={game.header_image} alt={game.name} className="w-24 h-12 object-cover rounded-md mr-4" />
+                        <GameImage 
+                            src={game.header_image} 
+                            alt={game.name}
+                            fallbackText={game.name}
+                            className="w-24 h-12 object-cover rounded-md mr-4"
+                        />
                         <div className="flex-grow">
                             <p className="font-bold text-white">{game.name}</p>
                             <p className="text-sm text-green-300">{game.ownership_stats.coverage_percentage.toFixed(0)}% ownership</p>

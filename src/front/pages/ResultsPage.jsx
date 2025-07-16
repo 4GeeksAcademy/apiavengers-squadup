@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import authService from '../store/authService';
-import toast from 'react-hot-toast'; // Add for error feedback
+import toast from 'react-hot-toast';
+import GameImage from '../components/GameImage'; // 🔧 FIXED: Correct path for pages folder
 
 const ResultsPage = () => {
     const { sessionId } = useParams();
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null); // Add error state
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         const fetchResults = async () => {
@@ -65,7 +66,12 @@ const ResultsPage = () => {
                 <p className="text-2xl text-white/80">The winner is...</p>
                 <h1 className="text-7xl font-bold text-white uppercase tracking-wider">{winner.name}!</h1>
             </div>
-            <img src={winner.header_image} alt={winner.name} className="w-full max-w-2xl rounded-xl shadow-2xl mb-8" />
+            <GameImage 
+                src={winner.header_image} 
+                alt={winner.name}
+                fallbackText={winner.name}
+                className="w-full max-w-2xl rounded-xl shadow-2xl mb-8"
+            />
             <div className="backdrop-blur-xl bg-white/10 p-6 rounded-2xl w-full max-w-lg">
                 <h2 className="text-xl font-bold text-white mb-4">Final Scores</h2>
                 <div className="space-y-2">

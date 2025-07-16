@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-// 1. ADD THE TOAST IMPORT
 import toast from 'react-hot-toast';
+import GameImage from './GameImage';
 
 const QuickVote = ({ groupId }) => {
     const [votableGames, setVotableGames] = useState([]);
@@ -28,12 +28,10 @@ const QuickVote = ({ groupId }) => {
                 setSessionId(data.session.id);
                 setVotableGames(data.votable_games);
             } else {
-                // 2. REPLACE ALERT
                 toast.error('Failed to start voting session.');
             }
         } catch (error) {
             console.error('Error starting vote:', error);
-            // REPLACE ALERT
             toast.error('A network error occurred.');
         } finally {
             setLoading(false);
@@ -47,7 +45,6 @@ const QuickVote = ({ groupId }) => {
             } else if (prev.length < 3) {
                 return [...prev, gameId];
             } else {
-                // 3. REPLACE ALERT
                 toast.error('You can only select up to 3 games.');
                 return prev;
             }
@@ -56,7 +53,6 @@ const QuickVote = ({ groupId }) => {
 
     const submitVotes = async () => {
         if (selectedGames.length === 0) {
-            // 4. REPLACE ALERT
             toast.error('Please select at least one game.');
             return;
         }
@@ -81,19 +77,16 @@ const QuickVote = ({ groupId }) => {
                     window.location.href = `/sessions/${sessionId}/results`;
                 }, 2000);
             } else {
-                // REPLACE ALERT
                 toast.error('Failed to submit votes.');
             }
         } catch (error) {
             console.error('Error submitting votes:', error);
-            // REPLACE ALERT
             toast.error('A network error occurred.');
         } finally {
             setLoading(false);
         }
     };
 
-    // --- The rest of your JSX remains completely unchanged ---
     if (!sessionId && !loading) {
         return (
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl text-center">
@@ -153,13 +146,13 @@ const QuickVote = ({ groupId }) => {
                             }`}
                         >
                             <div className="flex items-center space-x-3">
-                                {game.header_image && (
-                                    <img 
-                                        src={game.header_image} 
-                                        alt={game.name}
-                                        className="w-20 h-12 object-cover rounded"
-                                    />
-                                )}
+                                {/* 🔧 OPTIMIZED: Removed unnecessary conditional - GameImage handles missing src gracefully */}
+                                <GameImage
+                                    src={game.header_image}
+                                    alt={game.name}
+                                    fallbackText={game.name}
+                                    className="w-20 h-12 object-cover rounded"
+                                />
                                 <div className="flex-1">
                                     <h3 className="text-white font-medium">{game.name}</h3>
                                     <p className="text-white/60 text-sm">
