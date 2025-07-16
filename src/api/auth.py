@@ -237,7 +237,9 @@ def refresh_token():
         )
 
         return jsonify({
-            "access_token": new_access_token,
+            "tokens": {
+                "access_token": new_access_token
+            },
             "user": user.serialize(),
             "expires_in": 3600,  # 1 hour in seconds
             "code": "TOKEN_REFRESHED"
