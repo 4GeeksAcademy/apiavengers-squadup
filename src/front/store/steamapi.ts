@@ -9,11 +9,11 @@ export const steamApi = {
     window.location.href = `${API}/api/auth/steam/login`;
   },
 
-  /** POST /gaming/steam/connect after callback */
-  /** POST /gaming/steam/connect after callback */
+  /** POST /auth/steam/connect after callback */
+  /** POST /auth/steam/connect after callback */
 async connectSteam(steamid: string) {
   try {
-    const url = `${API}/api/gaming/steam/connect`;
+    const url = `${API}/api/auth/steam/connect`;
     const body = JSON.stringify({ steam_id: steamid });
 
     // Prefer access token from authService
@@ -57,13 +57,13 @@ async connectSteam(steamid: string) {
 } , 
 
 
-  /** POST /gaming/steam/sync-library (1st sync, or manual re-sync) */
+  /** POST /gaming/steam/sync-games (1st sync, or manual re-sync) */
   async syncLibrary() {
     try {
       const accessToken = authService.getAccessToken();
       if (accessToken) {
         return authService.makeAuthenticatedRequest(
-          `${API}/api/gaming/steam/sync-library`,
+          `${API}/api/gaming/steam/sync-games`,
           { method: "POST" }
         );
       } else {
@@ -76,13 +76,13 @@ async connectSteam(steamid: string) {
     }
   },
 
-  /** GET /gaming/steam/library (convenience) */
+  /** GET /gaming/steam/owned-games (convenience) */
   async getMyLibrary(params: string = "") {
     try {
       const accessToken = authService.getAccessToken();
       if (accessToken) {
         return authService.makeAuthenticatedRequest(
-          `${API}/api/gaming/steam/library${params}`
+          `${API}/api/gaming/steam/owned-games${params}`
         );
       } else {
         console.warn("⚠️ No access token available for library fetch");
