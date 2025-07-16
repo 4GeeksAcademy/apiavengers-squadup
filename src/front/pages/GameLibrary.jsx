@@ -1,16 +1,38 @@
+// src/front/pages/GameLibrary.jsx - FIXED GameImage Component
 import React, { useState, useEffect } from 'react';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
-// Complete GameImage component with robust error handling
+// FIXED GameImage component with robust error handling and Unicode support
 const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
 
-    // Create a simple inline SVG fallback
+    // FIXED: Unicode-safe btoa alternative
+    const safeBase64Encode = (str) => {
+        try {
+            // First, sanitize the string to only include safe characters
+            const sanitizedStr = str.replace(/[^\w\s-]/g, '').slice(0, 20);
+            
+            // Use TextEncoder to handle Unicode properly
+            const encoder = new TextEncoder();
+            const bytes = encoder.encode(sanitizedStr);
+            const binaryString = String.fromCharCode(...bytes);
+            return btoa(binaryString);
+        } catch (error) {
+            console.warn('Failed to encode string safely:', error);
+            // Fallback to a simple safe string
+            return btoa('Game Image');
+        }
+    };
+
+    // FIXED: Create SVG fallback with Unicode-safe encoding
     const createSVGFallback = (text) => {
+        // Sanitize text to prevent btoa issues
+        const safeText = text.replace(/[^\w\s-]/g, '').slice(0, 18) || 'Game';
+        
         const svgContent = `
             <svg width="460" height="215" xmlns="http://www.w3.org/2000/svg">
                 <defs>
@@ -22,7 +44,7 @@ const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
                 <rect width="100%" height="100%" fill="url(#gameBg)"/>
                 <rect x="15" y="15" width="430" height="185" fill="#475569" stroke="#64748b" stroke-width="1" rx="8" opacity="0.8"/>
                 <text x="50%" y="40%" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="16" font-weight="bold">
-                    🎮 ${text.slice(0, 20)}
+                    🎮 ${safeText}
                 </text>
                 <text x="50%" y="60%" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="12">
                     Steam Game
@@ -32,10 +54,19 @@ const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
                 </text>
             </svg>
         `;
-        return `data:image/svg+xml;base64,${btoa(svgContent)}`;
+        
+        try {
+            // Use the safe base64 encoding method
+            return `data:image/svg+xml;base64,${safeBase64Encode(svgContent)}`;
+        } catch (error) {
+            console.warn('SVG fallback creation failed, using simple data URI:', error);
+            // Ultimate fallback - use URL encoding instead of base64
+            return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`;
+        }
     };
 
     const handleImageError = () => {
+        console.log(`🖼️ Image failed to load: ${src}`);
         setImageError(true);
         setImageLoading(false);
     };
@@ -51,6 +82,7 @@ const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
                 src={createSVGFallback(fallbackText)}
                 alt={alt}
                 className={className}
+                style={{ objectFit: 'cover' }}
             />
         );
     }
@@ -68,6 +100,7 @@ const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
                 className={`${className} ${imageLoading ? 'hidden' : 'block'}`}
                 onError={handleImageError}
                 onLoad={handleImageLoad}
+                style={{ objectFit: 'cover' }}
             />
         </>
     );
@@ -421,7 +454,7 @@ export const GameLibrary = () => {
                             </div>
                         )}
 
-                        {/* Games Grid - FIXED with GameImage component */}
+                        {/* Games Grid - FIXED with improved GameImage component */}
                         {filteredAndSortedGames.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                 {filteredAndSortedGames.map((game) => (
