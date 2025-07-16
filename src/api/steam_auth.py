@@ -15,8 +15,13 @@ steam_auth = Blueprint('steam_auth', __name__)
 
 STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
 
+@steam_auth.route('/test', methods=['GET'])
+def steam_test():
+    """Test route to verify steam_auth blueprint is working"""
+    return jsonify({"message": "Steam auth blueprint is working!"}), 200
+
 @steam_auth.route('/login', methods=['GET'])
-@jwt_required()
+# @jwt_required()  # Temporarily commented out for debugging
 def steam_login():
     """Initiate Steam authentication and return auth URL - ENHANCED"""
     try:
@@ -24,7 +29,11 @@ def steam_login():
         frontend_base = os.getenv('FRONTEND_URL', 'http://localhost:3000')
         frontend_url = f"{frontend_base}{return_to}"
         
-        current_user_id = get_jwt_identity()
+        # Temporarily get user_id from query param for debugging
+        current_user_id = request.args.get('user_id')
+        if not current_user_id:
+            current_app.logger.error("Steam login: No user_id provided")
+            return jsonify({"error": "User ID required"}), 400
         
         # ENHANCED: Validate user exists
         user = User.query.get(current_user_id)
