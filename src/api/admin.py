@@ -1,4 +1,4 @@
-# src/api/admin.py - FULLY SAFE FOR ALL DELETIONS
+# src/api/admin.py - FIXED VERSION with corrected relationship names
 
 import os
 from flask_admin import Admin
@@ -30,8 +30,9 @@ class SafeUserModelView(ModelView):
                     db.session.delete(group)
                     flash(f'Empty group "{group.name}" was deleted', 'warning')
             
+            # 🔧 FIXED: Use correct relationship name
             # Clear all associations
-            model.groups.clear()  # Remove from group memberships
+            model.member_of_groups.clear()  # Remove from group memberships
             model.owned_games.clear()  # Remove game ownership
             
             # Delete user
