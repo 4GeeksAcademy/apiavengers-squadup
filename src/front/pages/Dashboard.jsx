@@ -1,14 +1,20 @@
-import React, { useState, useEffect } from 'react';
+// src/front/pages/Dashboard.jsx - FIXED to prevent infinite auth checking
+
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import CreateGroupModal from '../components/CreateGroupModal';
-import GroupActionButtons from '../components/GroupActionButtons'; // ✅ ADDED: Import the new component
+import GroupActionButtons from '../components/GroupActionButtons';
 
 export const Dashboard = () => {
     const navigate = useNavigate();
     const { store } = useGlobalReducer();
+
+    // CRITICAL FIX: Use refs to track initialization and prevent multiple effect runs
+    const initializationRef = useRef(false);
+    const dataLoadedRef = useRef(false);
 
     const [dashboardData, setDashboardData] = useState(null);
     const [isLoadingData, setIsLoadingData] = useState(true);
@@ -17,27 +23,21 @@ export const Dashboard = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activeSection, setActiveSection] = useState('overview');
     const [recentActivity, setRecentActivity] = useState([]);
-    const [groupFilter, setGroupFilter] = useState('all'); // all, member, creator
-    const [showInviteTooltip, setShowInviteTooltip] = useState(null);
+    const [groupFilter, setGroupFilter] = useState('all');
 
+    // FIXED: Destructure with defaults to prevent undefined access
     const {
         isAuthenticated = false,
         user = null,
         authLoading = false
     } = store || {};
 
-    useEffect(() => {
-        if (isAuthenticated && user) {
-            loadDashboardData();
-        }
-    }, [isAuthenticated, user]);
-
+    // CRITICAL FIX: Single effect for URL parameter handling (runs once)
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('steam_connected') === 'true') {
             toast.success('Steam account connected successfully!');
             window.history.replaceState({}, document.title, window.location.pathname);
-            loadDashboardData();
         } else if (urlParams.get('steam_error')) {
             const error = urlParams.get('steam_error');
             const errorMessages = {
@@ -50,15 +50,49 @@ export const Dashboard = () => {
             toast.error(errorMessages[error] || 'An unknown Steam connection error occurred.');
             window.history.replaceState({}, document.title, window.location.pathname);
         }
-    }, []);
+    }, []); // Empty dependency - only runs once
+
+    // CRITICAL FIX: Single effect for data loading with proper conditions
+    useEffect(() => {
+        // Prevent multiple initializations
+        if (initializationRef.current) {
+            console.log('🔄 Dashboard: Already initialized, skipping...');
+            return;
+        }
+
+        // Only proceed if user is properly authenticated and not loading
+        if (!isAuthenticated || !user || authLoading) {
+            console.log('🔄 Dashboard: Waiting for auth completion...', {
+                isAuthenticated,
+                hasUser: !!user,
+                authLoading
+            });
+            return;
+        }
+
+        // Mark as initialized to prevent re-runs
+        initializationRef.current = true;
+        console.log('🔄 Dashboard: Starting data load for user:', user.username);
+
+        loadDashboardData();
+    }, [isAuthenticated, user?.id, authLoading]); // FIXED: Only depend on stable auth values
 
     const loadDashboardData = async () => {
+        // Prevent duplicate data loading
+        if (dataLoadedRef.current) {
+            console.log('🔄 Dashboard: Data already loaded, skipping...');
+            return;
+        }
+
+        dataLoadedRef.current = true;
         setIsLoadingData(true);
+
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            console.log('Fetching groups from:', `${backendUrl}/api/gaming/groups`);
+            console.log('📡 Fetching groups from:', `${backendUrl}/api/gaming/groups`);
             
             const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+            
             if (groupsResponse.ok) {
                 const groupsData = await groupsResponse.json();
                 setGroups(groupsData.groups || []);
@@ -71,14 +105,16 @@ export const Dashboard = () => {
                 const errorData = await groupsResponse.json();
                 console.error('Groups fetch error:', errorData);
                 toast.error(`Failed to load groups: ${errorData.error || 'Unknown error'}`);
+                
                 if (groupsResponse.status === 401) {
-                    toast.error('Session expired. Please log in again.');
+                    console.log('🚨 Auth error in dashboard, clearing auth and redirecting...');
                     authService.logout();
                     navigate('/login');
+                    return;
                 }
             }
             
-            // Enhanced dashboard stats
+            // Set enhanced dashboard stats
             const enhancedData = { 
                 stats: { 
                     totalSessions: groups.length > 0 ? Math.floor(Math.random() * 20) + 5 : 0,
@@ -99,8 +135,10 @@ export const Dashboard = () => {
         } catch (error) {
             console.error('❌ Error loading dashboard data:', error);
             toast.error("Could not load your dashboard data.");
+            
+            // Only logout on specific auth errors, not network errors
             if (error.message === 'Authentication failed' || error.message.includes('401')) {
-                toast.error('Session expired. Please log in again.');
+                console.log('🚨 Auth error in dashboard, clearing auth and redirecting...');
                 authService.logout();
                 navigate('/login');
             }
@@ -166,7 +204,6 @@ export const Dashboard = () => {
         }
     };
 
-    // ✅ UPDATED: Replace old functions with new handleGroupUpdate
     const handleGroupUpdate = (action, wasDeleted, groupId) => {
         console.log('🔄 Group update received:', { action, wasDeleted, groupId });
         
@@ -181,8 +218,9 @@ export const Dashboard = () => {
             // Refresh common games after group removal
             fetchCommonGames();
         } else if (action === 'left') {
-            // For leaves (with ownership transfer), refresh the whole dashboard
             console.log('👋 Member left, refreshing dashboard data...');
+            // Reset the data loaded flag and reload
+            dataLoadedRef.current = false;
             loadDashboardData();
         }
     };
@@ -213,7 +251,8 @@ export const Dashboard = () => {
         }
     };
 
-    const shouldShowLoading = authLoading || isLoadingData || !dashboardData;
+    // FIXED: Better loading state detection
+    const shouldShowLoading = authLoading || isLoadingData || !dashboardData || !initializationRef.current;
     
     if (shouldShowLoading) { 
         return (
@@ -226,17 +265,17 @@ export const Dashboard = () => {
         );
     }
     
+    // FIXED: Better authentication check
     if (!isAuthenticated || !user) { 
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="text-white text-xl">Please log in to access your dashboard.</div>
-            </div>
-        ); 
+        console.log('🚨 Dashboard: Not authenticated, redirecting to login');
+        navigate('/login');
+        return null;
     }
 
     const { stats } = dashboardData;
     const filteredGroups = getFilteredGroups();
 
+    // Rest of the component JSX remains the same...
     return (
         <>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
@@ -548,7 +587,6 @@ export const Dashboard = () => {
                                                             <span>Invite</span>
                                                         </button>
                                                         
-                                                        {/* ✅ REPLACED: Use the new GroupActionButtons component */}
                                                         <GroupActionButtons 
                                                             group={group} 
                                                             user={user} 

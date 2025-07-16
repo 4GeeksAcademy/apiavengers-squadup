@@ -1,5 +1,6 @@
-// src/front/components/ProtectedRoute.jsx - ENHANCED VERSION
-import React, { useEffect, useState } from 'react';
+// src/front/components/ProtectedRoute.jsx - FIXED to prevent infinite checking
+
+import React, { useEffect, useState, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
@@ -7,6 +8,11 @@ import authService from '../store/authService';
 const ProtectedRoute = ({ children }) => {
     const { store, dispatch } = useGlobalReducer();
     const location = useLocation();
+    
+    // CRITICAL FIX: Use refs to prevent infinite loops
+    const checkCompleteRef = useRef(false);
+    const lastAuthStateRef = useRef(null);
+    
     const [authState, setAuthState] = useState({
         isChecking: true,
         isAuthenticated: false,
@@ -14,137 +20,117 @@ const ProtectedRoute = ({ children }) => {
     });
 
     useEffect(() => {
-        let isMounted = true;
+        // Create a stable auth state key for comparison
+        const currentAuthState = `${store?.isAuthenticated}-${!!store?.user}-${store?.authLoading}-${authService.authCheckCompleted}`;
+        
+        // Only run if auth state actually changed or first time
+        if (checkCompleteRef.current && lastAuthStateRef.current === currentAuthState) {
+            console.log('🛡️ ProtectedRoute: Auth state unchanged, skipping check');
+            return;
+        }
+        
+        lastAuthStateRef.current = currentAuthState;
+        console.log('🛡️ ProtectedRoute: Auth state changed, performing check for:', location.pathname);
 
-        const verifyAuthentication = async () => {
-            console.log('🔐 ProtectedRoute: Starting auth verification for', location.pathname);
-            
+        const performAuthCheck = async () => {
             try {
-                // Step 1: Check if we have basic auth indicators
-                const token = authService.getAccessToken();
-                const user = authService.getCurrentUser();
-                const storeAuth = store?.isAuthenticated;
-                const storeUser = store?.user;
+                // Wait for auth service to be ready if not already
+                if (!authService.authCheckCompleted) {
+                    console.log('⏳ ProtectedRoute: Waiting for auth service completion...');
+                    await authService.waitForInitialization();
+                }
 
-                console.log('🔍 Auth Check State:', {
-                    hasToken: !!token,
-                    hasUser: !!user,
-                    storeAuth,
-                    hasStoreUser: !!storeUser,
+                const serviceAuth = authService.isAuthenticated();
+                const storeAuth = store?.isAuthenticated;
+                const hasUser = !!store?.user;
+                const isLoading = store?.authLoading;
+
+                console.log('🔍 ProtectedRoute: Auth check state:', {
+                    serviceAuth,
+                    storeAuth, 
+                    hasUser,
+                    isLoading,
                     authCheckCompleted: authService.authCheckCompleted,
-                    currentPath: location.pathname
+                    pathname: location.pathname
                 });
 
-                // Step 2: If no token at all, definitely not authenticated
-                if (!token) {
-                    console.log('❌ No token found, redirecting to login');
-                    if (isMounted) {
-                        setAuthState({
-                            isChecking: false,
-                            isAuthenticated: false,
-                            error: null
-                        });
-                    }
+                // If still loading, keep waiting
+                if (isLoading || !authService.authCheckCompleted) {
+                    console.log('⏳ ProtectedRoute: Still loading auth state...');
+                    setAuthState({
+                        isChecking: true,
+                        isAuthenticated: false,
+                        error: null
+                    });
                     return;
                 }
 
-                // Step 3: If we have token but auth check not completed, wait for it
-                if (!authService.authCheckCompleted) {
-                    console.log('⏳ Waiting for auth service initialization...');
+                // Check for auth state mismatches and fix them
+                if (serviceAuth && !storeAuth && !isLoading) {
+                    console.log('🔧 ProtectedRoute: Fixing auth state mismatch - service says auth but store doesn\'t');
+                    const user = authService.getCurrentUser();
+                    const token = authService.getAccessToken();
                     
-                    // Wait for auth service to complete its check (max 5 seconds)
-                    const maxWait = 5000;
-                    const startTime = Date.now();
-                    
-                    while (!authService.authCheckCompleted && (Date.now() - startTime < maxWait)) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                    
-                    if (!authService.authCheckCompleted) {
-                        console.log('⚠️ Auth service check timed out, proceeding with manual verification');
-                    }
-                }
-
-                // Step 4: Verify token with backend
-                console.log('🔍 Verifying token with backend...');
-                const isTokenValid = await authService.verifyToken();
-                
-                if (!isMounted) return; // Component unmounted during async operation
-
-                if (isTokenValid) {
-                    console.log('✅ Token verified successfully');
-                    
-                    // Step 5: Ensure store state is consistent
-                    const currentUser = authService.getCurrentUser();
-                    if (currentUser && (!storeUser || storeUser.id !== currentUser.id)) {
-                        console.log('🔄 Updating store with verified user');
-                        dispatch({ type: 'set_user', payload: currentUser });
-                    }
-                    
-                    if (!storeAuth) {
-                        console.log('🔄 Updating store auth status');
-                        dispatch({ 
-                            type: 'login_success', 
-                            payload: { 
-                                user: currentUser, 
-                                token: token,
-                                refreshToken: authService.getRefreshToken()
-                            } 
+                    if (user && token) {
+                        dispatch({
+                            type: 'login_success',
+                            payload: { user, token, refreshToken: authService.getRefreshToken() }
                         });
+                        
+                        setAuthState({
+                            isChecking: false,
+                            isAuthenticated: true,
+                            error: null
+                        });
+                        return;
                     }
-                    
+                }
+
+                // If both agree user is authenticated
+                if (serviceAuth && storeAuth && hasUser) {
+                    console.log('✅ ProtectedRoute: User authenticated');
                     setAuthState({
                         isChecking: false,
                         isAuthenticated: true,
                         error: null
                     });
-                } else {
-                    console.log('❌ Token verification failed');
-                    
-                    // Clear invalid auth state
-                    authService.clearAuth();
-                    
+                    return;
+                }
+
+                // If neither thinks user is authenticated
+                if (!serviceAuth && !storeAuth) {
+                    console.log('❌ ProtectedRoute: User not authenticated');
                     setAuthState({
                         isChecking: false,
                         isAuthenticated: false,
                         error: null
                     });
+                    return;
                 }
-                
+
+                // Handle edge cases
+                console.log('⚠️ ProtectedRoute: Edge case - clearing inconsistent auth');
+                authService.clearAuth();
+                setAuthState({
+                    isChecking: false,
+                    isAuthenticated: false,
+                    error: null
+                });
+
             } catch (error) {
-                console.error('💥 Auth verification error:', error);
-                
-                if (!isMounted) return;
-                
-                // On error, check if we have valid local auth as fallback
-                const token = authService.getAccessToken();
-                const user = authService.getCurrentUser();
-                
-                if (token && user && store?.isAuthenticated) {
-                    console.log('⚠️ Network error but valid local auth, allowing access');
-                    setAuthState({
-                        isChecking: false,
-                        isAuthenticated: true,
-                        error: null
-                    });
-                } else {
-                    console.log('❌ Network error and no valid local auth');
-                    setAuthState({
-                        isChecking: false,
-                        isAuthenticated: false,
-                        error: error.message
-                    });
-                }
+                console.error('💥 ProtectedRoute: Auth check error:', error);
+                setAuthState({
+                    isChecking: false,
+                    isAuthenticated: false,
+                    error: error.message
+                });
+            } finally {
+                checkCompleteRef.current = true;
             }
         };
 
-        verifyAuthentication();
-
-        // Cleanup function
-        return () => {
-            isMounted = false;
-        };
-    }, [location.pathname, store?.isAuthenticated, store?.user, dispatch]);
+        performAuthCheck();
+    }, [store?.isAuthenticated, store?.user?.id, store?.authLoading, location.pathname, dispatch]);
 
     // Handle loading state
     if (authState.isChecking) {
@@ -161,7 +147,7 @@ const ProtectedRoute = ({ children }) => {
 
     // Handle unauthenticated state
     if (!authState.isAuthenticated) {
-        console.log('🚪 Redirecting to login from:', location.pathname);
+        console.log('🚪 ProtectedRoute: Redirecting to login from:', location.pathname);
         
         // Store the intended destination
         const redirectPath = location.pathname !== '/login' ? location.pathname : '/dashboard';
@@ -174,7 +160,7 @@ const ProtectedRoute = ({ children }) => {
     }
 
     // User is authenticated, render protected content
-    console.log('✅ Rendering protected content for:', store?.user?.username);
+    console.log('✅ ProtectedRoute: Rendering protected content for:', store?.user?.username);
     return children;
 };
 
