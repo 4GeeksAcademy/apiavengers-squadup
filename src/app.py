@@ -26,7 +26,6 @@ from api.admin import setup_admin
 from api.commands import setup_commands
 from api.steam_auth import steam_auth
 from api.steam import steam
-from api.steam_auth import steam_bp
 from api.genre_routes import genre_bp
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -66,12 +65,12 @@ app.config["SERVER_NAME"] = "animated-eureka-5grpx4q7wvpgf66g-3001.app.github.de
 app.config["PREFERRED_URL_SCHEME"] = "https"
 
 # Admin & custom CLI commands
-setup_admin(app)
+setup_admin(app)  # Re-enabled after fixing blueprint conflicts
 setup_commands(app)
 
 # Blueprints
 app.register_blueprint(auth, url_prefix='/api/auth')
-app.register_blueprint(steam_bp, url_prefix="/api")
+app.register_blueprint(steam_auth, url_prefix="/api")
 app.register_blueprint(genre_bp, url_prefix="/api")
 app.register_blueprint(gaming, url_prefix='/api/gaming')
 
@@ -204,7 +203,6 @@ MIGRATE = Migrate(app, db, compare_type=True)
 # ============================================================================
 # Blueprint & Route Registration
 # ============================================================================
-setup_admin(app)
 setup_commands(app)
 
 
@@ -213,7 +211,7 @@ setup_commands(app)
 # ============================================================================
 @app.route('/')
 def redirect_to_admin():
-    return redirect(url_for('admin.index'))
+    return redirect(url_for('squadup_admin_2024.index'))
 
 
 

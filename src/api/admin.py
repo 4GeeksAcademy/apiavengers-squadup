@@ -137,7 +137,7 @@ class SafeGameSessionModelView(ModelView):
 def setup_admin(app):
     app.secret_key = os.environ.get('FLASK_APP_KEY')
     app.config['FLASK_ADMIN_SWATCH'] = 'cerulean'
-    admin = Admin(app, name='SquadUp Admin', template_mode='bootstrap3')
+    admin = Admin(app, name='SquadUp Admin', template_mode='bootstrap3', url='/admin', endpoint='squadup_admin_2024')
 
     # Add all safe model views
     admin.add_view(SafeUserModelView(User, db.session, name='Users'))

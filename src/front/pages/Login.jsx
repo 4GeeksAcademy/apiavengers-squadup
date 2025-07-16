@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, Link } from 'react-router-dom';
 import authService from '../store/authService.js'
 import { logOut } from '../store/actions';
 import useGlobalReducer from '../hooks/useGlobalReducer'
@@ -91,7 +91,7 @@ export const Login = () => {
                 {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     {[...Array(50)].map((_, i) => (
-                        <div 
+                        <div
                             key={i}
                             className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
                             style={{
@@ -115,7 +115,7 @@ export const Login = () => {
                                 <span className="text-white font-bold text-xl group-hover:text-coral-400 transition-colors duration-300">
                                     SquadUp
                                 </span>
-                           </Link>
+                            </Link>
                             <button
                                 onClick={navigateToSignUp}
                                 className="text-white/80 hover:text-white transition-colors duration-300 font-medium"
@@ -156,7 +156,7 @@ export const Login = () => {
                                 </div>
                             )}
 
-                            <form onSubmit={handleSubmit} className="space-y-6">
+                            <form onSubmit={onSubmit} className="space-y-6">
                                 {/* Login Field */}
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-white/90">
@@ -169,11 +169,11 @@ export const Login = () => {
                                             value={formData.login}
                                             onChange={onChange}
                                             className={`w-full px-4 py-3 bg-slate-800/50 border ${errors.login
-                                                    ? 'border-red-500/50 focus:border-red-500'
-                                                    : 'border-white/20 focus:border-coral-500'
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
                                                 } rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-slate-800/70`}
                                             placeholder="Enter your email or username"
-                                            disabled={isLoading}
+                                            disabled={loading}
                                             autoComplete="username"
                                         />
                                         {errors.login && (
@@ -194,18 +194,18 @@ export const Login = () => {
                                             value={formData.password}
                                             onChange={onChange}
                                             className={`w-full px-4 py-3 pr-12 bg-slate-800/50 border ${errors.password
-                                                    ? 'border-red-500/50 focus:border-red-500'
-                                                    : 'border-white/20 focus:border-coral-500'
+                                                ? 'border-red-500/50 focus:border-red-500'
+                                                : 'border-white/20 focus:border-coral-500'
                                                 } rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-coral-500/30 transition-all duration-300 group-hover:bg-slate-800/70`}
                                             placeholder="Enter your password"
-                                            disabled={isLoading}
+                                            disabled={loading}
                                             autoComplete="current-password"
                                         />
                                         <button
                                             type="button"
                                             onClick={() => setShowPw(!showPw)}
                                             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors duration-200"
-                                            disabled={isLoading}
+                                            disabled={loading}
                                             tabIndex={-1}
                                         >
                                             {showPw ? '👁️' : '👁️‍🗨️'}
@@ -226,8 +226,8 @@ export const Login = () => {
                                             className="sr-only"
                                         />
                                         <div className={`w-4 h-4 border-2 rounded flex items-center justify-center mr-2 transition-all duration-200 ${remember
-                                                ? 'bg-coral-500 border-coral-500'
-                                                : 'border-white/40 group-hover:border-white/60'
+                                            ? 'bg-coral-500 border-coral-500'
+                                            : 'border-white/40 group-hover:border-white/60'
                                             }`}>
                                             {remember && <span className="text-white text-xs">✓</span>}
                                         </div>
@@ -239,7 +239,7 @@ export const Login = () => {
                                         type="button"
                                         onClick={handleForgotPassword}
                                         className="text-coral-400 hover:text-coral-300 text-sm transition-colors duration-300 hover:underline"
-                                        disabled={isLoading}
+                                        disabled={loading}
                                     >
                                         Forgot password?
                                     </button>
@@ -247,7 +247,7 @@ export const Login = () => {
 
                                 {/* Submit Button */}
                                 <button
-                                    onClick={onSubmit}
+                                    type="submit"
                                     disabled={loading}
                                     className="w-full py-3 px-4 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 focus:outline-none focus:ring-2 focus:ring-coral-500/50 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none"
                                 >
@@ -270,10 +270,10 @@ export const Login = () => {
                             </div>
 
                             {/* Steam Connect Button */}
-                            <button 
-                                onClick={handleSteamLogin}
+                            <button
+                                onClick={() => navigate('/steam-login')}
                                 className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 group"
-                                disabled={isLoading}
+                                disabled={loading}
                             >
                                 <span className="text-lg">🎮</span>
                                 <span className="group-hover:text-blue-300 transition-colors duration-300">Continue with Steam</span>
