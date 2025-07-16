@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
 
-// 🚀 EMERGENCY FIX: Using reliable CDN images for presentation
 const FindGames = () => {
     const { store } = useGlobalReducer();
     const [commonGames, setCommonGames] = useState([]);
@@ -14,6 +13,75 @@ const FindGames = () => {
         multiplayer: false,
         minCoverage: 0
     });
+
+    // Inline GameImage component with robust error handling
+    const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
+        const [imageError, setImageError] = useState(false);
+        const [imageLoading, setImageLoading] = useState(true);
+
+        // Create a simple inline SVG fallback
+        const createSVGFallback = (text) => {
+            const svgContent = `
+                <svg width="460" height="215" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#334155;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#bg)"/>
+                    <rect x="15" y="15" width="430" height="185" fill="#475569" stroke="#64748b" stroke-width="1" rx="8" opacity="0.8"/>
+                    <text x="50%" y="45%" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="18" font-weight="bold">
+                        🎮 ${text.slice(0, 18)}
+                    </text>
+                    <text x="50%" y="65%" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="14">
+                        Gaming Content
+                    </text>
+                    <circle cx="50" cy="50" r="20" fill="#64748b" opacity="0.3"/>
+                    <circle cx="410" cy="165" r="15" fill="#64748b" opacity="0.3"/>
+                    <rect x="50" y="150" width="60" height="20" fill="#64748b" opacity="0.3" rx="4"/>
+                </svg>
+            `;
+            return `data:image/svg+xml;base64,${btoa(svgContent)}`;
+        };
+
+        const handleImageError = () => {
+            setImageError(true);
+            setImageLoading(false);
+        };
+
+        const handleImageLoad = () => {
+            setImageLoading(false);
+            setImageError(false);
+        };
+
+        if (imageError) {
+            return (
+                <img
+                    src={createSVGFallback(fallbackText)}
+                    alt={alt}
+                    className={className}
+                />
+            );
+        }
+
+        return (
+            <>
+                {imageLoading && (
+                    <div className={`${className} bg-slate-700 flex items-center justify-center animate-pulse`}>
+                        <span className="text-slate-400 text-2xl">⏳</span>
+                    </div>
+                )}
+                <img
+                    src={src}
+                    alt={alt}
+                    className={`${className} ${imageLoading ? 'hidden' : 'block'}`}
+                    onError={handleImageError}
+                    onLoad={handleImageLoad}
+                />
+            </>
+        );
+    };
 
     // Enhanced mock data with reliable CDN images for demo purposes
     const mockGames = [
@@ -111,31 +179,94 @@ const FindGames = () => {
 
     useEffect(() => {
         const fetchCommonGames = async () => {
-            console.log('Fetching common games');
+            console.log('🎮 Fetching common games...');
             try {
-                if (!store.user?.steam_connected) {
-                    // Use mock data with CDN images for demo
-                    console.log('Using demo data with CDN images');
-                    setCommonGames(mockGames);
-                    setLoading(false);
-                    return;
+                // Check if user has Steam connected and groups
+                if (store.user?.steam_connected) {
+                    console.log('✅ User has Steam connected, attempting to fetch real data...');
+                    
+                    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                    
+                    try {
+                        // First, check if user has any groups
+                        const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+                        
+                        if (groupsResponse.ok) {
+                            const groupsData = await groupsResponse.json();
+                            const userGroups = groupsData.groups || [];
+                            
+                            if (userGroups.length > 0) {
+                                // Try to get common games from the first group
+                                const firstGroup = userGroups[0];
+                                console.log(`🔍 Trying to fetch common games from group: ${firstGroup.name}`);
+                                
+                                const commonGamesResponse = await authService.authenticatedFetch(
+                                    `${backendUrl}/api/gaming/groups/${firstGroup.id}/common-games`
+                                );
+                                
+                                if (commonGamesResponse.ok) {
+                                    const commonGamesData = await commonGamesResponse.json();
+                                    console.log('✅ Successfully fetched real common games:', commonGamesData.games?.length || 0);
+                                    
+                                    if (commonGamesData.games && commonGamesData.games.length > 0) {
+                                        setCommonGames(commonGamesData.games);
+                                        setLoading(false);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        console.log('ℹ️ No groups or common games found, falling back to Steam library...');
+                        
+                        // Fallback: Get user's own games from Steam library
+                        const libraryResponse = await authService.authenticatedFetch(`${backendUrl}/api/steam/owned-games`);
+                        
+                        if (libraryResponse.ok) {
+                            const libraryData = await libraryResponse.json();
+                            const userGames = libraryData.games || [];
+                            
+                            console.log('✅ Using user Steam library games:', userGames.length);
+                            
+                            // Convert user's games to common games format
+                            const formattedGames = userGames
+                                .filter(game => game.multiplayer) // Only show multiplayer games
+                                .slice(0, 20) // Limit to 20 games
+                                .map(game => ({
+                                    ...game,
+                                    ownership_stats: {
+                                        owners: 1,
+                                        coverage_percentage: 100
+                                    },
+                                    short_description: game.short_description || `${game.name} - From your Steam library`
+                                }));
+                            
+                            if (formattedGames.length > 0) {
+                                setCommonGames(formattedGames);
+                                setLoading(false);
+                                return;
+                            }
+                        }
+                        
+                        console.log('⚠️ No real games available, using demo data for better UX');
+                        
+                    } catch (apiError) {
+                        console.log('⚠️ API call failed, using demo data:', apiError.message);
+                    }
+                } else {
+                    console.log('ℹ️ Steam not connected, using demo data');
                 }
-
-                const userIds = [store.user?.id || 1, 2];
-                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
                 
-                // Note: This endpoint doesn't exist yet, so we'll use demo data
-                // const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/1/common-games`);
-                throw new Error('Using demo data for presentation');
-                
-                // Skip API call and use demo data for presentation
-                throw new Error('Using demo data for presentation');
-            } catch (err) {
-                console.error('Error fetching games:', err);
-                // Fallback to mock data with CDN images for demo
-                console.log('Falling back to demo data');
+                // Fallback to demo data (no error thrown)
+                console.log('📋 Using demo data with CDN images for presentation');
                 setCommonGames(mockGames);
-                setError(null); // Don't show error, use mock data instead
+                setError(null); // Clear any previous errors
+                
+            } catch (err) {
+                console.error('❌ Unexpected error in fetchCommonGames:', err);
+                // Even on error, show demo data for better UX
+                setCommonGames(mockGames);
+                setError(null);
             } finally {
                 setLoading(false);
             }
@@ -203,14 +334,33 @@ const FindGames = () => {
                     </Link>
                 </div>
 
-                {/* Demo Notice */}
-                {!store.user?.steam_connected && (
+                {/* Smart Status Banner */}
+                {!store.user?.steam_connected ? (
                     <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-sm">
                         <div className="flex items-center space-x-2">
                             <span>ℹ️</span>
                             <div>
-                                <strong>Demo Mode:</strong> Showing popular squad games with official Steam images. 
+                                <strong>Demo Mode:</strong> Showing popular squad games. 
                                 Connect your Steam account to see real common games with your friends!
+                            </div>
+                        </div>
+                    </div>
+                ) : commonGames.length === mockGames.length ? (
+                    <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-sm">
+                        <div className="flex items-center space-x-2">
+                            <span>🎮</span>
+                            <div>
+                                <strong>Steam Connected:</strong> Create or join groups to find common games with friends, 
+                                or showing your Steam library games for now.
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-xl text-green-300 text-sm">
+                        <div className="flex items-center space-x-2">
+                            <span>✅</span>
+                            <div>
+                                <strong>Live Data:</strong> Showing real games from your Steam library and groups!
                             </div>
                         </div>
                     </div>
@@ -267,7 +417,7 @@ const FindGames = () => {
                     <>
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-2xl font-bold text-white">
-                                Common Games ({filteredGames.length})
+                                {store.user?.steam_connected ? 'Available Games' : 'Demo Games'} ({filteredGames.length})
                             </h2>
                             <div className="text-white/60 text-sm">
                                 {filteredGames.filter(g => g.ownership_stats.coverage_percentage === 100).length} perfect matches
@@ -278,17 +428,11 @@ const FindGames = () => {
                             {filteredGames.map(game => (
                                 <div key={game.id} className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl overflow-hidden shadow-2xl hover:bg-white/15 transition-all duration-300 group">
                                     <div className="relative">
-                                        <img
+                                        <GameImage
                                             src={game.header_image}
                                             alt={game.name}
+                                            fallbackText={game.name}
                                             className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
-                                            onError={(e) => {
-                                                console.error(`Failed to load image for ${game.name}:`, e.target.src);
-                                                e.target.src = `https://via.placeholder.com/460x215/0066cc/ffffff?text=${encodeURIComponent(game.name.slice(0, 10))}`;
-                                            }}
-                                            onLoad={() => {
-                                                console.log(`Successfully loaded image for ${game.name}`);
-                                            }}
                                         />
                                         <div className={`absolute top-3 right-3 px-3 py-1 rounded-lg text-sm font-bold backdrop-blur-sm ${
                                             game.ownership_stats.coverage_percentage >= 75 ? 'bg-green-500/90 text-white' :
@@ -362,7 +506,7 @@ const FindGames = () => {
                 ) : (
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-12 text-center">
                         <div className="text-6xl mb-4">🎮</div>
-                        <h3 className="text-2xl font-bold text-white mb-4">No Common Games Found</h3>
+                        <h3 className="text-2xl font-bold text-white mb-4">No Games Found</h3>
                         <p className="text-white/70 mb-6">
                             Try adjusting your filters to see more games!
                         </p>

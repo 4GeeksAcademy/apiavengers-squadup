@@ -4,6 +4,75 @@ import authService from '../store/authService.js';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
+// Complete GameImage component with robust error handling
+const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
+    const [imageError, setImageError] = useState(false);
+    const [imageLoading, setImageLoading] = useState(true);
+
+    // Create a simple inline SVG fallback
+    const createSVGFallback = (text) => {
+        const svgContent = `
+            <svg width="460" height="215" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="gameBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#334155;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#gameBg)"/>
+                <rect x="15" y="15" width="430" height="185" fill="#475569" stroke="#64748b" stroke-width="1" rx="8" opacity="0.8"/>
+                <text x="50%" y="40%" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="16" font-weight="bold">
+                    🎮 ${text.slice(0, 20)}
+                </text>
+                <text x="50%" y="60%" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="12">
+                    Steam Game
+                </text>
+                <text x="50%" y="75%" text-anchor="middle" fill="#64748b" font-family="Arial, sans-serif" font-size="10">
+                    Image Not Available
+                </text>
+            </svg>
+        `;
+        return `data:image/svg+xml;base64,${btoa(svgContent)}`;
+    };
+
+    const handleImageError = () => {
+        setImageError(true);
+        setImageLoading(false);
+    };
+
+    const handleImageLoad = () => {
+        setImageLoading(false);
+        setImageError(false);
+    };
+
+    if (imageError) {
+        return (
+            <img
+                src={createSVGFallback(fallbackText)}
+                alt={alt}
+                className={className}
+            />
+        );
+    }
+
+    return (
+        <>
+            {imageLoading && (
+                <div className={`${className} bg-slate-700 flex items-center justify-center animate-pulse`}>
+                    <span className="text-slate-400 text-xl">⏳</span>
+                </div>
+            )}
+            <img
+                src={src}
+                alt={alt}
+                className={`${className} ${imageLoading ? 'hidden' : 'block'}`}
+                onError={handleImageError}
+                onLoad={handleImageLoad}
+            />
+        </>
+    );
+};
+
 export const GameLibrary = () => {
     const { store, dispatch } = useGlobalReducer();
     const user = store.user;
@@ -352,19 +421,17 @@ export const GameLibrary = () => {
                             </div>
                         )}
 
-                        {/* Games Grid */}
+                        {/* Games Grid - FIXED with GameImage component */}
                         {filteredAndSortedGames.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                 {filteredAndSortedGames.map((game) => (
                                     <div key={game.id || game.steam_appid} className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl overflow-hidden shadow-2xl hover:bg-white/15 transition-all duration-300 group">
                                         <div className="relative">
-                                            <img
+                                            <GameImage
                                                 src={game.header_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.steam_appid}/header.jpg`}
                                                 alt={`${game.name} cover`}
+                                                fallbackText={game.name}
                                                 className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
-                                                onError={(e) => {
-                                                    e.target.src = `https://via.placeholder.com/460x215/0066cc/ffffff?text=${encodeURIComponent(game.name.slice(0, 10))}`;
-                                                }}
                                             />
                                             {game.multiplayer && (
                                                 <div className="absolute top-2 right-2 bg-green-500/80 text-white px-2 py-1 rounded-lg text-xs font-medium">
