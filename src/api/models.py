@@ -127,10 +127,15 @@ class GamingGroup(db.Model):
     is_public: Mapped[bool] = mapped_column(Boolean(), default=False)
     max_members: Mapped[int] = mapped_column(Integer, default=10)
     invite_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=True)
-    creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'), nullable=False)
+    
+    # 🔧 FIXED: Allow NULL creator_id and handle cascade properly
+    creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    
     preferred_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
-    creator = relationship('User', back_populates='created_groups')
+    
+    # Updated relationships with proper foreign_keys specification
+    creator = relationship('User', back_populates='created_groups', foreign_keys=[creator_id])
     members = relationship('User', secondary=group_members, back_populates='groups')
 
     def serialize(self):
@@ -143,7 +148,8 @@ class GamingGroup(db.Model):
             "max_members": self.max_members,
             "current_members": len(self.members),
             "invite_code": self.invite_code,
-            "creator": self.creator.serialize() if self.creator else None,
+            # 🔧 FIXED: Handle deleted creators gracefully
+            "creator": self.creator.serialize() if self.creator else {"username": "Deleted User", "id": None},
             "members": [member.serialize() for member in self.members] if self.members else [],
             "preferred_genres": json.loads(self.preferred_genres) if self.preferred_genres else [],
             "gaming_style": self.gaming_style
