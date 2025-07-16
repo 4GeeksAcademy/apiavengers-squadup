@@ -199,21 +199,17 @@ class AuthService {
     // NEW: Validate token format before making API calls
     isValidTokenFormat(token) {
         if (!token || typeof token !== 'string') return false;
-        
         try {
             // JWT tokens have 3 parts separated by dots
             const parts = token.split('.');
             if (parts.length !== 3) return false;
-            
             // Try to decode the payload to check if it's valid JSON
             const payload = JSON.parse(atob(parts[1]));
-            
             // Check if token has expiry and it's not expired
             if (payload.exp && payload.exp * 1000 < Date.now()) {
                 console.log('🚫 Token is expired');
                 return false;
             }
-            
             return true;
         } catch (error) {
             console.log('🚫 Invalid token format:', error);
