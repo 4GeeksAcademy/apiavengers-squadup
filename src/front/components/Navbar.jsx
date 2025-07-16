@@ -99,8 +99,8 @@ export const Navbar = () => {
     };
 
     return (
-        <nav className="fixed top-4 left-4 right-4 z-50">
-            <div className="navbar-glass">
+        <nav className="fixed top-4 left-4 right-4 z-[100]">
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-4 shadow-2xl">
                 <div className="flex justify-between items-center">
                     <Link
                         to="/"
@@ -131,7 +131,7 @@ export const Navbar = () => {
                                 </Link>
                             </>
                         ) : (
-                            <div className="relative z-[60]">
+                            <div className="relative">
                                 <button
                                     onClick={handleExploreToggle}
                                     className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
@@ -142,12 +142,12 @@ export const Navbar = () => {
                                 {showExploreMenu && (
                                     <div
                                         ref={exploreDropdownRef}
-                                        className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`}
-                                        style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}
+                                        className="absolute top-full right-0 mt-2 w-80 bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-4 shadow-2xl z-[110]"
+                                        style={{ pointerEvents: 'auto' }}
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         {/* Profile (Home) */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 mb-4">
                                             <div className="flex items-center mb-4">
                                                 <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
                                                     <span className="text-xl">👤</span>
@@ -158,7 +158,7 @@ export const Navbar = () => {
                                         </div>
 
                                         {/* Features */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 mb-4">
                                             <div className="flex items-center mb-4">
                                                 <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
                                                     <span className="text-xl">⚙️</span>
@@ -169,7 +169,7 @@ export const Navbar = () => {
                                         </div>
 
                                         {/* Gaming */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 mb-4">
                                             <div className="flex items-center mb-4">
                                                 <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
                                                     <span className="text-xl">🎮</span>
@@ -196,7 +196,7 @@ export const Navbar = () => {
 
                         {isAuthenticated ? (
                             <div className="flex items-center space-x-4">
-                                <div className="relative z-[60]">  {/* Increased z-index for stacking context */}
+                                <div className="relative">
                                     <button
                                         onClick={handleToggle}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
@@ -218,29 +218,31 @@ export const Navbar = () => {
                                         </svg>
                                     </button>
 
-                                    <div
-                                        ref={dropdownRef}
-                                        className={`nav-dropdown ${showUserMenu ? 'active' : ''}`}
-                                        style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
-                                            <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
-                                        </Link>
-                                        <Link to="/dashboard" className="dropdown-item" onClick={handleDashboardClick}>
-                                            <span className="flex items-center space-x-2"><span>📊</span><span>Dashboard</span></span>
-                                        </Link>
-                                        <Link to="/sessions" className="dropdown-item" onClick={handleFindGamesClick}>
-                                            <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
-                                        </Link>
-                                        <button className="dropdown-item" onClick={handleSteamIntegration}>
-                                            <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
-                                        </button>
-                                        <hr className="my-2 border-white/20" />
-                                        <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
-                                            <span className="flex items-center space-x-2"><span>🚪</span><span>Logout</span></span>
-                                        </button>
-                                    </div>
+                                    {showUserMenu && (
+                                        <div
+                                            ref={dropdownRef}
+                                            className="absolute top-full right-0 mt-2 w-64 bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-4 shadow-2xl z-[110]"
+                                            style={{ pointerEvents: 'auto' }}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <Link to="/profile" className="block w-full text-left p-3 rounded-xl hover:bg-white/10 transition-colors duration-200 text-white" onClick={handleProfileClick}>
+                                                <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
+                                            </Link>
+                                            <Link to="/dashboard" className="block w-full text-left p-3 rounded-xl hover:bg-white/10 transition-colors duration-200 text-white" onClick={handleDashboardClick}>
+                                                <span className="flex items-center space-x-2"><span>📊</span><span>Dashboard</span></span>
+                                            </Link>
+                                            <Link to="/sessions" className="block w-full text-left p-3 rounded-xl hover:bg-white/10 transition-colors duration-200 text-white" onClick={handleFindGamesClick}>
+                                                <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
+                                            </Link>
+                                            <button className="block w-full text-left p-3 rounded-xl hover:bg-white/10 transition-colors duration-200 text-white" onClick={handleSteamIntegration}>
+                                                <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
+                                            </button>
+                                            <hr className="my-2 border-white/20" />
+                                            <button className="block w-full text-left p-3 rounded-xl hover:bg-white/10 transition-colors duration-200 text-red-300 hover:text-red-200" onClick={handleLogout}>
+                                                <span className="flex items-center space-x-2"><span>🚪</span><span>Logout</span></span>
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ) : (

@@ -6,7 +6,7 @@ const API = authService.getApiUrl();
 export const steamApi = {
   /** redirect user to the backend → Steam OpenID flow */
   goToSteamLogin() {
-    window.location.href = `${API}/api/steam/login`;
+    window.location.href = `${API}/api/auth/steam/login`;
   },
 
   /** POST /gaming/steam/connect after callback */

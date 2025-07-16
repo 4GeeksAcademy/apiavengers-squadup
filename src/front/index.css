@@ -36,6 +36,7 @@
   .scrollbar-hide::-webkit-scrollbar { display: none; }
 }
 
+/* Navbar and dropdown fixes */
 .nav-dropdown.active {
   pointer-events: auto !important;
   z-index: 70 !important;
@@ -44,6 +45,32 @@
 .dropdown-item {
   pointer-events: auto !important;
   cursor: pointer !important;
+}
+
+/* Ensure navbar doesn't block content */
+nav {
+  pointer-events: auto !important;
+}
+
+nav * {
+  pointer-events: auto !important;
+}
+
+/* Ensure dropdown menus are clickable */
+.nav-dropdown,
+.nav-dropdown * {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+/* Fix for buttons and links in navbar */
+nav button,
+nav a,
+nav .dropdown-item {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  z-index: 1;
+  position: relative;
 }
 
 img[src*="via.placeholder.com"] {
