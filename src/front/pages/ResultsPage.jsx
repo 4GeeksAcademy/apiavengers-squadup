@@ -1,9 +1,11 @@
-// src/front/pages/ResultsPage.jsx - ENHANCED WITH REAL-TIME UPDATES
+// src/front/pages/ResultsPage.jsx - ENHANCED WITH VOTER STATUS
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import GameImage from '../components/GameImage';
+import VoterStatusPanel from '../components/VoterStatusPanel';
+import VotingReminders from '../components/VotingReminders';
 
 const ResultsPage = () => {
     const { sessionId } = useParams();
@@ -12,8 +14,9 @@ const ResultsPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [groupMembers, setGroupMembers] = useState([]); // NEW: Store group members
     
-    // 🚀 NEW: Real-time connection state
+    // Real-time connection state
     const [isLiveConnected, setIsLiveConnected] = useState(false);
     const [liveUpdateCount, setLiveUpdateCount] = useState(0);
     const eventSourceRef = useRef(null);
@@ -26,17 +29,17 @@ const ResultsPage = () => {
         console.log('🏆 ResultsPage: Auth status:', authService.isAuthenticated());
     }, [sessionId]);
 
-    // 🚀 ENHANCED: Initialize both SSE and fallback polling
+    // Initialize both SSE and fallback polling
     useEffect(() => {
         if (!sessionId) return;
 
         // Initial fetch
         fetchResults();
         
-        // 🚀 NEW: Try to establish SSE connection first
+        // Try to establish SSE connection first
         setupServerSentEvents();
         
-        // 🚀 NEW: Setup fallback polling (only if SSE fails)
+        // Setup fallback polling (only if SSE fails)
         const pollInterval = setInterval(() => {
             if (!isLiveConnected) {
                 console.log('📡 SSE not connected, falling back to polling...');
@@ -58,7 +61,7 @@ const ResultsPage = () => {
         };
     }, [sessionId]);
 
-    // 🚀 NEW: Server-Sent Events setup for real-time updates
+    // NEW: Enhanced SSE with voter notifications
     const setupServerSentEvents = () => {
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
@@ -71,7 +74,6 @@ const ResultsPage = () => {
 
             console.log('🔌 Setting up SSE connection for session:', sessionId);
             
-            // Create EventSource with authentication
             const sseUrl = `${backendUrl}/api/gaming/sessions/${sessionId}/live-results`;
             const eventSource = new EventSource(sseUrl);
             eventSourceRef.current = eventSource;
@@ -81,7 +83,6 @@ const ResultsPage = () => {
                 setIsLiveConnected(true);
                 setError(null);
                 
-                // Show connection success (subtle notification)
                 if (liveUpdateCount === 0) {
                     toast.success('🔴 Live updates connected!', { duration: 2000 });
                 }
@@ -98,7 +99,7 @@ const ResultsPage = () => {
                         return;
                     }
 
-                    // 🚀 Update results in real-time
+                    // Update results in real-time
                     setResults(prevResults => {
                         const newResults = {
                             ...prevResults,
@@ -108,12 +109,34 @@ const ResultsPage = () => {
                             voting_complete: data.voting_complete
                         };
 
-                        // Show notification for new votes (but not on first load)
+                        // NEW: Enhanced vote notifications with voter name
                         if (prevResults && data.total_voters > (prevResults.total_voters || 0)) {
                             const newVotes = data.total_voters - (prevResults.total_voters || 0);
+                            
+                            // Try to get the voter name from the session data
+                            let voterName = 'Someone';
+                            try {
+                                const sessionData = prevResults.session;
+                                if (sessionData && sessionData.vote_results) {
+                                    const voteResults = JSON.parse(sessionData.vote_results);
+                                    const voters = Object.values(voteResults.voters || {});
+                                    if (voters.length > 0) {
+                                        const latestVoter = voters[voters.length - 1];
+                                        voterName = latestVoter.username || 'Someone';
+                                    }
+                                }
+                            } catch (e) {
+                                console.log('Could not determine voter name:', e);
+                            }
+
+                            // Show enhanced notification
                             toast.success(
-                                `🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}! (${data.total_voters}/${data.total_members})`,
-                                { duration: 3000 }
+                                <div className="vote-notification">
+                                    <strong>{voterName}</strong> just voted! 
+                                    <br />
+                                    <small>{data.total_voters}/{data.total_members} votes cast</small>
+                                </div>,
+                                { duration: 4000 }
                             );
                         }
 
@@ -144,7 +167,6 @@ const ResultsPage = () => {
                 console.error('❌ SSE connection error:', error);
                 setIsLiveConnected(false);
                 
-                // Don't show error toast immediately - might be temporary
                 setTimeout(() => {
                     if (!isLiveConnected) {
                         console.log('📡 SSE failed, falling back to polling');
@@ -152,7 +174,6 @@ const ResultsPage = () => {
                     }
                 }, 5000);
 
-                // Close and cleanup
                 eventSource.close();
             };
 
@@ -162,6 +183,7 @@ const ResultsPage = () => {
         }
     };
 
+    // NEW: Enhanced fetchResults with group members
     const fetchResults = async (silent = false) => {
         if (!silent) setLoading(true);
         if (silent) setRefreshing(true);
@@ -176,7 +198,11 @@ const ResultsPage = () => {
                 setResults(data);
                 setError(null);
                 
-                // If voting is complete and we're still polling, stop
+                // NEW: Fetch group members for voter status
+                if (data.session?.group_id) {
+                    fetchGroupMembers(data.session.group_id);
+                }
+                
                 if (data.voting_complete && pollIntervalRef.current) {
                     clearInterval(pollIntervalRef.current);
                     console.log('🏁 Voting complete, stopping polling');
@@ -205,6 +231,31 @@ const ResultsPage = () => {
         }
     };
 
+    // NEW: Fetch group members
+    const fetchGroupMembers = async (groupId) => {
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                setGroupMembers(data.group?.members || []);
+            }
+        } catch (error) {
+            console.error('Error fetching group members:', error);
+        }
+    };
+
+    // NEW: Send reminder function (placeholder)
+    const handleSendReminder = async (voterId) => {
+        // This would integrate with your notification system
+        console.log('Sending reminder to voter:', voterId);
+        toast.success('Reminder sent!', { duration: 2000 });
+        
+        // In a real implementation, you might call an API like:
+        // await authService.authenticatedFetch(`/api/gaming/sessions/${sessionId}/remind/${voterId}`, { method: 'POST' });
+    };
+
     const handleBackToGroup = () => {
         if (results?.session?.group_id) {
             navigate(`/groups/${results.session.group_id}`);
@@ -218,7 +269,6 @@ const ResultsPage = () => {
         toast.success('Results refreshed!');
     };
 
-    // 🚀 NEW: Force reconnect SSE
     const handleReconnectLive = () => {
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
@@ -269,6 +319,16 @@ const ResultsPage = () => {
         }
     };
 
+    // NEW: Calculate pending voters
+    const getPendingVoters = () => {
+        if (!results || !groupMembers.length) return [];
+        
+        const voteResults = JSON.parse(results.session?.vote_results || '{}');
+        const voters = voteResults.voters || {};
+        
+        return groupMembers.filter(member => !voters[member.id.toString()]);
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
@@ -308,54 +368,79 @@ const ResultsPage = () => {
     }
 
     if (!results || !results.results || results.results.length === 0) {
+        const pendingVoters = getPendingVoters();
+        
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md">
-                    <div className="text-6xl mb-4">🗳️</div>
-                    <h2 className="text-2xl font-bold text-white mb-4">No Votes Yet</h2>
-                    <p className="text-white/70 mb-6">
-                        {results?.voting_complete ? 
-                            'The voting session completed but no votes were cast.' :
-                            'Waiting for squad members to submit their votes...'
-                        }
-                    </p>
-                    <div className="mb-4 text-white/60 text-sm">
-                        {results?.total_voters || 0} of {results?.total_members || 0} members have voted
-                    </div>
-                    
-                    {/* 🚀 NEW: Live connection status */}
-                    <div className="mb-4 flex items-center justify-center space-x-2">
-                        <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
-                        <span className="text-white/60 text-xs">
-                            {isLiveConnected ? 'Live updates active' : 'Polling for updates'}
-                        </span>
-                    </div>
-                    
-                    {/* Progress bar */}
-                    {results && results.total_members > 0 && (
-                        <div className="w-full bg-white/10 rounded-full h-2 mb-4">
-                            <div 
-                                className="bg-coral-500 h-2 rounded-full transition-all duration-500"
-                                style={{ width: `${(results.total_voters / results.total_members) * 100}%` }}
-                            ></div>
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
+                <div className="max-w-4xl mx-auto">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div className="lg:col-span-2">
+                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
+                                <div className="text-6xl mb-4">🗳️</div>
+                                <h2 className="text-2xl font-bold text-white mb-4">No Votes Yet</h2>
+                                <p className="text-white/70 mb-6">
+                                    {results?.voting_complete ? 
+                                        'The voting session completed but no votes were cast.' :
+                                        'Waiting for squad members to submit their votes...'
+                                    }
+                                </p>
+                                <div className="mb-4 text-white/60 text-sm">
+                                    {results?.total_voters || 0} of {results?.total_members || 0} members have voted
+                                </div>
+                                
+                                {/* Live connection status */}
+                                <div className="mb-4 flex items-center justify-center space-x-2">
+                                    <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
+                                    <span className="text-white/60 text-xs">
+                                        {isLiveConnected ? 'Live updates active' : 'Polling for updates'}
+                                    </span>
+                                </div>
+                                
+                                {/* Progress bar */}
+                                {results && results.total_members > 0 && (
+                                    <div className="w-full bg-white/10 rounded-full h-2 mb-4">
+                                        <div 
+                                            className="bg-coral-500 h-2 rounded-full transition-all duration-500"
+                                            style={{ width: `${(results.total_voters / results.total_members) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                )}
+                                
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button
+                                        onClick={handleBackToGroup}
+                                        className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
+                                    >
+                                        Back to Group
+                                    </button>
+                                    {!results?.voting_complete && (
+                                        <button
+                                            onClick={handleManualRefresh}
+                                            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors duration-200"
+                                        >
+                                            🔄 Refresh
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                    )}
-                    
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                            onClick={handleBackToGroup}
-                            className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
-                        >
-                            Back to Group
-                        </button>
-                        {!results?.voting_complete && (
-                            <button
-                                onClick={handleManualRefresh}
-                                className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors duration-200"
-                            >
-                                🔄 Refresh
-                            </button>
-                        )}
+
+                        {/* NEW: Sidebar with voter status and reminders */}
+                        <div className="space-y-6">
+                            {groupMembers.length > 0 && (
+                                <VoterStatusPanel 
+                                    session={results?.session} 
+                                    groupMembers={groupMembers} 
+                                />
+                            )}
+                            
+                            {pendingVoters.length > 0 && !results?.voting_complete && (
+                                <VotingReminders 
+                                    pendingVoters={pendingVoters}
+                                    onSendReminder={handleSendReminder}
+                                />
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -363,10 +448,11 @@ const ResultsPage = () => {
     }
 
     const { session, results: gameResults, winner, total_voters, total_members, voting_complete } = results;
+    const pendingVoters = getPendingVoters();
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-6xl mx-auto">
                 
                 {/* Header */}
                 <div className="text-center mb-8">
@@ -395,7 +481,7 @@ const ResultsPage = () => {
                             </div>
                         )}
                         
-                        {/* 🚀 NEW: Live connection indicator */}
+                        {/* Live connection indicator */}
                         <div className={`px-3 py-1 rounded-full text-xs flex items-center space-x-2 ${
                             isLiveConnected 
                                 ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
@@ -429,186 +515,212 @@ const ResultsPage = () => {
                     </div>
                 </div>
 
-                {/* Winner Announcement */}
-                {winner && voting_complete && (
-                    <div className="backdrop-blur-xl bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-3xl p-8 mb-8 text-center">
-                        <div className="text-6xl mb-4">🎉</div>
-                        <h2 className="text-3xl font-bold text-white mb-2">
-                            Winner: {winner.game.name}!
-                        </h2>
-                        <p className="text-white/80 mb-4">
-                            {winner.total_points} points • {winner.vote_count} votes • Avg: {winner.average_score.toFixed(1)}
-                        </p>
-                        <GameImage 
-                            src={winner.game.header_image} 
-                            alt={winner.game.name}
-                            fallbackText={winner.game.name}
-                            className="w-full max-w-md mx-auto h-48 object-cover rounded-xl shadow-2xl"
-                        />
-                        
-                        {/* Winner details */}
-                        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 max-w-lg mx-auto">
-                            <div className="bg-white/10 rounded-lg p-3">
-                                <div className="text-yellow-400 font-bold text-lg">{winner.total_points}</div>
-                                <div className="text-white/70 text-sm">Total Points</div>
-                            </div>
-                            <div className="bg-white/10 rounded-lg p-3">
-                                <div className="text-yellow-400 font-bold text-lg">{winner.vote_count}</div>
-                                <div className="text-white/70 text-sm">Votes Cast</div>
-                            </div>
-                            <div className="bg-white/10 rounded-lg p-3">
-                                <div className="text-yellow-400 font-bold text-lg">{winner.average_score.toFixed(1)}</div>
-                                <div className="text-white/70 text-sm">Avg Score</div>
-                            </div>
-                        </div>
-                        
-                        <div className="mt-6">
-                            <button 
-                                onClick={() => toast.success('Game session feature coming soon!')}
-                                className="px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-xl shadow-lg transition-all duration-300 transform hover:-translate-y-1"
-                            >
-                                🚀 Launch Game Session
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* Current leader (if voting not complete) */}
-                {!voting_complete && gameResults.length > 0 && (
-                    <div className="backdrop-blur-xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-3xl p-6 mb-8 text-center">
-                        <h3 className="text-xl font-bold text-white mb-2">Current Leader</h3>
-                        <div className="flex items-center justify-center space-x-4">
-                            <GameImage 
-                                src={gameResults[0].game.header_image} 
-                                alt={gameResults[0].game.name}
-                                fallbackText={gameResults[0].game.name}
-                                className="w-16 h-10 object-cover rounded-lg"
-                            />
-                            <div>
-                                <div className="text-white font-bold">{gameResults[0].game.name}</div>
-                                <div className="text-white/70 text-sm">{gameResults[0].total_points} points</div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Results List */}
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
-                    <h3 className="text-2xl font-bold text-white mb-6 flex items-center justify-between">
-                        <span>All Results</span>
-                        <div className="flex items-center space-x-3">
-                            {!voting_complete && (
-                                <div className="text-sm text-white/60 font-normal flex items-center">
-                                    <div className={`w-2 h-2 rounded-full mr-2 ${
-                                        isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'
-                                    }`}></div>
-                                    {isLiveConnected ? 'Live Updates' : 'Polling'}
-                                </div>
-                            )}
-                            
-                            {/* 🚀 NEW: Enhanced action buttons */}
-                            <div className="flex space-x-2">
-                                <button
-                                    onClick={handleManualRefresh}
-                                    disabled={refreshing}
-                                    className="px-3 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-white text-sm rounded-lg transition-colors duration-200 disabled:opacity-50"
-                                    title="Manual refresh"
-                                >
-                                    {refreshing ? '⏳' : '🔄'}
-                                </button>
-                                
-                                {!isLiveConnected && !voting_complete && (
-                                    <button
-                                        onClick={handleReconnectLive}
-                                        className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-300 text-sm rounded-lg transition-colors duration-200"
-                                        title="Reconnect live updates"
-                                    >
-                                        🔌
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </h3>
+                {/* Main Content Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                     
-                    <div className="space-y-4">
-                        {gameResults.map((result, index) => {
-                            const isWinner = index === 0 && voting_complete;
-                            const isCurrentLeader = index === 0 && !voting_complete;
-                            
-                            return (
-                                <div 
-                                    key={result.game.id} 
-                                    className={`p-6 rounded-2xl border transition-all duration-300 ${
-                                        isWinner
-                                            ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-yellow-500/30 shadow-lg shadow-yellow-500/20'
-                                            : isCurrentLeader
-                                            ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-blue-500/30 shadow-lg shadow-blue-500/20'
-                                            : 'bg-white/5 border-white/20 hover:bg-white/10'
-                                    }`}
-                                >
-                                    <div className="flex items-center space-x-4">
-                                        {/* Rank */}
-                                        <div className={`flex-shrink-0 w-16 h-16 rounded-full bg-gradient-to-r ${getPlaceColor(index)} flex items-center justify-center text-white font-bold text-xl shadow-lg`}>
-                                            {getPlaceEmoji(index)}
-                                        </div>
-                                        
-                                        {/* Game Image */}
-                                        <GameImage 
-                                            src={result.game.header_image} 
-                                            alt={result.game.name}
-                                            fallbackText={result.game.name}
-                                            className="w-24 h-14 object-cover rounded-lg flex-shrink-0"
-                                        />
-                                        
-                                        {/* Game Info */}
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="text-white font-bold text-lg truncate flex items-center">
-                                                {result.game.name}
-                                                {isWinner && <span className="ml-2 text-yellow-400">👑</span>}
-                                                {isCurrentLeader && <span className="ml-2 text-blue-400">⭐</span>}
-                                            </h4>
-                                            <p className="text-white/60 text-sm line-clamp-2">
-                                                {result.game.short_description || 'No description available'}
-                                            </p>
-                                            {result.game.genres && result.game.genres.length > 0 && (
-                                                <div className="flex flex-wrap gap-1 mt-2">
-                                                    {result.game.genres.slice(0, 3).map(genre => (
-                                                        <span key={genre} className="px-2 py-1 bg-white/20 rounded text-xs text-white/80">
-                                                            {genre}
-                                                        </span>
-                                                    ))}
-                                                    {result.game.genres.length > 3 && (
-                                                        <span className="px-2 py-1 bg-white/20 rounded text-xs text-white/60">
-                                                            +{result.game.genres.length - 3}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                        
-                                        {/* Stats */}
-                                        <div className="flex-shrink-0 text-right">
-                                            <div className="text-2xl font-bold text-white mb-1">
-                                                {result.total_points} pts
-                                            </div>
-                                            <div className="text-white/60 text-sm">
-                                                {result.vote_count} vote{result.vote_count !== 1 ? 's' : ''}
-                                            </div>
-                                            <div className="text-white/50 text-xs mt-1">
-                                                Avg: {result.average_score.toFixed(1)}
-                                            </div>
-                                            {result.game.multiplayer && (
-                                                <div className="mt-1">
-                                                    <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
-                                                        Multiplayer
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </div>
+                    {/* Main Results Column */}
+                    <div className="lg:col-span-3">
+                        {/* Winner Announcement */}
+                        {winner && voting_complete && (
+                            <div className="backdrop-blur-xl bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-3xl p-8 mb-8 text-center">
+                                <div className="text-6xl mb-4">🎉</div>
+                                <h2 className="text-3xl font-bold text-white mb-2">
+                                    Winner: {winner.game.name}!
+                                </h2>
+                                <p className="text-white/80 mb-4">
+                                    {winner.total_points} points • {winner.vote_count} votes • Avg: {winner.average_score.toFixed(1)}
+                                </p>
+                                <GameImage 
+                                    src={winner.game.header_image} 
+                                    alt={winner.game.name}
+                                    fallbackText={winner.game.name}
+                                    className="w-full max-w-md mx-auto h-48 object-cover rounded-xl shadow-2xl"
+                                />
+                                
+                                {/* Winner details */}
+                                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 max-w-lg mx-auto">
+                                    <div className="bg-white/10 rounded-lg p-3">
+                                        <div className="text-yellow-400 font-bold text-lg">{winner.total_points}</div>
+                                        <div className="text-white/70 text-sm">Total Points</div>
+                                    </div>
+                                    <div className="bg-white/10 rounded-lg p-3">
+                                        <div className="text-yellow-400 font-bold text-lg">{winner.vote_count}</div>
+                                        <div className="text-white/70 text-sm">Votes Cast</div>
+                                    </div>
+                                    <div className="bg-white/10 rounded-lg p-3">
+                                        <div className="text-yellow-400 font-bold text-lg">{winner.average_score.toFixed(1)}</div>
+                                        <div className="text-white/70 text-sm">Avg Score</div>
                                     </div>
                                 </div>
-                            );
-                        })}
+                                
+                                <div className="mt-6">
+                                    <button 
+                                        onClick={() => toast.success('Game session feature coming soon!')}
+                                        className="px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-xl shadow-lg transition-all duration-300 transform hover:-translate-y-1"
+                                    >
+                                        🚀 Launch Game Session
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Current leader (if voting not complete) */}
+                        {!voting_complete && gameResults.length > 0 && (
+                            <div className="backdrop-blur-xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-3xl p-6 mb-8 text-center">
+                                <h3 className="text-xl font-bold text-white mb-2">Current Leader</h3>
+                                <div className="flex items-center justify-center space-x-4">
+                                    <GameImage 
+                                        src={gameResults[0].game.header_image} 
+                                        alt={gameResults[0].game.name}
+                                        fallbackText={gameResults[0].game.name}
+                                        className="w-16 h-10 object-cover rounded-lg"
+                                    />
+                                    <div>
+                                        <div className="text-white font-bold">{gameResults[0].game.name}</div>
+                                        <div className="text-white/70 text-sm">{gameResults[0].total_points} points</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Results List */}
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
+                            <h3 className="text-2xl font-bold text-white mb-6 flex items-center justify-between">
+                                <span>All Results</span>
+                                <div className="flex items-center space-x-3">
+                                    {!voting_complete && (
+                                        <div className="text-sm text-white/60 font-normal flex items-center">
+                                            <div className={`w-2 h-2 rounded-full mr-2 ${
+                                                isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'
+                                            }`}></div>
+                                            {isLiveConnected ? 'Live Updates' : 'Polling'}
+                                        </div>
+                                    )}
+                                    
+                                    {/* Enhanced action buttons */}
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={handleManualRefresh}
+                                            disabled={refreshing}
+                                            className="px-3 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-white text-sm rounded-lg transition-colors duration-200 disabled:opacity-50"
+                                            title="Manual refresh"
+                                        >
+                                            {refreshing ? '⏳' : '🔄'}
+                                        </button>
+                                        
+                                        {!isLiveConnected && !voting_complete && (
+                                            <button
+                                                onClick={handleReconnectLive}
+                                                className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-300 text-sm rounded-lg transition-colors duration-200"
+                                                title="Reconnect live updates"
+                                            >
+                                                🔌
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </h3>
+                            
+                            <div className="space-y-4">
+                                {gameResults.map((result, index) => {
+                                    const isWinner = index === 0 && voting_complete;
+                                    const isCurrentLeader = index === 0 && !voting_complete;
+                                    
+                                    return (
+                                        <div 
+                                            key={result.game.id} 
+                                            className={`p-6 rounded-2xl border transition-all duration-300 ${
+                                                isWinner
+                                                    ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-yellow-500/30 shadow-lg shadow-yellow-500/20'
+                                                    : isCurrentLeader
+                                                    ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-blue-500/30 shadow-lg shadow-blue-500/20'
+                                                    : 'bg-white/5 border-white/20 hover:bg-white/10'
+                                            }`}
+                                        >
+                                            <div className="flex items-center space-x-4">
+                                                {/* Rank */}
+                                                <div className={`flex-shrink-0 w-16 h-16 rounded-full bg-gradient-to-r ${getPlaceColor(index)} flex items-center justify-center text-white font-bold text-xl shadow-lg`}>
+                                                    {getPlaceEmoji(index)}
+                                                </div>
+                                                
+                                                {/* Game Image */}
+                                                <GameImage 
+                                                    src={result.game.header_image} 
+                                                    alt={result.game.name}
+                                                    fallbackText={result.game.name}
+                                                    className="w-24 h-14 object-cover rounded-lg flex-shrink-0"
+                                                />
+                                                
+                                                {/* Game Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-white font-bold text-lg truncate flex items-center">
+                                                        {result.game.name}
+                                                        {isWinner && <span className="ml-2 text-yellow-400">👑</span>}
+                                                        {isCurrentLeader && <span className="ml-2 text-blue-400">⭐</span>}
+                                                    </h4>
+                                                    <p className="text-white/60 text-sm line-clamp-2">
+                                                        {result.game.short_description || 'No description available'}
+                                                    </p>
+                                                    {result.game.genres && result.game.genres.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 mt-2">
+                                                            {result.game.genres.slice(0, 3).map(genre => (
+                                                                <span key={genre} className="px-2 py-1 bg-white/20 rounded text-xs text-white/80">
+                                                                    {genre}
+                                                                </span>
+                                                            ))}
+                                                            {result.game.genres.length > 3 && (
+                                                                <span className="px-2 py-1 bg-white/20 rounded text-xs text-white/60">
+                                                                    +{result.game.genres.length - 3}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                {/* Stats */}
+                                                <div className="flex-shrink-0 text-right">
+                                                    <div className="text-2xl font-bold text-white mb-1">
+                                                        {result.total_points} pts
+                                                    </div>
+                                                    <div className="text-white/60 text-sm">
+                                                        {result.vote_count} vote{result.vote_count !== 1 ? 's' : ''}
+                                                    </div>
+                                                    <div className="text-white/50 text-xs mt-1">
+                                                        Avg: {result.average_score.toFixed(1)}
+                                                    </div>
+                                                    {result.game.multiplayer && (
+                                                        <div className="mt-1">
+                                                            <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
+                                                                Multiplayer
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* NEW: Enhanced Sidebar */}
+                    <div className="space-y-6">
+                        {/* Voter Status Panel */}
+                        {groupMembers.length > 0 && (
+                            <VoterStatusPanel 
+                                session={session} 
+                                groupMembers={groupMembers} 
+                            />
+                        )}
+                        
+                        {/* Voting Reminders (only if voting not complete) */}
+                        {pendingVoters.length > 0 && !voting_complete && (
+                            <VotingReminders 
+                                pendingVoters={pendingVoters}
+                                onSendReminder={handleSendReminder}
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -666,7 +778,6 @@ const ResultsPage = () => {
                         {session && (
                             <p className="text-white/50 text-xs mt-2">
                                 Session ID: {session.id} • Created: {formatTimeAgo(session.created_at)}
-                                {/* 🚀 NEW: Connection info */}
                                 {liveUpdateCount > 0 && (
                                     <span> • {liveUpdateCount} live updates received</span>
                                 )}

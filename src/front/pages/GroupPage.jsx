@@ -1,10 +1,12 @@
-// src/front/pages/GroupPage.jsx - ENHANCED COMPLETE VERSION
+// src/front/pages/GroupPage.jsx - ENHANCED WITH VOTER STATUS
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CommonGamesList from '../components/CommonGamesList';
 import QuickVote from '../components/QuickVote';
 import GroupInviteLink from '../components/GroupInviteLink';
 import GroupActionButtons from '../components/GroupActionButtons';
+import VoterStatusPanel from '../components/VoterStatusPanel'; // NEW
+import VotingReminders from '../components/VotingReminders'; // NEW
 import authService from '../store/authService';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import toast from 'react-hot-toast';
@@ -19,6 +21,7 @@ const GroupPage = () => {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('vote'); // 'vote', 'games', 'members'
     const [activeSessions, setActiveSessions] = useState([]);
+    const [currentSession, setCurrentSession] = useState(null); // NEW: Track current voting session
 
     useEffect(() => {
         if (groupId) {
@@ -56,10 +59,22 @@ const GroupPage = () => {
     const fetchActiveSessions = async () => {
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/sessions`);
             
-            if (response.ok) {
-                const data = await response.json();
+            // Check for active session first
+            const activeSessionResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/active-session`);
+            
+            if (activeSessionResponse.ok) {
+                const activeData = await activeSessionResponse.json();
+                if (activeData.session) {
+                    setCurrentSession(activeData.session);
+                }
+            }
+            
+            // Then get all sessions
+            const sessionsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/sessions`);
+            
+            if (sessionsResponse.ok) {
+                const data = await sessionsResponse.json();
                 const activeSessions = data.sessions?.filter(s => s.status === 'voting' || s.status === 'completed') || [];
                 setActiveSessions(activeSessions);
             }
@@ -78,6 +93,25 @@ const GroupPage = () => {
                 state: { message: `You left "${group?.name || 'the group'}"` }
             });
         }
+    };
+
+    // NEW: Handle reminder sending (placeholder implementation)
+    const handleSendReminder = async (voterId) => {
+        console.log('Sending reminder to voter:', voterId);
+        toast.success('Reminder sent!', { duration: 2000 });
+        
+        // In a real implementation, you might call an API like:
+        // await authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${currentSession.id}/remind/${voterId}`, { method: 'POST' });
+    };
+
+    // NEW: Get pending voters for current session
+    const getPendingVoters = () => {
+        if (!currentSession || !group?.members) return [];
+        
+        const voteResults = JSON.parse(currentSession.vote_results || '{}');
+        const voters = voteResults.voters || {};
+        
+        return group.members.filter(member => !voters[member.id.toString()]);
     };
 
     if (loading) {
@@ -108,10 +142,12 @@ const GroupPage = () => {
             </div>
         );
     }
+
+    const pendingVoters = getPendingVoters();
     
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
-            <div className="max-w-6xl mx-auto">
+            <div className="max-w-7xl mx-auto"> {/* Increased max width for better layout */}
                 
                 {/* Header */}
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 mb-8">
@@ -227,11 +263,11 @@ const GroupPage = () => {
                     </div>
                 </div>
                 
-                {/* Tab Content */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Tab Content - Enhanced Grid Layout */}
+                <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
                     
                     {/* Main Content */}
-                    <div className="lg:col-span-2">
+                    <div className="xl:col-span-3">
                         {activeTab === 'vote' && (
                             <div className="space-y-6">
                                 <QuickVote groupId={groupId} />
@@ -336,8 +372,24 @@ const GroupPage = () => {
                         )}
                     </div>
 
-                    {/* Sidebar */}
+                    {/* Enhanced Sidebar */}
                     <div className="space-y-6">
+                        {/* NEW: Show voter status if there's an active voting session */}
+                        {currentSession && activeTab === 'vote' && (
+                            <VoterStatusPanel 
+                                session={currentSession} 
+                                groupMembers={group.members || []} 
+                            />
+                        )}
+                        
+                        {/* NEW: Show voting reminders for pending voters */}
+                        {pendingVoters.length > 0 && currentSession?.status === 'voting' && activeTab === 'vote' && (
+                            <VotingReminders 
+                                pendingVoters={pendingVoters}
+                                onSendReminder={handleSendReminder}
+                            />
+                        )}
+                        
                         <GroupInviteLink group={group} />
                         
                         {/* Quick Stats */}
