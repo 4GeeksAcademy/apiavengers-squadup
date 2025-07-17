@@ -1,6 +1,6 @@
-// src/front/store/store.js - ENHANCED VERSION with better synchronization
+// src/front/store/store.js - ENHANCED VERSION with gaming state
 
-// ENHANCED: More robust initial state function
+// ENHANCED: More robust initial state function with gaming state
 export const initialStore = () => {
     // Get stored values, but validate them first
     const getStoredToken = () => {
@@ -64,15 +64,47 @@ export const initialStore = () => {
     });
 
     return {
+        // Messages - Enhanced to support different message types
         message: null,
+        messages: [], // Support for multiple messages/notifications
+        
         // Authentication state - ENHANCED
         user: storedUser,
         token: storedToken,
         isAuthenticated: initialAuth,
         authLoading: true, // Start as loading until authService checks
         authError: null,
+        
+        // Gaming state - NEW
+        gaming: {
+            // Groups
+            currentGroup: null,
+            userGroups: [],
+            groupMembers: [],
+            groupLoading: false,
+            groupError: null,
+            
+            // Voting sessions
+            activeSession: null,
+            sessionResults: null,
+            sessionVoters: [],
+            userVotes: [],
+            votingLoading: false,
+            votingError: null,
+            
+            // Live voting
+            liveResultsEventSource: null,
+            liveResults: null,
+            
+            // UI state
+            showMemberModal: false,
+            showVotingModal: false,
+            selectedGame: null
+        },
+        
         // Animation state
         animationsEnabled: true, 
+        
         // Demo data for existing functionality
         todos: [
             {
@@ -91,7 +123,7 @@ export const initialStore = () => {
     };
 };
 
-// Action types
+// Action types - Enhanced with gaming actions
 export const ACTION_TYPES = {
     // Demo actions
     SET_HELLO: 'set_hello',
@@ -106,15 +138,45 @@ export const ACTION_TYPES = {
     LOGOUT: 'logout',
     LOGIN_SUCCESS: 'login_success',
     
-    // Message actions
+    // Message actions - Enhanced
     SET_MESSAGE: 'set_message',
     CLEAR_MESSAGE: 'clear_message',
+    ADD_MESSAGE: 'add_message',
+    REMOVE_MESSAGE: 'remove_message',
 
     // Animation actions
-    TOGGLE_ANIMATIONS: 'toggle_animations'
+    TOGGLE_ANIMATIONS: 'toggle_animations',
+    
+    // Gaming actions - NEW
+    // Groups
+    SET_CURRENT_GROUP: 'set_current_group',
+    SET_USER_GROUPS: 'set_user_groups',
+    SET_GROUP_MEMBERS: 'set_group_members',
+    SET_GROUP_LOADING: 'set_group_loading',
+    SET_GROUP_ERROR: 'set_group_error',
+    UPDATE_GROUP: 'update_group',
+    REMOVE_GROUP: 'remove_group',
+    
+    // Voting
+    SET_ACTIVE_SESSION: 'set_active_session',
+    SET_SESSION_RESULTS: 'set_session_results',
+    SET_SESSION_VOTERS: 'set_session_voters',
+    SET_USER_VOTES: 'set_user_votes',
+    SET_VOTING_LOADING: 'set_voting_loading',
+    SET_VOTING_ERROR: 'set_voting_error',
+    
+    // Live voting
+    SET_LIVE_RESULTS: 'set_live_results',
+    SET_LIVE_RESULTS_SOURCE: 'set_live_results_source',
+    CLEAR_LIVE_RESULTS: 'clear_live_results',
+    
+    // UI state
+    TOGGLE_MEMBER_MODAL: 'toggle_member_modal',
+    TOGGLE_VOTING_MODAL: 'toggle_voting_modal',
+    SET_SELECTED_GAME: 'set_selected_game'
 };
 
-// ENHANCED: More robust reducer with better state validation
+// ENHANCED: More robust reducer with gaming state management
 const storeReducer = (state, action) => {
     console.log('🔄 Reducer called:', action.type, action.payload);
     
@@ -237,14 +299,29 @@ const storeReducer = (state, action) => {
         case ACTION_TYPES.LOGOUT:
             console.log('🚪 LOGOUT reducer called');
             
-            // ENHANCED: More thorough logout cleanup
+            // ENHANCED: More thorough logout cleanup including gaming state
             const logoutState = {
                 ...state,
                 user: null,
                 token: null,
                 isAuthenticated: false,
                 authError: null,
-                authLoading: false // Important: stop loading on logout
+                authLoading: false,
+                // Clear gaming state on logout
+                gaming: {
+                    ...state.gaming,
+                    currentGroup: null,
+                    userGroups: [],
+                    groupMembers: [],
+                    activeSession: null,
+                    sessionResults: null,
+                    sessionVoters: [],
+                    userVotes: [],
+                    liveResults: null,
+                    // Close live results connection
+                    liveResultsEventSource: state.gaming.liveResultsEventSource ? 
+                        (state.gaming.liveResultsEventSource.close(), null) : null
+                }
             };
             
             console.log('🚪 LOGOUT new state:', {
@@ -255,7 +332,7 @@ const storeReducer = (state, action) => {
             
             return logoutState;
 
-        // Message actions
+        // Enhanced message actions
         case ACTION_TYPES.SET_MESSAGE:
             return {
                 ...state,
@@ -268,13 +345,229 @@ const storeReducer = (state, action) => {
                 message: null
             };
 
+        case ACTION_TYPES.ADD_MESSAGE:
+            return {
+                ...state,
+                messages: [...state.messages, { 
+                    id: Date.now(), 
+                    timestamp: new Date(),
+                    ...action.payload 
+                }]
+            };
+
+        case ACTION_TYPES.REMOVE_MESSAGE:
+            return {
+                ...state,
+                messages: state.messages.filter(msg => msg.id !== action.payload)
+            };
+
+        // Gaming Group Actions - NEW
+        case ACTION_TYPES.SET_CURRENT_GROUP:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    currentGroup: action.payload,
+                    groupError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_USER_GROUPS:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    userGroups: action.payload || [],
+                    groupError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_GROUP_MEMBERS:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    groupMembers: action.payload || [],
+                    groupError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_GROUP_LOADING:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    groupLoading: !!action.payload
+                }
+            };
+
+        case ACTION_TYPES.SET_GROUP_ERROR:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    groupError: action.payload,
+                    groupLoading: false
+                }
+            };
+
+        case ACTION_TYPES.UPDATE_GROUP:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    userGroups: state.gaming.userGroups.map(group =>
+                        group.id === action.payload.id ? { ...group, ...action.payload } : group
+                    ),
+                    currentGroup: state.gaming.currentGroup && state.gaming.currentGroup.id === action.payload.id
+                        ? { ...state.gaming.currentGroup, ...action.payload }
+                        : state.gaming.currentGroup
+                }
+            };
+
+        case ACTION_TYPES.REMOVE_GROUP:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    userGroups: state.gaming.userGroups.filter(group => group.id !== action.payload),
+                    currentGroup: state.gaming.currentGroup && state.gaming.currentGroup.id === action.payload 
+                        ? null 
+                        : state.gaming.currentGroup
+                }
+            };
+
+        // Voting Actions - NEW
+        case ACTION_TYPES.SET_ACTIVE_SESSION:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    activeSession: action.payload,
+                    votingError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_SESSION_RESULTS:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    sessionResults: action.payload,
+                    votingError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_SESSION_VOTERS:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    sessionVoters: action.payload || [],
+                    votingError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_USER_VOTES:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    userVotes: action.payload || [],
+                    votingError: null
+                }
+            };
+
+        case ACTION_TYPES.SET_VOTING_LOADING:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    votingLoading: !!action.payload
+                }
+            };
+
+        case ACTION_TYPES.SET_VOTING_ERROR:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    votingError: action.payload,
+                    votingLoading: false
+                }
+            };
+
+        // Live Voting Actions - NEW
+        case ACTION_TYPES.SET_LIVE_RESULTS:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    liveResults: action.payload
+                }
+            };
+
+        case ACTION_TYPES.SET_LIVE_RESULTS_SOURCE:
+            // Close existing connection if any
+            if (state.gaming.liveResultsEventSource) {
+                state.gaming.liveResultsEventSource.close();
+            }
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    liveResultsEventSource: action.payload
+                }
+            };
+
+        case ACTION_TYPES.CLEAR_LIVE_RESULTS:
+            if (state.gaming.liveResultsEventSource) {
+                state.gaming.liveResultsEventSource.close();
+            }
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    liveResults: null,
+                    liveResultsEventSource: null
+                }
+            };
+
+        // UI State Actions - NEW
+        case ACTION_TYPES.TOGGLE_MEMBER_MODAL:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    showMemberModal: !state.gaming.showMemberModal
+                }
+            };
+
+        case ACTION_TYPES.TOGGLE_VOTING_MODAL:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    showVotingModal: !state.gaming.showVotingModal
+                }
+            };
+
+        case ACTION_TYPES.SET_SELECTED_GAME:
+            return {
+                ...state,
+                gaming: {
+                    ...state.gaming,
+                    selectedGame: action.payload
+                }
+            };
+
         default:
             console.log('⚠️ Unknown action type:', action.type);
             return state;
     }
 };
 
-// ENHANCED: Add state validation helper
+// ENHANCED: Add state validation helper with gaming validation
 export const validateState = (state) => {
     const errors = [];
     
@@ -297,11 +590,75 @@ export const validateState = (state) => {
         errors.push('token is not a string');
     }
     
+    // Validate gaming state structure
+    if (!state.gaming || typeof state.gaming !== 'object') {
+        errors.push('gaming state is missing or invalid');
+    }
+    
+    // Validate gaming state arrays
+    if (state.gaming) {
+        if (!Array.isArray(state.gaming.userGroups)) {
+            errors.push('gaming.userGroups is not an array');
+        }
+        if (!Array.isArray(state.gaming.groupMembers)) {
+            errors.push('gaming.groupMembers is not an array');
+        }
+        if (!Array.isArray(state.gaming.sessionVoters)) {
+            errors.push('gaming.sessionVoters is not an array');
+        }
+        if (!Array.isArray(state.gaming.userVotes)) {
+            errors.push('gaming.userVotes is not an array');
+        }
+        if (!Array.isArray(state.messages)) {
+            errors.push('messages is not an array');
+        }
+    }
+    
     if (errors.length > 0) {
         console.error('🚨 State validation errors:', errors);
     }
     
     return errors.length === 0;
 };
+
+// Gaming state selectors - NEW
+export const getGamingSelectors = (state) => ({
+    // Group selectors
+    getCurrentGroup: () => state.gaming.currentGroup,
+    getUserGroups: () => state.gaming.userGroups,
+    getGroupMembers: () => state.gaming.groupMembers,
+    isGroupLoading: () => state.gaming.groupLoading,
+    getGroupError: () => state.gaming.groupError,
+    
+    // Voting selectors
+    getActiveSession: () => state.gaming.activeSession,
+    getSessionResults: () => state.gaming.sessionResults,
+    getSessionVoters: () => state.gaming.sessionVoters,
+    getUserVotes: () => state.gaming.userVotes,
+    isVotingLoading: () => state.gaming.votingLoading,
+    getVotingError: () => state.gaming.votingError,
+    
+    // Live voting selectors
+    getLiveResults: () => state.gaming.liveResults,
+    hasLiveConnection: () => !!state.gaming.liveResultsEventSource,
+    
+    // UI selectors
+    isMemberModalOpen: () => state.gaming.showMemberModal,
+    isVotingModalOpen: () => state.gaming.showVotingModal,
+    getSelectedGame: () => state.gaming.selectedGame,
+    
+    // User role selectors
+    isCurrentUserGroupCreator: () => {
+        const user = state.user;
+        const group = state.gaming.currentGroup;
+        return !!(user && group && group.creator && group.creator.id === user.id);
+    },
+    
+    canUserManageGroup: () => {
+        const user = state.user;
+        const group = state.gaming.currentGroup;
+        return !!(user && group && group.creator && group.creator.id === user.id);
+    }
+});
 
 export default storeReducer;

@@ -1,16 +1,19 @@
 """
-Gaming group management routes - ENHANCED WITH VOTING SYSTEM FIXES
+Gaming group management routes - ENHANCED WITH VOTING SYSTEM FIXES + OWNERSHIP TRANSFER
 - Race condition protection with atomic transactions
 - Real-time updates via Server-Sent Events
 - Comprehensive vote validation
 - Error recovery and retry logic
+- Ownership transfer functionality
+- Enhanced member management
 """
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from api.models import db, User, GamingGroup, GameSession, SteamGame
+from api.models import db, User, GamingGroup, GameSession, SteamGame, Vote
 from api.utils import APIException
 import secrets
 import string
+import json
 import json
 import time
 from datetime import datetime, timezone
@@ -66,8 +69,189 @@ def validate_vote_submission(game_votes, group_id, user_id):
 
 
 # ============================================================================
-# GROUP MANAGEMENT ROUTES (keeping your existing ones)
+# GROUP MANAGEMENT ROUTES - ENHANCED WITH OWNERSHIP TRANSFER
 # ============================================================================
+
+@gaming.route('/groups/<int:group_id>/transfer-ownership/<int:user_id>', methods=['POST'])
+@jwt_required()
+def transfer_group_ownership(group_id, user_id):
+    """Transfer group ownership to another member (CREATOR ONLY)"""
+    try:
+        current_user_id = get_jwt_identity()
+        group = GamingGroup.query.get(group_id)
+        new_creator = User.query.get(user_id)
+        
+        if not group:
+            raise APIException("Group not found", status_code=404)
+        if not new_creator:
+            raise APIException("User not found", status_code=404)
+        
+        # Only current creator can transfer ownership
+        if group.creator_id != current_user_id:
+            raise APIException("Only the group creator can transfer ownership", status_code=403)
+        
+        # New creator must be a member of the group
+        if new_creator not in group.members:
+            raise APIException("User is not a member of this group", status_code=400)
+        
+        # Can't transfer to yourself
+        if user_id == current_user_id:
+            raise APIException("You are already the creator", status_code=400)
+        
+        old_creator_username = group.creator.username if group.creator else "Unknown"
+        new_creator_username = new_creator.username
+        
+        print(f"🔄 Transferring ownership of group '{group.name}' from {old_creator_username} to {new_creator_username}")
+        
+        # Transfer ownership
+        group.creator_id = user_id
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": f"Group ownership transferred to {new_creator_username}",
+            "action": "ownership_transferred",
+            "old_creator": old_creator_username,
+            "new_creator": new_creator_username,
+            "group": group.serialize()
+        }), 200
+        
+    except APIException as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Unexpected error in transfer_group_ownership: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@gaming.route('/groups/<int:group_id>/members', methods=['GET'])
+@jwt_required()
+def get_group_members(group_id):
+    """Get detailed member information for a group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        group = GamingGroup.query.get(group_id)
+        
+        if not group:
+            raise APIException("Group not found", status_code=404)
+        if user not in group.members:
+            raise APIException("You are not a member of this group", status_code=403)
+        
+        # Serialize members with additional details
+        members_data = []
+        for member in group.members:
+            member_data = member.serialize()
+            
+            # Add group-specific information
+            member_data.update({
+                'is_creator': member.id == group.creator_id,
+                'joined_at': None,  # You might want to add this to your group_members table
+                'can_be_kicked': (
+                    group.creator_id == current_user_id and  # Current user is creator
+                    member.id != group.creator_id and        # Member is not creator
+                    member.id != current_user_id              # Member is not current user
+                ),
+                'can_be_promoted': (
+                    group.creator_id == current_user_id and  # Current user is creator
+                    member.id != group.creator_id and        # Member is not creator
+                    member.id != current_user_id              # Member is not current user
+                )
+            })
+            
+            members_data.append(member_data)
+        
+        # Sort members: creator first, then by username
+        members_data.sort(key=lambda m: (not m['is_creator'], m['username'].lower()))
+        
+        return jsonify({
+            "success": True,
+            "members": members_data,
+            "total_members": len(members_data),
+            "steam_connected_count": len([m for m in members_data if m.get('steam_connected')]),
+            "current_user_is_creator": group.creator_id == current_user_id
+        }), 200
+        
+    except APIException as e:
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        print(f"❌ Error getting group members: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@gaming.route('/groups/<int:group_id>/kick/<int:user_id>', methods=['POST'])
+@jwt_required()
+def kick_member(group_id, user_id):
+    """ENHANCED: Kick a member from the group (CREATOR ONLY)"""
+    try:
+        current_user_id = get_jwt_identity()
+        group = GamingGroup.query.get(group_id)
+        user_to_kick = User.query.get(user_id)
+        
+        if not group:
+            raise APIException("Group not found", status_code=404)
+        if not user_to_kick:
+            raise APIException("User not found", status_code=404)
+        if group.creator_id != current_user_id:
+            raise APIException("Only the group creator can kick members", status_code=403)
+        if user_to_kick.id == current_user_id:
+            raise APIException("Cannot kick yourself. Use 'leave' or 'delete' instead.", status_code=400)
+        if user_to_kick not in group.members:
+            raise APIException("User is not a member of this group", status_code=400)
+        
+        # Additional check: Can't kick another creator (shouldn't happen, but safety)
+        if user_to_kick.id == group.creator_id:
+            raise APIException("Cannot kick the group creator", status_code=400)
+        
+        kicked_username = user_to_kick.username
+        group_name = group.name
+        
+        print(f"👢 Kicking {kicked_username} from group '{group_name}'")
+        
+        # Remove from group
+        group.members.remove(user_to_kick)
+        
+        # ENHANCED: Clean up any user-specific data related to this group
+        try:
+            # Remove any votes in active sessions for this group using Vote model
+            active_sessions = GameSession.query.filter_by(group_id=group_id, status='voting').all()
+            votes_removed = 0
+            
+            for session in active_sessions:
+                # Remove votes by this user in this session
+                user_votes = Vote.query.filter_by(session_id=session.id, user_id=user_id).all()
+                for vote in user_votes:
+                    db.session.delete(vote)
+                votes_removed += len(user_votes)
+            
+            if votes_removed > 0:
+                print(f"🗳️ Removed {votes_removed} votes from {len(active_sessions)} active sessions")
+        except Exception as cleanup_error:
+            print(f"⚠️ Error cleaning up user votes: {cleanup_error}")
+            # Don't fail the kick operation for cleanup errors
+        
+        db.session.commit()
+        
+        print(f"✅ Successfully kicked {kicked_username} from group '{group_name}'")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Successfully kicked {kicked_username} from the group",
+            "action": "member_kicked",
+            "kicked_user": kicked_username,
+            "kicked_user_id": user_id,
+            "remaining_members": len(group.members)
+        }), 200
+        
+    except APIException as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Unexpected error in kick_member: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
 
 @gaming.route('/groups/<int:group_id>/leave', methods=['POST'])
 @jwt_required()
@@ -193,45 +377,6 @@ def delete_group(group_id):
                 "message": f"Group '{group_name}' deleted successfully.",
                 "action": "creator_deleted_manual"
             }), 200
-        
-    except APIException as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": e.message}), e.status_code
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": "Internal server error"}), 500
-
-
-@gaming.route('/groups/<int:group_id>/kick/<int:user_id>', methods=['POST'])
-@jwt_required()
-def kick_member(group_id, user_id):
-    """KICK a member from the group (CREATOR ONLY)"""
-    try:
-        current_user_id = get_jwt_identity()
-        group = GamingGroup.query.get(group_id)
-        user_to_kick = User.query.get(user_id)
-        
-        if not group:
-            raise APIException("Group not found", status_code=404)
-        if not user_to_kick:
-            raise APIException("User not found", status_code=404)
-        if group.creator_id != current_user_id:
-            raise APIException("Only the group creator can kick members", status_code=403)
-        if user_to_kick.id == current_user_id:
-            raise APIException("Cannot kick yourself. Use 'leave' or 'delete' instead.", status_code=400)
-        if user_to_kick not in group.members:
-            raise APIException("User is not a member of this group", status_code=400)
-        
-        kicked_username = user_to_kick.username
-        group.members.remove(user_to_kick)
-        db.session.commit()
-        
-        return jsonify({
-            "success": True,
-            "message": f"Successfully kicked {kicked_username} from the group",
-            "action": "member_kicked",
-            "kicked_user": kicked_username
-        }), 200
         
     except APIException as e:
         db.session.rollback()
@@ -485,7 +630,7 @@ def start_voting_session(group_id):
             session_name=session_name,
             description=description,
             status='voting',
-            vote_results=json.dumps({})
+            vote_results=json.dumps({})  # Keep for backwards compatibility, but won't be used
         )
         
         db.session.add(session)
@@ -497,7 +642,12 @@ def start_voting_session(group_id):
             "success": True,
             "message": "Voting session started",
             "session": session.serialize(),
-            "common_games": common_games
+            "common_games": common_games,
+            "voting_instructions": {
+                "max_votes": 3,
+                "scoring": "3 points for 1st choice, 2 points for 2nd, 1 point for 3rd",
+                "deadline": "Vote before all members vote or creator closes session"
+            }
         }), 201
         
     except APIException as e:
@@ -505,18 +655,19 @@ def start_voting_session(group_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
+        print(f"❌ Error starting voting session: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @gaming.route('/sessions/<int:session_id>/vote', methods=['POST'])
 @jwt_required()
 def submit_vote(session_id):
-    """🚀 ENHANCED: Submit votes with race condition protection and validation"""
+    """🚀 ENHANCED: Submit votes using Vote model with atomic transactions"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
-        # 🔥 FIX 1: RACE CONDITIONS - Use atomic transaction with row locking
+        # Use atomic transaction for race condition protection
         with db.session.begin():
             # Lock the session row to prevent concurrent modifications
             session = GameSession.query.with_for_update().get(session_id)
@@ -537,79 +688,52 @@ def submit_vote(session_id):
             if not game_votes:
                 raise APIException("No votes provided", status_code=400)
             
-            # 🛡️ FIX 3: VALIDATION - Comprehensive vote validation
+            # Comprehensive vote validation
             validation_errors = validate_vote_submission(game_votes, group.id, current_user_id)
             if validation_errors:
                 raise APIException(f"Validation failed: {'; '.join(validation_errors)}", status_code=400)
             
-            # Parse and validate existing votes atomically
-            try:
-                vote_results = json.loads(session.vote_results) if session.vote_results else {}
-            except json.JSONDecodeError:
-                vote_results = {}
-            
-            # Initialize structure
-            if 'votes' not in vote_results:
-                vote_results['votes'] = {}
-            if 'voters' not in vote_results:
-                vote_results['voters'] = {}
-            
-            # Check if user already voted (within transaction)
-            user_id_str = str(current_user_id)
-            if user_id_str in vote_results['voters']:
+            # Check if user has already voted using Vote model
+            if Vote.has_user_voted(session_id, current_user_id):
                 raise APIException("You have already voted in this session", status_code=400)
             
-            # Process votes
-            user_votes = []
-            for vote in game_votes:
-                game_id = str(vote.get('game_id'))
-                priority = vote.get('priority', 1)
-                
-                if game_id not in vote_results['votes']:
-                    vote_results['votes'][game_id] = {
-                        'total_points': 0, 
-                        'vote_count': 0, 
-                        'voters': []
-                    }
-                
-                vote_results['votes'][game_id]['total_points'] += priority
-                vote_results['votes'][game_id]['vote_count'] += 1
-                vote_results['votes'][game_id]['voters'].append({
-                    'user_id': current_user_id,
-                    'username': user.username,
-                    'points': priority
-                })
-                
-                user_votes.append({'game_id': game_id, 'points': priority})
+            # Create votes using the new Vote model
+            created_votes = []
+            for vote_data in game_votes:
+                vote = Vote(
+                    session_id=session_id,
+                    user_id=current_user_id,
+                    game_id=vote_data['game_id'],
+                    priority=vote_data['priority']
+                )
+                db.session.add(vote)
+                created_votes.append(vote)
             
-            # Record voter
-            vote_results['voters'][user_id_str] = {
-                'username': user.username,
-                'votes': user_votes,
-                'voted_at': datetime.utcnow().isoformat()
-            }
+            # Flush to check constraints before commit
+            db.session.flush()
             
-            # Update session atomically
-            session.vote_results = json.dumps(vote_results)
-            
-            # Check completion
+            # Check if voting is complete
             total_members = len(group.members)
-            total_voters = len(vote_results['voters'])
+            total_voters = Vote.get_voter_count(session_id)
             
             if total_voters >= total_members:
                 session.status = 'completed'
                 print(f"🏁 Voting session {session_id} auto-completed: all members voted")
             
+            # Update session timestamp
+            session.updated_at = datetime.utcnow()
+            
             # Commit happens automatically with 'with' block
         
-        print(f"✅ Vote submitted by {user.username} for session {session_id}")
+        print(f"✅ Vote submitted by {user.username} for session {session_id} ({len(created_votes)} votes)")
         
         return jsonify({
             "success": True,
             "message": "Vote submitted successfully",
             "session_status": session.status,
             "total_voters": total_voters,
-            "total_members": total_members
+            "total_members": total_members,
+            "votes_created": len(created_votes)
         }), 200
         
     except APIException as e:
@@ -622,7 +746,7 @@ def submit_vote(session_id):
 @gaming.route('/sessions/<int:session_id>/live-results')
 @jwt_required()
 def stream_live_results(session_id):
-    """🚀 FIX 2: REAL-TIME UPDATES - Stream live voting results using Server-Sent Events"""
+    """🚀 REAL-TIME UPDATES: Stream live voting results using Vote model + Server-Sent Events"""
     
     def generate_events():
         current_user_id = get_jwt_identity()
@@ -633,51 +757,40 @@ def stream_live_results(session_id):
             yield f"data: {json.dumps({'error': 'Access denied'})}\n\n"
             return
         
-        last_update = None
+        last_vote_count = 0
         
         while True:
             try:
                 # Get current session state
                 session = GameSession.query.get(session_id)
-                current_update = session.updated_at if session else None
+                if not session:
+                    break
                 
-                # Only send update if something changed
-                if current_update != last_update:
-                    # Parse vote results
-                    vote_results = json.loads(session.vote_results) if session.vote_results else {}
-                    votes = vote_results.get('votes', {})
-                    voters = vote_results.get('voters', {})
+                # Get current vote count to detect changes
+                current_vote_count = len(session.votes) if session.votes else 0
+                
+                # Only send update if vote count changed
+                if current_vote_count != last_vote_count:
+                    # Get results using Vote model (much faster than JSON parsing)
+                    results = Vote.get_session_results(session_id)
                     
-                    # Format results
-                    results = []
-                    for game_id, vote_data in votes.items():
-                        try:
-                            game = SteamGame.query.get(int(game_id))
-                            if game:
-                                results.append({
-                                    "game": game.serialize(),
-                                    "total_points": vote_data['total_points'],
-                                    "vote_count": vote_data['vote_count'],
-                                    "average_score": vote_data['total_points'] / vote_data['vote_count'] if vote_data['vote_count'] > 0 else 0
-                                })
-                        except ValueError:
-                            continue
-                    
-                    # Sort by points
-                    results.sort(key=lambda x: x['total_points'], reverse=True)
+                    # Get voter statistics
+                    total_voters = Vote.get_voter_count(session_id)
+                    total_members = len(session.group.members)
                     
                     # Send update
                     update_data = {
                         "results": results,
-                        "total_voters": len(voters),
-                        "total_members": len(session.group.members),
+                        "total_voters": total_voters,
+                        "total_members": total_members,
                         "voting_complete": session.status == 'completed',
                         "timestamp": datetime.utcnow().isoformat(),
-                        "session_status": session.status
+                        "session_status": session.status,
+                        "vote_count": current_vote_count
                     }
                     
                     yield f"data: {json.dumps(update_data)}\n\n"
-                    last_update = current_update
+                    last_vote_count = current_vote_count
                 
                 # Stop streaming if voting is complete
                 if session and session.status == 'completed':
@@ -705,7 +818,7 @@ def stream_live_results(session_id):
 @gaming.route('/sessions/<int:session_id>/results', methods=['GET'])
 @jwt_required()
 def get_session_results(session_id):
-    """Get results for a voting session"""
+    """Get results for a voting session using Vote model"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
@@ -718,59 +831,37 @@ def get_session_results(session_id):
         if user not in group.members:
             raise APIException("You are not a member of this group", status_code=403)
         
-        # Load vote results
-        try:
-            vote_results = json.loads(session.vote_results) if session.vote_results else {}
-        except:
-            vote_results = {}
+        # Get results using Vote model (much faster and more reliable)
+        results = Vote.get_session_results(session_id)
         
-        votes = vote_results.get('votes', {})
-        voters = vote_results.get('voters', {})
-        
-        if not votes:
-            return jsonify({
-                "success": True,
-                "session": session.serialize(),
-                "results": [],
-                "winner": None,
-                "total_voters": 0,
-                "voting_complete": session.status == 'completed'
-            }), 200
-        
-        # Get game details and calculate results
-        results = []
-        for game_id, vote_data in votes.items():
-            try:
-                game = SteamGame.query.get(int(game_id))
-                if game:
-                    results.append({
-                        "game": game.serialize(),
-                        "total_points": vote_data['total_points'],
-                        "vote_count": vote_data['vote_count'],
-                        "average_score": vote_data['total_points'] / vote_data['vote_count'] if vote_data['vote_count'] > 0 else 0
-                    })
-            except ValueError:
-                continue
-        
-        # Sort by total points (highest first)
-        results.sort(key=lambda x: x['total_points'], reverse=True)
+        # Get voter statistics
+        total_voters = Vote.get_voter_count(session_id)
+        total_members = len(group.members)
         
         # Determine winner
         winner = results[0] if results else None
+        
+        # Check if current user has voted
+        user_has_voted = Vote.has_user_voted(session_id, current_user_id)
+        user_votes = Vote.get_user_votes(session_id, current_user_id) if user_has_voted else []
         
         return jsonify({
             "success": True,
             "session": session.serialize(),
             "results": results,
             "winner": winner,
-            "total_voters": len(voters),
-            "total_members": len(group.members),
-            "voting_complete": session.status == 'completed'
+            "total_voters": total_voters,
+            "total_members": total_members,
+            "voting_complete": session.status == 'completed',
+            "user_has_voted": user_has_voted,
+            "user_votes": [vote.serialize() for vote in user_votes],
+            "participation_rate": (total_voters / total_members * 100) if total_members > 0 else 0
         }), 200
         
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
+        print(f"❌ Error getting session results: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -794,11 +885,19 @@ def close_voting_session(session_id):
             raise APIException("Session is not active", status_code=400)
         
         session.status = 'completed'
+        session.updated_at = datetime.utcnow()
         db.session.commit()
+        
+        # Get final results
+        results = Vote.get_session_results(session_id)
+        total_voters = Vote.get_voter_count(session_id)
         
         return jsonify({
             "success": True,
-            "message": "Voting session closed"
+            "message": "Voting session closed",
+            "final_results": results,
+            "total_voters": total_voters,
+            "winner": results[0] if results else None
         }), 200
         
     except APIException as e:
@@ -806,6 +905,167 @@ def close_voting_session(session_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
+        print(f"❌ Error closing voting session: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+# 🚀 NEW: Additional Vote Management Endpoints
+
+@gaming.route('/sessions/<int:session_id>/voters', methods=['GET'])
+@jwt_required()
+def get_session_voters(session_id):
+    """Get list of users who have voted in this session"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        session = GameSession.query.get(session_id)
+        
+        if not session:
+            raise APIException("Session not found", status_code=404)
+        
+        if user not in session.group.members:
+            raise APIException("You are not a member of this group", status_code=403)
+        
+        # Get unique voters with their vote details
+        voters_query = db.session.query(Vote.user_id, User.username, User.avatar_url, User.steam_avatar_url).join(
+            User, Vote.user_id == User.id
+        ).filter(Vote.session_id == session_id).distinct()
+        
+        voters = []
+        for user_id, username, avatar_url, steam_avatar in voters_query:
+            user_votes = Vote.get_user_votes(session_id, user_id)
+            voters.append({
+                "user_id": user_id,
+                "username": username,
+                "avatar_url": avatar_url or steam_avatar,
+                "vote_count": len(user_votes),
+                "votes": [vote.serialize() for vote in user_votes]
+            })
+        
+        # Get members who haven't voted yet
+        all_member_ids = {member.id for member in session.group.members}
+        voted_member_ids = {voter["user_id"] for voter in voters}
+        pending_member_ids = all_member_ids - voted_member_ids
+        
+        pending_voters = []
+        for member_id in pending_member_ids:
+            member = User.query.get(member_id)
+            pending_voters.append({
+                "user_id": member.id,
+                "username": member.username,
+                "avatar_url": member.avatar_url or member.steam_avatar_url,
+                "status": "pending"
+            })
+        
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "voters": voters,
+            "pending_voters": pending_voters,
+            "total_voted": len(voters),
+            "total_pending": len(pending_voters),
+            "total_members": len(session.group.members),
+            "completion_rate": (len(voters) / len(session.group.members) * 100) if session.group.members else 0
+        }), 200
+        
+    except APIException as e:
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        print(f"❌ Error getting session voters: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@gaming.route('/sessions/<int:session_id>/my-votes', methods=['GET'])
+@jwt_required()
+def get_my_votes(session_id):
+    """Get current user's votes for this session"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        session = GameSession.query.get(session_id)
+        
+        if not session:
+            raise APIException("Session not found", status_code=404)
+        
+        if user not in session.group.members:
+            raise APIException("You are not a member of this group", status_code=403)
+        
+        user_votes = Vote.get_user_votes(session_id, current_user_id)
+        has_voted = len(user_votes) > 0
+        
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "has_voted": has_voted,
+            "votes": [vote.serialize() for vote in user_votes],
+            "vote_count": len(user_votes),
+            "can_vote": session.status == 'voting' and not has_voted
+        }), 200
+        
+    except APIException as e:
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        print(f"❌ Error getting user votes: {str(e)}")
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@gaming.route('/sessions/<int:session_id>/vote-details/<int:game_id>', methods=['GET'])
+@jwt_required()
+def get_game_vote_details(session_id, game_id):
+    """Get detailed voting information for a specific game"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        session = GameSession.query.get(session_id)
+        
+        if not session:
+            raise APIException("Session not found", status_code=404)
+        
+        if user not in session.group.members:
+            raise APIException("You are not a member of this group", status_code=403)
+        
+        # Get all votes for this game in this session
+        game_votes = Vote.query.filter_by(
+            session_id=session_id,
+            game_id=game_id
+        ).order_by(Vote.priority.desc()).all()
+        
+        if not game_votes:
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "game_id": game_id,
+                "votes": [],
+                "total_points": 0,
+                "vote_count": 0,
+                "average_score": 0
+            }), 200
+        
+        # Calculate statistics
+        total_points = sum(vote.priority for vote in game_votes)
+        vote_count = len(game_votes)
+        average_score = total_points / vote_count if vote_count > 0 else 0
+        
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "game_id": game_id,
+            "game": game_votes[0].game.serialize() if game_votes[0].game else None,
+            "votes": [vote.serialize() for vote in game_votes],
+            "total_points": total_points,
+            "vote_count": vote_count,
+            "average_score": round(average_score, 2),
+            "point_breakdown": {
+                "3_points": len([v for v in game_votes if v.priority == 3]),
+                "2_points": len([v for v in game_votes if v.priority == 2]),
+                "1_points": len([v for v in game_votes if v.priority == 1])
+            }
+        }), 200
+        
+    except APIException as e:
+        return jsonify({"success": False, "error": e.message}), e.status_code
+    except Exception as e:
+        print(f"❌ Error getting game vote details: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 

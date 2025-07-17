@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
+import { leaveGroup, deleteGroup, transferGroupOwnership } from '../store/actions.js';
 
 const GroupActionButtons = ({ group, user, onGroupUpdate, className = "" }) => {
     const [loading, setLoading] = useState(false);

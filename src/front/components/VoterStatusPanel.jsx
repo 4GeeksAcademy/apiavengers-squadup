@@ -1,6 +1,7 @@
 // src/front/components/VoterStatusPanel.jsx - NEW COMPONENT
 import React from 'react';
 import Avatar from './Avatar';
+import { fetchSessionVoters, createLiveResultsStream } from '../store/actions.js';
 
 const VoterStatusPanel = ({ session, groupMembers, className = "" }) => {
     const voteResults = JSON.parse(session?.vote_results || '{}');

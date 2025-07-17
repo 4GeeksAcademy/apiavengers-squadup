@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
+import { submitVotes, fetchMyVotes } from '../store/actions.js';
 import GameImage from './GameImage';
 
 const QuickVote = ({ groupId }) => {
