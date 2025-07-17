@@ -1,11 +1,12 @@
 """
-Gaming group management routes - ENHANCED WITH VOTING SYSTEM FIXES + OWNERSHIP TRANSFER
+Gaming group management routes - COMPLETE ENHANCED VERSION
 - Race condition protection with atomic transactions
 - Real-time updates via Server-Sent Events
 - Comprehensive vote validation
 - Error recovery and retry logic
 - Ownership transfer functionality
 - Enhanced member management
+- Improved parameter validation from File 1
 """
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -15,13 +16,46 @@ import secrets
 import string
 import json
 import time
+import logging
 from datetime import datetime, timezone
+from functools import wraps
 
 gaming = Blueprint('gaming', __name__)
 
 # ============================================================================
-# VALIDATION FUNCTIONS
+# ENHANCED VALIDATION FUNCTIONS (MERGED FROM BOTH FILES)
 # ============================================================================
+
+def validate_group_id(f):
+    """Enhanced decorator to validate group ID parameter with detailed error handling"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        group_id = kwargs.get('group_id') or request.view_args.get('group_id')
+        
+        # Check for invalid group IDs
+        if not group_id or group_id == 'undefined' or group_id == 'null':
+            logging.error(f"Invalid group_id received: {group_id}")
+            return jsonify({
+                'error': 'Invalid group ID provided',
+                'code': 'INVALID_GROUP_ID'
+            }), 400
+            
+        # Validate group ID format (assuming integer)
+        try:
+            group_id_int = int(group_id)
+            if group_id_int <= 0:
+                raise ValueError("Group ID must be positive")
+            kwargs['group_id'] = group_id_int
+        except (ValueError, TypeError):
+            logging.error(f"Group ID is not a valid integer: {group_id}")
+            return jsonify({
+                'error': 'Group ID must be a valid positive integer',
+                'code': 'INVALID_GROUP_ID_FORMAT'
+            }), 400
+            
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 def validate_vote_submission(game_votes, group_id, user_id):
     """Validate votes before submission to prevent invalid data"""
@@ -62,9 +96,43 @@ def validate_vote_submission(game_votes, group_id, user_id):
                 errors.append(f"'{game_name}' is not available to this group")
     except Exception as e:
         errors.append("Could not validate game availability")
-        print(f"❌ Error validating games: {str(e)}")
+        logging.error(f"Error validating games: {str(e)}")
     
     return errors
+
+
+def serialize_group_safe(group):
+    """Enhanced safely serialize group data with validation (from File 1)"""
+    if not group or not hasattr(group, 'id'):
+        logging.error(f"Invalid group object for serialization: {group}")
+        return None
+        
+    try:
+        return {
+            'id': group.id,
+            'name': group.name or 'Unnamed Group',
+            'description': group.description,
+            'creator': {
+                'id': group.creator.id,
+                'username': group.creator.username
+            } if group.creator else None,
+            'current_members': len(group.members) if group.members else 0,
+            'max_members': group.max_members or 10,
+            'invite_code': group.invite_code,
+            'is_public': group.is_public or False,
+            'created_at': group.created_at.isoformat() if group.created_at else None,
+            'members': [
+                {
+                    'id': member.id,
+                    'username': member.username,
+                    'steam_connected': member.steam_connected or False,
+                    'total_games': member.total_games or 0
+                } for member in (group.members or [])
+            ]
+        }
+    except Exception as e:
+        logging.error(f"Error serializing group {group.id if group else 'None'}: {str(e)}")
+        return None
 
 
 # ============================================================================
@@ -73,6 +141,7 @@ def validate_vote_submission(game_votes, group_id, user_id):
 
 @gaming.route('/groups/<int:group_id>/transfer-ownership/<int:user_id>', methods=['POST'])
 @jwt_required()
+@validate_group_id
 def transfer_group_ownership(group_id, user_id):
     """Transfer group ownership to another member (CREATOR ONLY)"""
     try:
@@ -100,7 +169,7 @@ def transfer_group_ownership(group_id, user_id):
         old_creator_username = group.creator.username if group.creator else "Unknown"
         new_creator_username = new_creator.username
         
-        print(f"🔄 Transferring ownership of group '{group.name}' from {old_creator_username} to {new_creator_username}")
+        logging.info(f"Transferring ownership of group '{group.name}' from {old_creator_username} to {new_creator_username}")
         
         # Transfer ownership
         group.creator_id = user_id
@@ -112,7 +181,7 @@ def transfer_group_ownership(group_id, user_id):
             "action": "ownership_transferred",
             "old_creator": old_creator_username,
             "new_creator": new_creator_username,
-            "group": group.serialize()
+            "group": serialize_group_safe(group) or group.serialize()
         }), 200
         
     except APIException as e:
@@ -120,12 +189,13 @@ def transfer_group_ownership(group_id, user_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Unexpected error in transfer_group_ownership: {str(e)}")
+        logging.error(f"Unexpected error in transfer_group_ownership: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @gaming.route('/groups/<int:group_id>/members', methods=['GET'])
 @jwt_required()
+@validate_group_id
 def get_group_members(group_id):
     """Get detailed member information for a group"""
     try:
@@ -175,35 +245,50 @@ def get_group_members(group_id):
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error getting group members: {str(e)}")
+        logging.error(f"Error getting group members: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])
 @jwt_required()
+@validate_group_id
 def get_group_common_games(group_id):
-    """Get common games for a group - FIXED MISSING ENDPOINT"""
+    """Enhanced: Get common games for a group with comprehensive validation"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Find the group with additional validation
         group = GamingGroup.query.get(group_id)
-        
         if not group:
-            raise APIException("Group not found", status_code=404)
+            logging.warning(f"Group {group_id} not found for user {user.id}")
+            return jsonify({
+                'error': 'Group not found',
+                'code': 'GROUP_NOT_FOUND'
+            }), 404
+            
+        # Check if user is a member of the group
         if user not in group.members:
-            raise APIException("You are not a member of this group", status_code=403)
-        
+            logging.warning(f"User {user.id} attempted to access group {group_id} without membership")
+            return jsonify({
+                'error': 'You are not a member of this group',
+                'code': 'ACCESS_DENIED'
+            }), 403
+            
         # Get Steam-connected members
-        steam_members = [m for m in group.members if m.steam_id and m.is_steam_connected]
+        steam_members = [member for member in group.members if member.steam_connected]
+        
         if len(steam_members) < 2:
             return jsonify({
-                "success": True,
-                "games": [],
-                "message": "Need at least 2 Steam-connected members to find common games",
-                "steam_connected_count": len(steam_members),
-                "total_members": len(group.members)
+                'games': [],
+                'message': 'Need at least 2 Steam-connected members to find common games',
+                'steam_connected_count': len(steam_members),
+                'total_members': len(group.members)
             }), 200
-        
+            
         # Get user IDs
         user_ids = [m.id for m in steam_members]
         
@@ -215,27 +300,29 @@ def get_group_common_games(group_id):
             multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
             
             return jsonify({
-                "success": True,
-                "games": multiplayer_games[:20],  # Limit to 20 games
-                "total_games": len(multiplayer_games),
-                "steam_connected_count": len(steam_members),
-                "total_members": len(group.members)
+                'games': multiplayer_games[:20],  # Limit to 20 games
+                'group_id': group.id,
+                'steam_connected_count': len(steam_members),
+                'total_members': len(group.members),
+                'total_games': len(multiplayer_games)
             }), 200
         else:
             return jsonify({
-                "success": False,
-                "error": "Steam service not available"
+                'error': 'Steam service not available',
+                'code': 'SERVICE_UNAVAILABLE'
             }), 503
         
-    except APIException as e:
-        return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error getting group common games: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        logging.error(f"Error getting common games for group {group_id}: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error while fetching common games',
+            'code': 'INTERNAL_ERROR'
+        }), 500
 
 
 @gaming.route('/groups/<int:group_id>/kick/<int:user_id>', methods=['POST'])
 @jwt_required()
+@validate_group_id
 def kick_member(group_id, user_id):
     """ENHANCED: Kick a member from the group (CREATOR ONLY)"""
     try:
@@ -261,7 +348,7 @@ def kick_member(group_id, user_id):
         kicked_username = user_to_kick.username
         group_name = group.name
         
-        print(f"👢 Kicking {kicked_username} from group '{group_name}'")
+        logging.info(f"Kicking {kicked_username} from group '{group_name}'")
         
         # Remove from group
         group.members.remove(user_to_kick)
@@ -280,14 +367,14 @@ def kick_member(group_id, user_id):
                 votes_removed += len(user_votes)
             
             if votes_removed > 0:
-                print(f"🗳️ Removed {votes_removed} votes from {len(active_sessions)} active sessions")
+                logging.info(f"Removed {votes_removed} votes from {len(active_sessions)} active sessions")
         except Exception as cleanup_error:
-            print(f"⚠️ Error cleaning up user votes: {cleanup_error}")
+            logging.warning(f"Error cleaning up user votes: {cleanup_error}")
             # Don't fail the kick operation for cleanup errors
         
         db.session.commit()
         
-        print(f"✅ Successfully kicked {kicked_username} from group '{group_name}'")
+        logging.info(f"Successfully kicked {kicked_username} from group '{group_name}'")
         
         return jsonify({
             "success": True,
@@ -303,141 +390,141 @@ def kick_member(group_id, user_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Unexpected error in kick_member: {str(e)}")
+        logging.error(f"Unexpected error in kick_member: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @gaming.route('/groups/<int:group_id>/leave', methods=['POST'])
 @jwt_required()
+@validate_group_id
 def leave_group(group_id):
-    """LEAVE a gaming group (for members and creator)"""
+    """Enhanced leave group with better validation and error handling"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
         group = GamingGroup.query.get(group_id)
-        
         if not group:
-            raise APIException("Group not found", status_code=404)
-        
+            return jsonify({
+                'error': 'Group not found',
+                'code': 'GROUP_NOT_FOUND'
+            }), 404
+            
         if user not in group.members:
-            raise APIException("You are not a member of this group", status_code=400)
+            return jsonify({
+                'error': 'You are not a member of this group',
+                'code': 'NOT_A_MEMBER'
+            }), 400
+            
+        is_creator = (group.creator_id == user.id)
+        member_count = len(group.members)
         
-        group_name = group.name
-        is_creator = (group.creator_id == current_user_id)
-        other_members = [m for m in group.members if m.id != current_user_id]
+        logging.info(f"User {user.id} ({user.username}) leaving group {group.id} ({group.name}). "
+                    f"Is creator: {is_creator}, Member count: {member_count}")
         
-        print(f"📝 User {user.username} wants to leave group '{group_name}'")
-        
-        if is_creator:
-            if other_members:
-                new_creator = other_members[0]
-                print(f"🔄 Transferring ownership from {user.username} to {new_creator.username}")
-                
-                group.creator_id = new_creator.id
-                group.members.remove(user)
-                db.session.commit()
-                
-                return jsonify({
-                    "success": True,
-                    "message": f"You left '{group_name}'. Ownership transferred to {new_creator.username}.",
-                    "action": "left_with_transfer",
-                    "new_creator": new_creator.username,
-                    "group_deleted": False
-                }), 200
-            else:
-                print(f"🗑️ Auto-deleting empty group '{group_name}'")
-                try:
-                    db.session.delete(group)
-                    db.session.commit()
-                    return jsonify({
-                        "success": True,
-                        "message": f"Group '{group_name}' was deleted because you were the last member.",
-                        "action": "auto_deleted",
-                        "group_deleted": True
-                    }), 200
-                except Exception as delete_error:
-                    db.session.rollback()
-                    # Manual cleanup fallback
-                    sessions = GameSession.query.filter_by(group_id=group_id).all()
-                    for session in sessions:
-                        db.session.delete(session)
-                    group.members.clear()
-                    db.session.delete(group)
-                    db.session.commit()
-                    return jsonify({
-                        "success": True,
-                        "message": f"Group '{group_name}' was deleted.",
-                        "action": "auto_deleted_manual",
-                        "group_deleted": True
-                    }), 200
+        # Handle different leave scenarios
+        if is_creator and member_count > 1:
+            # Transfer ownership to another member
+            other_members = [m for m in group.members if m.id != user.id]
+            new_creator = other_members[0]  # Pick first available member
+            
+            group.creator_id = new_creator.id
+            group.members.remove(user)
+            
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'action': 'left_with_transfer',
+                'message': f'Left group. Ownership transferred to {new_creator.username}',
+                'new_creator': new_creator.username,
+                'group_deleted': False
+            }), 200
+            
+        elif is_creator and member_count == 1:
+            # Last member and creator - delete the group
+            group_name = group.name
+            db.session.delete(group)
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'action': 'auto_deleted',
+                'message': f'Group "{group_name}" was deleted (you were the last member)',
+                'group_deleted': True
+            }), 200
+            
         else:
-            print(f"👋 Regular member {user.username} leaving group '{group_name}'")
+            # Regular member leaving
             group.members.remove(user)
             db.session.commit()
             
             return jsonify({
-                "success": True,
-                "message": f"Successfully left group '{group_name}'.",
-                "action": "member_left",
-                "group_deleted": False
+                'success': True,
+                'action': 'member_left',
+                'message': f'Successfully left "{group.name}"',
+                'group_deleted': False
             }), 200
-        
-    except APIException as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": e.message}), e.status_code
+            
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Unexpected error in leave_group: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        logging.error(f"Error in leave_group for group {group_id}, user {current_user_id}: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error while leaving group',
+            'code': 'INTERNAL_ERROR'
+        }), 500
 
 
 @gaming.route('/groups/<int:group_id>/delete', methods=['DELETE'])
 @jwt_required()
+@validate_group_id
 def delete_group(group_id):
-    """DELETE a gaming group (CREATOR ONLY)"""
+    """Enhanced delete group with validation"""
     try:
         current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
         group = GamingGroup.query.get(group_id)
-        
         if not group:
-            raise APIException("Group not found", status_code=404)
-        
-        if group.creator_id != current_user_id:
-            raise APIException("Only the group creator can delete the group. Use 'leave' instead.", status_code=403)
-        
+            return jsonify({
+                'error': 'Group not found',
+                'code': 'GROUP_NOT_FOUND'
+            }), 404
+            
+        if group.creator_id != user.id:
+            return jsonify({
+                'error': 'Only the group creator can delete the group',
+                'code': 'INSUFFICIENT_PERMISSIONS'
+            }), 403
+            
         group_name = group.name
         member_count = len(group.members)
         
-        try:
-            db.session.delete(group)
-            db.session.commit()
-            return jsonify({
-                "success": True,
-                "message": f"Group '{group_name}' deleted successfully. All {member_count} members were removed.",
-                "action": "creator_deleted",
-                "members_removed": member_count
-            }), 200
-        except Exception:
-            db.session.rollback()
-            # Manual cleanup
-            sessions = GameSession.query.filter_by(group_id=group_id).all()
-            for session in sessions:
-                db.session.delete(session)
-            group.members.clear()
-            db.session.delete(group)
-            db.session.commit()
-            return jsonify({
-                "success": True,
-                "message": f"Group '{group_name}' deleted successfully.",
-                "action": "creator_deleted_manual"
-            }), 200
+        logging.info(f"User {user.id} deleting group {group.id} ({group_name}) with {member_count} members")
         
-    except APIException as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": e.message}), e.status_code
+        # Delete the group (cascade should handle related records)
+        db.session.delete(group)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Group "{group_name}" deleted successfully',
+            'group_deleted': True
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        logging.error(f"Error deleting group {group_id}: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error while deleting group',
+            'code': 'INTERNAL_ERROR'
+        }), 500
 
 
 @gaming.route('/groups', methods=['POST'])
@@ -484,7 +571,7 @@ def create_group():
         return jsonify({
             "success": True,
             "message": "Group created successfully",
-            "group": group.serialize()
+            "group": serialize_group_safe(group) or group.serialize()
         }), 201
         
     except APIException as e:
@@ -498,29 +585,47 @@ def create_group():
 @gaming.route('/groups', methods=['GET'])
 @jwt_required()
 def get_user_groups():
-    """Get all groups for the current user"""
+    """Enhanced groups list endpoint with safe serialization"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
         if not user:
-            raise APIException("User not found", status_code=404)
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Get user's groups with proper joins
+        user_groups = GamingGroup.query.filter(
+            GamingGroup.members.contains(user)
+        ).all()
         
-        user_groups = user.member_of_groups
+        # Serialize groups safely
+        serialized_groups = []
+        for group in user_groups:
+            serialized = serialize_group_safe(group)
+            if serialized:  # Only add valid serialized groups
+                serialized_groups.append(serialized)
+            else:
+                logging.warning(f"Skipping invalid group in serialization for user {user.id}")
+        
+        logging.info(f"Returning {len(serialized_groups)} valid groups for user {user.id}")
         
         return jsonify({
-            "success": True,
-            "groups": [group.serialize() for group in user_groups]
+            'success': True,
+            'groups': serialized_groups,
+            'total': len(serialized_groups)
         }), 200
         
-    except APIException as e:
-        return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        logging.error(f"Error getting groups for user {current_user_id}: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error while fetching groups',
+            'code': 'INTERNAL_ERROR'
+        }), 500
 
 
 @gaming.route('/groups/<int:group_id>', methods=['GET'])
 @jwt_required()
+@validate_group_id
 def get_group(group_id):
     """Get details for a specific group"""
     try:
@@ -535,7 +640,7 @@ def get_group(group_id):
         
         return jsonify({
             "success": True,
-            "group": group.serialize()
+            "group": serialize_group_safe(group) or group.serialize()
         }), 200
         
     except APIException as e:
@@ -566,7 +671,7 @@ def join_group_by_invite(invite_code):
         return jsonify({
             "success": True,
             "message": f"Successfully joined '{group.name}'",
-            "group": group.serialize()
+            "group": serialize_group_safe(group) or group.serialize()
         }), 200
         
     except APIException as e:
@@ -626,6 +731,7 @@ def validate_invite_code(invite_code):
 
 @gaming.route('/groups/<int:group_id>/active-session', methods=['GET'])
 @jwt_required()
+@validate_group_id
 def get_active_session(group_id):
     """Check if there's an active voting session for the group"""
     try:
@@ -658,6 +764,7 @@ def get_active_session(group_id):
 
 @gaming.route('/groups/<int:group_id>/start-vote', methods=['POST'])
 @jwt_required()
+@validate_group_id
 def start_voting_session(group_id):
     """Start a new voting session for the group"""
     try:
@@ -709,7 +816,7 @@ def start_voting_session(group_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Error starting voting session: {str(e)}")
+        logging.error(f"Error starting voting session: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -772,14 +879,14 @@ def submit_vote(session_id):
             
             if total_voters >= total_members:
                 session.status = 'completed'
-                print(f"🏁 Voting session {session_id} auto-completed: all members voted")
+                logging.info(f"Voting session {session_id} auto-completed: all members voted")
             
             # Update session timestamp
             session.updated_at = datetime.utcnow()
             
             # Commit happens automatically with 'with' block
         
-        print(f"✅ Vote submitted by {user.username} for session {session_id} ({len(created_votes)} votes)")
+        logging.info(f"Vote submitted by {user.username} for session {session_id} ({len(created_votes)} votes)")
         
         return jsonify({
             "success": True,
@@ -793,7 +900,7 @@ def submit_vote(session_id):
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error submitting vote: {str(e)}")
+        logging.error(f"Error submitting vote: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -854,11 +961,11 @@ def stream_live_results(session_id):
                     time.sleep(2)  # Check every 2 seconds
                     
                 except Exception as e:
-                    print(f"❌ SSE Error: {e}")
+                    logging.error(f"SSE Error: {e}")
                     yield f"data: {json.dumps({'error': 'Stream error'})}\n\n"
                     break
         except Exception as e:
-            print(f"❌ SSE Setup Error: {e}")
+            logging.error(f"SSE Setup Error: {e}")
             yield f"data: {json.dumps({'error': 'Authentication error'})}\n\n"
     
     return Response(
@@ -921,7 +1028,7 @@ def get_session_results(session_id):
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error getting session results: {str(e)}")
+        logging.error(f"Error getting session results: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -965,11 +1072,11 @@ def close_voting_session(session_id):
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Error closing voting session: {str(e)}")
+        logging.error(f"Error closing voting session: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
-# 🚀 NEW: Additional Vote Management Endpoints
+# 🚀 Additional Vote Management Endpoints
 
 @gaming.route('/sessions/<int:session_id>/voters', methods=['GET'])
 @jwt_required()
@@ -1031,7 +1138,7 @@ def get_session_voters(session_id):
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error getting session voters: {str(e)}")
+        logging.error(f"Error getting session voters: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -1065,7 +1172,7 @@ def get_my_votes(session_id):
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error getting user votes: {str(e)}")
+        logging.error(f"Error getting user votes: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -1125,7 +1232,7 @@ def get_game_vote_details(session_id, game_id):
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        print(f"❌ Error getting game vote details: {str(e)}")
+        logging.error(f"Error getting game vote details: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -1155,5 +1262,5 @@ def get_group_common_games_helper(group_id):
         return []
         
     except Exception as e:
-        print(f"❌ Error getting common games: {str(e)}")
+        logging.error(f"Error getting common games: {str(e)}")
         return []

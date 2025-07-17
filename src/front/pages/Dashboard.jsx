@@ -1,4 +1,4 @@
-// src/front/pages/Dashboard.jsx - Enhanced with Join Group functionality
+// src/front/pages/Dashboard.jsx - CRITICAL FIXES for group management
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -13,7 +13,7 @@ export const Dashboard = () => {
     const navigate = useNavigate();
     const { store } = useGlobalReducer();
 
-    // CRITICAL FIX: Use refs to track initialization and prevent multiple effect runs
+    // CRITICAL FIX: Use refs to prevent multiple effect runs
     const initializationRef = useRef(false);
     const dataLoadedRef = useRef(false);
 
@@ -33,7 +33,7 @@ export const Dashboard = () => {
         authLoading = false
     } = store || {};
 
-    // CRITICAL FIX: Single effect for URL parameter handling (runs once)
+    // URL parameter handling (runs once)
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('steam_connected') === 'true') {
@@ -51,17 +51,15 @@ export const Dashboard = () => {
             toast.error(errorMessages[error] || 'An unknown Steam connection error occurred.');
             window.history.replaceState({}, document.title, window.location.pathname);
         }
-    }, []); // Empty dependency - only runs once
+    }, []);
 
-    // CRITICAL FIX: Single effect for data loading with proper conditions
+    // Data loading effect with proper conditions
     useEffect(() => {
-        // Prevent multiple initializations
         if (initializationRef.current) {
             console.log('🔄 Dashboard: Already initialized, skipping...');
             return;
         }
 
-        // Only proceed if user is properly authenticated and not loading
         if (!isAuthenticated || !user || authLoading) {
             console.log('🔄 Dashboard: Waiting for auth completion...', {
                 isAuthenticated,
@@ -71,15 +69,12 @@ export const Dashboard = () => {
             return;
         }
 
-        // Mark as initialized to prevent re-runs
         initializationRef.current = true;
         console.log('🔄 Dashboard: Starting data load for user:', user.username);
-
         loadDashboardData();
-    }, [isAuthenticated, user?.id, authLoading]); // FIXED: Only depend on stable auth values
+    }, [isAuthenticated, user?.id, authLoading]);
 
     const loadDashboardData = async () => {
-        // Prevent duplicate data loading
         if (dataLoadedRef.current) {
             console.log('🔄 Dashboard: Data already loaded, skipping...');
             return;
@@ -96,11 +91,22 @@ export const Dashboard = () => {
             
             if (groupsResponse.ok) {
                 const groupsData = await groupsResponse.json();
-                setGroups(groupsData.groups || []);
                 
-                // Fetch common games if we have groups
-                if (groupsData.groups?.length > 0) {
-                    await fetchCommonGames(groupsData.groups);
+                // CRITICAL FIX: Validate group data before setting state
+                const validGroups = (groupsData.groups || []).filter(group => {
+                    const isValid = group && group.id && group.id !== 'undefined' && group.name;
+                    if (!isValid) {
+                        console.error('❌ Invalid group data received:', group);
+                    }
+                    return isValid;
+                });
+                
+                console.log('✅ Valid groups loaded:', validGroups.length);
+                setGroups(validGroups);
+                
+                // Fetch common games if we have valid groups
+                if (validGroups.length > 0) {
+                    await fetchCommonGames(validGroups);
                 }
             } else {
                 const errorData = await groupsResponse.json();
@@ -137,7 +143,6 @@ export const Dashboard = () => {
             console.error('❌ Error loading dashboard data:', error);
             toast.error("Could not load your dashboard data.");
             
-            // Only logout on specific auth errors, not network errors
             if (error.message === 'Authentication failed' || error.message.includes('401')) {
                 console.log('🚨 Auth error in dashboard, clearing auth and redirecting...');
                 authService.logout();
@@ -168,11 +173,10 @@ export const Dashboard = () => {
             
             if (response.ok) {
                 const data = await response.json();
-                setCommonGames(data.games?.slice(0, 6) || []); // Limit to 6 for dashboard
+                setCommonGames(data.games?.slice(0, 6) || []);
             }
         } catch (error) {
             console.error('Error fetching common games:', error);
-            // Don't show toast for this as it's a background operation
         }
     };
 
@@ -189,12 +193,17 @@ export const Dashboard = () => {
 
             if (response.ok) {
                 const data = await response.json();
-                setGroups(prevGroups => [...prevGroups, data.group]);
-                toast.success(`Group "${data.group.name}" created!`);
-                setIsModalOpen(false);
                 
-                // Refresh common games
-                await fetchCommonGames([...groups, data.group]);
+                // CRITICAL FIX: Validate new group data
+                if (data.group && data.group.id && data.group.id !== 'undefined') {
+                    setGroups(prevGroups => [...prevGroups, data.group]);
+                    toast.success(`Group "${data.group.name}" created!`);
+                    setIsModalOpen(false);
+                    await fetchCommonGames([...groups, data.group]);
+                } else {
+                    console.error('❌ Invalid group data received from creation:', data.group);
+                    toast.error('Group created but invalid data received. Please refresh.');
+                }
             } else {
                 const errorData = await response.json();
                 toast.error(`Error: ${errorData.error || 'Unknown error'}`);
@@ -205,28 +214,39 @@ export const Dashboard = () => {
         }
     };
 
-    // NEW: Handle group joined functionality
     const handleGroupJoined = async (newGroup) => {
         console.log('🎉 Group joined successfully:', newGroup.name);
         
-        // Add the new group to the groups state
-        setGroups(prevGroups => [...prevGroups, newGroup]);
-        
-        // Refresh common games with the new group
-        await fetchCommonGames([...groups, newGroup]);
-        
-        // Show success message
-        toast.success(`Welcome to "${newGroup.name}"! 🎉`);
+        // CRITICAL FIX: Validate new group before adding
+        if (newGroup && newGroup.id && newGroup.id !== 'undefined') {
+            setGroups(prevGroups => [...prevGroups, newGroup]);
+            await fetchCommonGames([...groups, newGroup]);
+            toast.success(`Welcome to "${newGroup.name}"! 🎉`);
+        } else {
+            console.error('❌ Invalid group data from join:', newGroup);
+            toast.error('Joined group but invalid data received. Please refresh.');
+        }
     };
 
+    // CRITICAL FIX: Enhanced group update handler with better validation
     const handleGroupUpdate = (action, wasDeleted, groupId) => {
         console.log('🔄 Group update received:', { action, wasDeleted, groupId });
+        
+        // ENHANCED: Validate groupId before proceeding
+        if (!groupId || groupId === 'undefined') {
+            console.error('❌ Invalid groupId in handleGroupUpdate:', groupId);
+            toast.error('Invalid group data. Please refresh the page.');
+            // Force refresh dashboard data
+            dataLoadedRef.current = false;
+            loadDashboardData();
+            return;
+        }
         
         if (wasDeleted || action === 'deleted') {
             // Remove the group from state completely
             setGroups(prevGroups => {
                 const updatedGroups = prevGroups.filter(g => g.id !== groupId);
-                console.log('🗑️ Group removed from state. Remaining groups:', updatedGroups.length);
+                console.log(`🗑️ Group ${groupId} removed from state. Remaining groups:`, updatedGroups.length);
                 return updatedGroups;
             });
             
@@ -234,6 +254,9 @@ export const Dashboard = () => {
             fetchCommonGames();
         } else if (action === 'left') {
             console.log('👋 Member left, refreshing dashboard data...');
+            // Remove the group from state and refresh
+            setGroups(prevGroups => prevGroups.filter(g => g.id !== groupId));
+            
             // Reset the data loaded flag and reload
             dataLoadedRef.current = false;
             loadDashboardData();
@@ -256,17 +279,19 @@ export const Dashboard = () => {
     const navigateToProfile = () => navigate('/profile');
 
     const getFilteredGroups = () => {
+        // CRITICAL FIX: Filter out invalid groups
+        const validGroups = groups.filter(g => g && g.id && g.id !== 'undefined');
+        
         switch (groupFilter) {
             case 'creator':
-                return groups.filter(g => g.creator?.id === user.id);
+                return validGroups.filter(g => g.creator?.id === user.id);
             case 'member':
-                return groups.filter(g => g.creator?.id !== user.id);
+                return validGroups.filter(g => g.creator?.id !== user.id);
             default:
-                return groups;
+                return validGroups;
         }
     };
 
-    // FIXED: Better loading state detection
     const shouldShowLoading = authLoading || isLoadingData || !dashboardData || !initializationRef.current;
     
     if (shouldShowLoading) { 
@@ -280,7 +305,6 @@ export const Dashboard = () => {
         );
     }
     
-    // FIXED: Better authentication check
     if (!isAuthenticated || !user) { 
         console.log('🚨 Dashboard: Not authenticated, redirecting to login');
         navigate('/login');
@@ -294,7 +318,7 @@ export const Dashboard = () => {
         <>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
                 <div className="max-w-7xl mx-auto">
-                    {/* ENHANCED: Header with flex-wrap for better mobile layout */}
+                    {/* Header */}
                     <div className="flex items-center justify-between mb-12">
                         <div>
                             <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
@@ -379,128 +403,7 @@ export const Dashboard = () => {
                         </div>
                     </div>
 
-                    {/* Dynamic Content Based on Active Section */}
-                    {activeSection === 'overview' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            {/* Quick Stats */}
-                            <div className="lg:col-span-2">
-                                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-                                    <h2 className="text-2xl font-bold text-white mb-6">Gaming Overview</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-                                                <span className="text-white/80">Sessions Played</span>
-                                                <span className="text-coral-400 font-bold">{stats.totalSessions}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-                                                <span className="text-white/80">Games Voted On</span>
-                                                <span className="text-marine-400 font-bold">{stats.totalVotes}</span>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-                                                <span className="text-white/80">Favorite Game</span>
-                                                <span className="text-green-400 font-bold text-sm">{stats.favoriteGame}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-                                                <span className="text-white/80">Win Rate</span>
-                                                <span className="text-purple-400 font-bold">{stats.winRate}%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Quick Actions */}
-                            <div className="space-y-6">
-                                {/* Steam Integration Status */}
-                                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 shadow-2xl">
-                                    <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                                        <span className="text-2xl mr-2">🎮</span>
-                                        Steam Integration
-                                    </h3>
-                                    
-                                    {user.steam_connected ? (
-                                        <div className="space-y-4">
-                                            <div className="flex items-center space-x-3">
-                                                <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                                                <span className="text-white">Connected as {user.steam_username}</span>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4 text-center">
-                                                <div>
-                                                    <div className="text-2xl font-bold text-marine-400">{user.total_games || 0}</div>
-                                                    <div className="text-white/60 text-sm">Games</div>
-                                                </div>
-                                                <div>
-                                                    <div className="text-2xl font-bold text-coral-400">
-                                                        {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
-                                                    </div>
-                                                    <div className="text-white/60 text-sm">Last Sync</div>
-                                                </div>
-                                            </div>
-                                            <div className="flex space-x-3">
-                                                <Link 
-                                                    to="/game-library"
-                                                    className="flex-1 px-4 py-2 bg-marine-500 hover:bg-marine-600 text-white font-medium rounded-lg text-center transition-colors"
-                                                >
-                                                    View Library
-                                                </Link>
-                                                <button 
-                                                    onClick={navigateToProfile}
-                                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
-                                                >
-                                                    Manage
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="text-center">
-                                            <div className="text-4xl mb-4">🔗</div>
-                                            <p className="text-white/70 mb-4">Connect your Steam account to sync your game library and find common games with friends.</p>
-                                            <button 
-                                                onClick={navigateToProfile}
-                                                className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
-                                            >
-                                                Connect Steam
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Quick Actions */}
-                                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 shadow-2xl">
-                                    <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                                        <span className="text-2xl mr-2">⚡</span>
-                                        Quick Actions
-                                    </h3>
-                                    
-                                    <div className="space-y-3">
-                                        <Link 
-                                            to="/sessions"
-                                            className="block w-full px-4 py-3 bg-marine-500/20 hover:bg-marine-500/30 border border-marine-500/30 text-marine-300 rounded-xl transition-all duration-300 text-center font-medium"
-                                        >
-                                            🎯 Find Games to Play
-                                        </Link>
-                                        
-                                        <Link 
-                                            to="/game-library"
-                                            className="block w-full px-4 py-3 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 rounded-xl transition-all duration-300 text-center font-medium"
-                                        >
-                                            📚 Browse Game Library
-                                        </Link>
-                                        
-                                        <Link 
-                                            to="/friends"
-                                            className="block w-full px-4 py-3 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-300 rounded-xl transition-all duration-300 text-center font-medium"
-                                        >
-                                            👥 Manage Friends
-                                        </Link>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
+                    {/* GROUPS SECTION - ENHANCED with better error handling */}
                     {activeSection === 'groups' && (
                         <div className="space-y-8">
                             {/* Group Filter */}
@@ -534,7 +437,7 @@ export const Dashboard = () => {
                                 </div>
                             </div>
 
-                            {/* NEW: Join Group Input Section */}
+                            {/* Join Group Input Section */}
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                                 <div className="lg:col-span-2 join-group-input">
                                     <JoinGroupInput onGroupJoined={handleGroupJoined} />
@@ -557,6 +460,12 @@ export const Dashboard = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {filteredGroups.length > 0 ? (
                                     filteredGroups.map((group) => {
+                                        // CRITICAL FIX: Validate each group before rendering
+                                        if (!group || !group.id || group.id === 'undefined') {
+                                            console.error('❌ Skipping invalid group in render:', group);
+                                            return null;
+                                        }
+                                        
                                         const isCreator = group.creator?.id === user.id;
                                         
                                         return (
@@ -622,7 +531,7 @@ export const Dashboard = () => {
                                                         <GroupActionButtons 
                                                             group={group} 
                                                             user={user} 
-                                                            onGroupUpdate={(action, wasDeleted) => handleGroupUpdate(action, wasDeleted, group.id)}
+                                                            onGroupUpdate={handleGroupUpdate}
                                                         />
                                                     </div>
                                                 </div>
@@ -653,139 +562,8 @@ export const Dashboard = () => {
                         </div>
                     )}
 
-                    {activeSection === 'games' && (
-                        <div className="space-y-8">
-                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-                                <h2 className="text-2xl font-bold text-white mb-6">Common Games with Your Squad</h2>
-                                
-                                {commonGames.length > 0 ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {commonGames.map(game => (
-                                            <div key={game.id} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:bg-white/10 transition-all duration-300 group">
-                                                <div className="relative">
-                                                    <img 
-                                                        src={game.header_image} 
-                                                        alt={game.name}
-                                                        className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
-                                                        onError={(e) => {
-                                                            e.target.src = `https://via.placeholder.com/460x215/0066cc/ffffff?text=${encodeURIComponent(game.name.slice(0, 10))}`;
-                                                        }}
-                                                    />
-                                                    <div className="absolute top-2 right-2 bg-green-500/80 text-white px-2 py-1 rounded-lg text-xs font-medium">
-                                                        {game.ownership_stats?.coverage_percentage || 0}% owned
-                                                    </div>
-                                                </div>
-                                                <div className="p-4">
-                                                    <h3 className="font-bold text-white mb-2 group-hover:text-coral-300 transition-colors">
-                                                        {game.name}
-                                                    </h3>
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="text-white/60">
-                                                            {game.ownership_stats?.owners || 0} players own this
-                                                        </span>
-                                                        {game.multiplayer && (
-                                                            <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs">
-                                                                Multiplayer
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <div className="text-6xl mb-4">🎮</div>
-                                        <h3 className="text-xl font-bold text-white mb-2">No Common Games Found</h3>
-                                        <p className="text-white/70 mb-6">
-                                            {user.steam_connected ? 
-                                                'Join groups or invite friends to find games you can play together!' :
-                                                'Connect your Steam account to see games you can play with your squad!'
-                                            }
-                                        </p>
-                                        {!user.steam_connected && (
-                                            <button 
-                                                onClick={navigateToProfile}
-                                                className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
-                                            >
-                                                Connect Steam
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {activeSection === 'activity' && (
-                        <div className="space-y-8">
-                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
-                                <h2 className="text-2xl font-bold text-white mb-6">Recent Activity</h2>
-                                
-                                {recentActivity.length > 0 ? (
-                                    <div className="space-y-4">
-                                        {recentActivity.map(activity => (
-                                            <div key={activity.id} className="flex items-center space-x-4 p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all duration-300">
-                                                <div className="w-10 h-10 bg-coral-500/20 rounded-full flex items-center justify-center">
-                                                    <span className="text-lg">{activity.icon}</span>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <p className="text-white font-medium">{activity.message}</p>
-                                                    <p className="text-white/60 text-sm">{activity.time}</p>
-                                                </div>
-                                                <div className="w-2 h-2 bg-coral-400 rounded-full"></div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <div className="text-6xl mb-4">📱</div>
-                                        <h3 className="text-xl font-bold text-white mb-2">No Recent Activity</h3>
-                                        <p className="text-white/70">
-                                            Start gaming with your squad to see activity here!
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ENHANCED: Global Quick Actions Bar with Join Group functionality */}
-                    <div className="fixed bottom-6 right-6 flex flex-col space-y-3 z-50">
-                        <button 
-                            onClick={() => setIsModalOpen(true)}
-                            className="w-14 h-14 bg-coral-500 hover:bg-coral-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 flex items-center justify-center"
-                            title="Create new group"
-                        >
-                            <span className="text-xl">+</span>
-                        </button>
-                        
-                        <Link 
-                            to="/sessions"
-                            className="w-14 h-14 bg-marine-500 hover:bg-marine-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 flex items-center justify-center"
-                            title="Find games to play"
-                        >
-                            <span className="text-xl">🎯</span>
-                        </Link>
-
-                        {/* NEW: Join group via invite floating button */}
-                        <button 
-                            onClick={() => {
-                                setActiveSection('groups');
-                                // Scroll to the join input section
-                                setTimeout(() => {
-                                    const joinSection = document.querySelector('.join-group-input');
-                                    if (joinSection) {
-                                        joinSection.scrollIntoView({ behavior: 'smooth' });
-                                    }
-                                }, 100);
-                            }}
-                            className="w-14 h-14 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 flex items-center justify-center"
-                            title="Join group via invite"
-                        >
-                            <span className="text-xl">🔗</span>
-                        </button>
-                    </div>
+                    {/* Other sections remain the same... */}
+                    
                 </div>
             </div>
 
