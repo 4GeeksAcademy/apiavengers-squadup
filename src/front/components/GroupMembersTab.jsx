@@ -1,24 +1,54 @@
-// src/front/components/GroupMembersTab.jsx - Complete Member Management Component
+// src/front/components/GroupMembersTab.jsx - Enhanced with new actions and state management
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import authService from '../store/authService';
 import Avatar from './Avatar';
 import { transferGroupOwnership, fetchGroupMembers, kickGroupMember } from '../store/actions.js';
-import { useGlobalReducer } from '../hooks/useGlobalReducer.jsx';
+import useGlobalReducer from '../hooks/useGlobalReducer'; // Fixed: default import
+import { getGamingSelectors, ACTION_TYPES } from '../store/store.js';
 
 const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
-    const [members, setMembers] = useState(group?.members || []);
+    const { store, dispatch } = useGlobalReducer();
+    const selectors = getGamingSelectors(store);
+    
+    // Get members from global state or fallback to prop
+    const stateMembers = selectors.getGroupMembers();
+    const [localMembers, setLocalMembers] = useState(group?.members || []);
+    const members = stateMembers.length > 0 ? stateMembers : localMembers;
+    
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState({});
     const [filter, setFilter] = useState('all'); // 'all', 'steam', 'no-steam'
     const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
-    // Update members when group changes
+    // Fetch members on component mount
     useEffect(() => {
-        if (group?.members) {
-            setMembers(group.members);
+        const loadMembers = async () => {
+            if (group?.id) {
+                setLoading(true);
+                const result = await fetchGroupMembers(dispatch, group.id);
+                if (result.success) {
+                    // Members are now in global state via the action
+                    dispatch({ 
+                        type: ACTION_TYPES.SET_GROUP_MEMBERS, 
+                        payload: result.members 
+                    });
+                } else {
+                    // Fallback to local state if fetch fails
+                    setLocalMembers(group?.members || []);
+                }
+                setLoading(false);
+            }
+        };
+
+        loadMembers();
+    }, [group?.id, dispatch]);
+
+    // Update local members when group changes (fallback)
+    useEffect(() => {
+        if (group?.members && stateMembers.length === 0) {
+            setLocalMembers(group.members);
         }
-    }, [group?.members]);
+    }, [group?.members, stateMembers.length]);
 
     const isCreator = group?.creator?.id === user?.id;
 
@@ -33,7 +63,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
             return;
         }
 
-        const confirmMessage = `Are you sure you want to kick ${memberUsername} from the group?\n\nThis action cannot be undone.`;
+        const confirmMessage = `Are you sure you want to kick ${memberUsername} from the group?\n\nThis action cannot be undone and will remove their votes from active sessions.`;
         
         if (!window.confirm(confirmMessage)) {
             return;
@@ -42,26 +72,26 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
         setActionLoading(prev => ({ ...prev, [`kick_${memberId}`]: true }));
         
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${group.id}/kick/${memberId}`,
-                { method: 'POST' }
-            );
+            const result = await kickGroupMember(dispatch, group.id, memberId);
 
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                // Remove member from local state
-                setMembers(prev => prev.filter(m => m.id !== memberId));
+            if (result.success) {
+                // Update global state
+                const updatedMembers = members.filter(m => m.id !== memberId);
+                dispatch({ 
+                    type: ACTION_TYPES.SET_GROUP_MEMBERS, 
+                    payload: updatedMembers 
+                });
                 
-                toast.success(`${memberUsername} has been kicked from the group`);
+                // Update local state as fallback
+                setLocalMembers(updatedMembers);
                 
                 // Notify parent component
                 if (onGroupUpdate) {
-                    onGroupUpdate('member_kicked', false, { kickedMemberId: memberId });
+                    onGroupUpdate('member_kicked', false, { 
+                        kickedMemberId: memberId,
+                        remainingMembers: result.remainingMembers 
+                    });
                 }
-            } else {
-                toast.error(data.error || 'Failed to kick member');
             }
         } catch (error) {
             console.error('Error kicking member:', error);
@@ -86,31 +116,29 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
         setActionLoading(prev => ({ ...prev, [`promote_${memberId}`]: true }));
         
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${group.id}/transfer-ownership/${memberId}`,
-                { method: 'POST' }
-            );
+            const result = await transferGroupOwnership(dispatch, group.id, memberId);
 
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                toast.success(`Ownership transferred to ${memberUsername}`);
-                
+            if (result.success) {
                 // Update local group data
                 if (onGroupUpdate) {
                     onGroupUpdate('ownership_transferred', false, { 
                         newCreatorId: memberId,
-                        newCreatorUsername: memberUsername 
+                        newCreatorUsername: memberUsername,
+                        oldCreator: result.data.old_creator,
+                        newCreator: result.data.new_creator
                     });
                 }
+                
+                // Update the current group in state
+                dispatch({
+                    type: ACTION_TYPES.SET_CURRENT_GROUP,
+                    payload: result.data.group
+                });
                 
                 // Refresh the page or redirect since user is no longer creator
                 setTimeout(() => {
                     window.location.reload();
                 }, 2000);
-            } else {
-                toast.error(data.error || 'Failed to transfer ownership');
             }
         } catch (error) {
             console.error('Error transferring ownership:', error);
@@ -133,6 +161,23 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
         }
     };
 
+    const refreshMembers = async () => {
+        if (group?.id && !loading) {
+            setLoading(true);
+            const result = await fetchGroupMembers(dispatch, group.id);
+            if (result.success) {
+                dispatch({ 
+                    type: ACTION_TYPES.SET_GROUP_MEMBERS, 
+                    payload: result.members 
+                });
+                toast.success('Member list refreshed');
+            } else {
+                toast.error('Failed to refresh members');
+            }
+            setLoading(false);
+        }
+    };
+
     const getFilteredMembers = () => {
         switch (filter) {
             case 'steam':
@@ -147,6 +192,19 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const filteredMembers = getFilteredMembers();
     const steamConnectedCount = members.filter(m => m.steam_connected).length;
     const steamConnectedPercentage = members.length > 0 ? (steamConnectedCount / members.length) * 100 : 0;
+
+    // Show loading state
+    if (loading && members.length === 0) {
+        return (
+            <div className="space-y-6">
+                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-12 text-center">
+                    <div className="w-16 h-16 border-4 border-coral-500/30 border-t-coral-500 rounded-full animate-spin mx-auto mb-4"></div>
+                    <h3 className="text-xl font-bold text-white mb-2">Loading Members</h3>
+                    <p className="text-white/60">Fetching the latest member information...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -215,6 +273,15 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
 
                 <div className="flex space-x-3">
                     <button
+                        onClick={refreshMembers}
+                        disabled={loading}
+                        className="px-4 py-2 bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center space-x-2"
+                    >
+                        <span className={loading ? 'animate-spin' : ''}>🔄</span>
+                        <span>Refresh</span>
+                    </button>
+                    
+                    <button
                         onClick={copyInviteLink}
                         className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center space-x-2"
                     >
@@ -237,9 +304,14 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
             {/* Members List */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl overflow-hidden">
                 <div className="p-6 border-b border-white/10">
-                    <h3 className="text-xl font-bold text-white flex items-center">
-                        <span className="text-2xl mr-2">👥</span>
-                        Squad Members ({filteredMembers.length})
+                    <h3 className="text-xl font-bold text-white flex items-center justify-between">
+                        <span className="flex items-center">
+                            <span className="text-2xl mr-2">👥</span>
+                            Squad Members ({filteredMembers.length})
+                        </span>
+                        {selectors.isGroupLoading() && (
+                            <div className="w-5 h-5 border-2 border-coral-500/30 border-t-coral-500 rounded-full animate-spin"></div>
+                        )}
                     </h3>
                 </div>
 
@@ -361,7 +433,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                                                     onClick={() => handleKickMember(member.id, member.username)}
                                                     disabled={actionLoading[`kick_${member.id}`]}
                                                     className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center space-x-1"
-                                                    title="Kick from group"
+                                                    title="Kick from group (removes votes from active sessions)"
                                                 >
                                                     {actionLoading[`kick_${member.id}`] ? (
                                                         <span className="w-4 h-4 border border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -450,7 +522,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                                     >
                                         <span>📱</span>
                                         <span>WhatsApp</span>
-                                    </button>
+                    </button>
                                     <button
                                         onClick={() => {
                                             copyInviteLink();

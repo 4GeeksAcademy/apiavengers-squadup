@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import useGlobalReducer from '../hooks/useGlobalReducer';
+import useGlobalReducer from '../hooks/useGlobalReducer'; // Fixed: default import
 import authService from '../store/authService';
 import { getGamingSelectors } from '../store/store.js';
 
