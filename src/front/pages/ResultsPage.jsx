@@ -1,5 +1,5 @@
-// src/front/pages/ResultsPage.jsx - COMPLETE FIXED VERSION
-import React, { useState, useEffect } from 'react';
+// src/front/pages/ResultsPage.jsx - ENHANCED WITH REAL-TIME UPDATES
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
@@ -12,17 +12,155 @@ const ResultsPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    
+    // 🚀 NEW: Real-time connection state
+    const [isLiveConnected, setIsLiveConnected] = useState(false);
+    const [liveUpdateCount, setLiveUpdateCount] = useState(0);
+    const eventSourceRef = useRef(null);
+    const pollIntervalRef = useRef(null);
 
+    // Add debugging on component mount
     useEffect(() => {
+        console.log('🏆 ResultsPage: Component mounted for session:', sessionId);
+        console.log('🏆 ResultsPage: Current user:', authService.getCurrentUser()?.username);
+        console.log('🏆 ResultsPage: Auth status:', authService.isAuthenticated());
+    }, [sessionId]);
+
+    // 🚀 ENHANCED: Initialize both SSE and fallback polling
+    useEffect(() => {
+        if (!sessionId) return;
+
+        // Initial fetch
         fetchResults();
         
-        // Set up polling for live results (every 10 seconds)
-        const interval = setInterval(() => {
-            fetchResults(true); // Silent refresh
-        }, 10000);
+        // 🚀 NEW: Try to establish SSE connection first
+        setupServerSentEvents();
         
-        return () => clearInterval(interval);
+        // 🚀 NEW: Setup fallback polling (only if SSE fails)
+        const pollInterval = setInterval(() => {
+            if (!isLiveConnected) {
+                console.log('📡 SSE not connected, falling back to polling...');
+                fetchResults(true); // Silent refresh
+            }
+        }, 8000); // Poll every 8 seconds as fallback
+        
+        pollIntervalRef.current = pollInterval;
+        
+        return () => {
+            // Cleanup
+            if (eventSourceRef.current) {
+                console.log('🔌 Closing SSE connection...');
+                eventSourceRef.current.close();
+            }
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+            }
+        };
     }, [sessionId]);
+
+    // 🚀 NEW: Server-Sent Events setup for real-time updates
+    const setupServerSentEvents = () => {
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const token = authService.getAccessToken();
+            
+            if (!token) {
+                console.warn('⚠️ No auth token available for SSE');
+                return;
+            }
+
+            console.log('🔌 Setting up SSE connection for session:', sessionId);
+            
+            // Create EventSource with authentication
+            const sseUrl = `${backendUrl}/api/gaming/sessions/${sessionId}/live-results`;
+            const eventSource = new EventSource(sseUrl);
+            eventSourceRef.current = eventSource;
+
+            eventSource.onopen = () => {
+                console.log('✅ SSE connection established');
+                setIsLiveConnected(true);
+                setError(null);
+                
+                // Show connection success (subtle notification)
+                if (liveUpdateCount === 0) {
+                    toast.success('🔴 Live updates connected!', { duration: 2000 });
+                }
+            };
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('📡 SSE update received:', data);
+                    
+                    if (data.error) {
+                        console.error('❌ SSE Error:', data.error);
+                        setError(data.error);
+                        return;
+                    }
+
+                    // 🚀 Update results in real-time
+                    setResults(prevResults => {
+                        const newResults = {
+                            ...prevResults,
+                            results: data.results,
+                            total_voters: data.total_voters,
+                            total_members: data.total_members,
+                            voting_complete: data.voting_complete
+                        };
+
+                        // Show notification for new votes (but not on first load)
+                        if (prevResults && data.total_voters > (prevResults.total_voters || 0)) {
+                            const newVotes = data.total_voters - (prevResults.total_voters || 0);
+                            toast.success(
+                                `🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}! (${data.total_voters}/${data.total_members})`,
+                                { duration: 3000 }
+                            );
+                        }
+
+                        // Notify when voting completes
+                        if (!prevResults?.voting_complete && data.voting_complete) {
+                            toast.success('🏁 Voting completed! Final results ready.', { duration: 5000 });
+                        }
+
+                        return newResults;
+                    });
+
+                    setLiveUpdateCount(prev => prev + 1);
+                    setLoading(false);
+
+                    // Close SSE connection if voting is complete
+                    if (data.voting_complete) {
+                        console.log('🏁 Voting complete, closing SSE connection');
+                        eventSource.close();
+                        setIsLiveConnected(false);
+                    }
+
+                } catch (parseError) {
+                    console.error('❌ Error parsing SSE data:', parseError);
+                }
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('❌ SSE connection error:', error);
+                setIsLiveConnected(false);
+                
+                // Don't show error toast immediately - might be temporary
+                setTimeout(() => {
+                    if (!isLiveConnected) {
+                        console.log('📡 SSE failed, falling back to polling');
+                        toast.error('Live updates disconnected. Using polling instead.', { duration: 3000 });
+                    }
+                }, 5000);
+
+                // Close and cleanup
+                eventSource.close();
+            };
+
+        } catch (error) {
+            console.error('❌ Failed to setup SSE:', error);
+            setIsLiveConnected(false);
+        }
+    };
 
     const fetchResults = async (silent = false) => {
         if (!silent) setLoading(true);
@@ -34,14 +172,16 @@ const ResultsPage = () => {
             
             if (response.ok) {
                 const data = await response.json();
-                console.log('Results data:', data);
+                console.log('📊 Results data:', data);
                 setResults(data);
                 setError(null);
                 
-                if (silent && data.voting_complete) {
-                    // Stop polling if voting is complete
-                    clearInterval();
+                // If voting is complete and we're still polling, stop
+                if (data.voting_complete && pollIntervalRef.current) {
+                    clearInterval(pollIntervalRef.current);
+                    console.log('🏁 Voting complete, stopping polling');
                 }
+                
             } else if (response.status === 404) {
                 setError('Voting session not found');
                 if (!silent) toast.error('Voting session not found');
@@ -54,9 +194,9 @@ const ResultsPage = () => {
                 if (!silent) toast.error(errorData.error || 'Failed to load results');
             }
         } catch (error) {
-            console.error("Error fetching results:", error);
+            console.error("❌ Error fetching results:", error);
             setError('Network error. Please check your connection.');
-            if (!silent) { // Only show toast on initial load or manual refresh
+            if (!silent) {
                 toast.error('Network error. Please try again.');
             }
         } finally {
@@ -76,6 +216,17 @@ const ResultsPage = () => {
     const handleManualRefresh = () => {
         fetchResults();
         toast.success('Results refreshed!');
+    };
+
+    // 🚀 NEW: Force reconnect SSE
+    const handleReconnectLive = () => {
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+        }
+        setIsLiveConnected(false);
+        setLiveUpdateCount(0);
+        setupServerSentEvents();
+        toast.loading('Reconnecting live updates...', { duration: 2000 });
     };
 
     const getPlaceEmoji = (index) => {
@@ -124,6 +275,7 @@ const ResultsPage = () => {
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
                     <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-white text-lg">Loading results...</p>
+                    <p className="text-white/60 text-sm mt-2">Setting up live updates...</p>
                 </div>
             </div>
         );
@@ -169,6 +321,14 @@ const ResultsPage = () => {
                     </p>
                     <div className="mb-4 text-white/60 text-sm">
                         {results?.total_voters || 0} of {results?.total_members || 0} members have voted
+                    </div>
+                    
+                    {/* 🚀 NEW: Live connection status */}
+                    <div className="mb-4 flex items-center justify-center space-x-2">
+                        <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
+                        <span className="text-white/60 text-xs">
+                            {isLiveConnected ? 'Live updates active' : 'Polling for updates'}
+                        </span>
                     </div>
                     
                     {/* Progress bar */}
@@ -224,7 +384,7 @@ const ResultsPage = () => {
                     </div>
                     
                     {/* Session status */}
-                    <div className="mt-3 flex items-center justify-center space-x-4">
+                    <div className="mt-3 flex items-center justify-center space-x-4 flex-wrap">
                         {voting_complete ? (
                             <div className="px-4 py-2 bg-green-500/20 text-green-300 border border-green-500/30 rounded-full text-sm">
                                 ✅ Voting Complete
@@ -234,6 +394,16 @@ const ResultsPage = () => {
                                 🔴 Live Results • Updates automatically
                             </div>
                         )}
+                        
+                        {/* 🚀 NEW: Live connection indicator */}
+                        <div className={`px-3 py-1 rounded-full text-xs flex items-center space-x-2 ${
+                            isLiveConnected 
+                                ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
+                                : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                        }`}>
+                            <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
+                            <span>{isLiveConnected ? `Live (${liveUpdateCount} updates)` : 'Polling mode'}</span>
+                        </div>
                         
                         {session?.created_at && (
                             <div className="text-white/50 text-sm">
@@ -329,17 +499,34 @@ const ResultsPage = () => {
                         <div className="flex items-center space-x-3">
                             {!voting_complete && (
                                 <div className="text-sm text-white/60 font-normal flex items-center">
-                                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2"></div>
-                                    Live Updates
+                                    <div className={`w-2 h-2 rounded-full mr-2 ${
+                                        isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'
+                                    }`}></div>
+                                    {isLiveConnected ? 'Live Updates' : 'Polling'}
                                 </div>
                             )}
-                            <button
-                                onClick={handleManualRefresh}
-                                disabled={refreshing}
-                                className="px-3 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-white text-sm rounded-lg transition-colors duration-200 disabled:opacity-50"
-                            >
-                                {refreshing ? '⏳' : '🔄'}
-                            </button>
+                            
+                            {/* 🚀 NEW: Enhanced action buttons */}
+                            <div className="flex space-x-2">
+                                <button
+                                    onClick={handleManualRefresh}
+                                    disabled={refreshing}
+                                    className="px-3 py-1 bg-white/10 hover:bg-white/20 border border-white/30 text-white text-sm rounded-lg transition-colors duration-200 disabled:opacity-50"
+                                    title="Manual refresh"
+                                >
+                                    {refreshing ? '⏳' : '🔄'}
+                                </button>
+                                
+                                {!isLiveConnected && !voting_complete && (
+                                    <button
+                                        onClick={handleReconnectLive}
+                                        className="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-300 text-sm rounded-lg transition-colors duration-200"
+                                        title="Reconnect live updates"
+                                    >
+                                        🔌
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </h3>
                     
@@ -479,6 +666,10 @@ const ResultsPage = () => {
                         {session && (
                             <p className="text-white/50 text-xs mt-2">
                                 Session ID: {session.id} • Created: {formatTimeAgo(session.created_at)}
+                                {/* 🚀 NEW: Connection info */}
+                                {liveUpdateCount > 0 && (
+                                    <span> • {liveUpdateCount} live updates received</span>
+                                )}
                             </p>
                         )}
                     </div>

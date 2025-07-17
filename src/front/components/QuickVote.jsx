@@ -1,12 +1,12 @@
-// src/front/components/QuickVote.jsx - FIXED VERSION
+// src/front/components/QuickVote.jsx - PRODUCTION-READY with retry logic
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom'; // Add this import
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
 import GameImage from './GameImage';
 
 const QuickVote = ({ groupId }) => {
-    const navigate = useNavigate(); // Add this hook
+    const navigate = useNavigate();
     const [votableGames, setVotableGames] = useState([]);
     const [selectedGames, setSelectedGames] = useState([]);
     const [sessionId, setSessionId] = useState(null);
@@ -14,6 +14,10 @@ const QuickVote = ({ groupId }) => {
     const [submitted, setSubmitted] = useState(false);
     const [sessionStarted, setSessionStarted] = useState(false);
     const [error, setError] = useState(null);
+    
+    // 🚀 NEW: Enhanced state for retry functionality
+    const [retryCount, setRetryCount] = useState(0);
+    const [isRetrying, setIsRetrying] = useState(false);
 
     // Check for existing voting session on component mount
     useEffect(() => {
@@ -126,7 +130,8 @@ const QuickVote = ({ groupId }) => {
         });
     };
 
-    const submitVotes = async () => {
+    // 🚀 ENHANCED: Vote submission with retry logic and validation
+    const submitVotesWithRetry = async (maxRetries = 3) => {
         if (selectedGames.length === 0) {
             toast.error('Please select at least one game.');
             return;
@@ -137,46 +142,126 @@ const QuickVote = ({ groupId }) => {
             return;
         }
 
-        setLoading(true);
-        setError(null);
+        // Show what user is voting for
+        const votesSummary = selectedGames.map((gameId, index) => {
+            const game = votableGames.find(g => g.id === gameId);
+            return `${index + 1}. ${game?.name || 'Unknown'} (${selectedGames.length - index} pts)`;
+        });
         
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${sessionId}/vote`, {
-                method: 'POST',
-                body: JSON.stringify({ 
-                    game_votes: selectedGames.map((gameId, index) => ({
-                        game_id: gameId,
-                        priority: selectedGames.length - index // Higher priority for earlier selections
-                    }))
-                })
-            });
+        console.log('🗳️ Submitting votes:', votesSummary.join(', '));
 
-            if (response.ok) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                setLoading(true);
+                setIsRetrying(attempt > 1);
+                setRetryCount(attempt);
+                setError(null);
+                
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                
+                const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${sessionId}/vote`, {
+                    method: 'POST',
+                    body: JSON.stringify({ 
+                        game_votes: selectedGames.map((gameId, index) => ({
+                            game_id: gameId,
+                            priority: selectedGames.length - index // 3, 2, 1 for 1st, 2nd, 3rd
+                        }))
+                    })
+                });
+
                 const data = await response.json();
-                setSubmitted(true);
-                toast.success('Votes submitted successfully!');
                 
-                // FIXED: Use React Router navigation instead of window.location
-                console.log('🔄 Navigating to results page:', `/sessions/${sessionId}/results`);
+                if (response.ok && data.success) {
+                    setSubmitted(true);
+                    setIsRetrying(false);
+                    
+                    // 🎉 Enhanced success feedback
+                    toast.success('🎉 Votes submitted successfully!', { duration: 3000 });
+                    
+                    // Show what was voted for
+                    console.log('✅ Votes successfully submitted:', votesSummary.join(', '));
+                    
+                    // Show summary toast
+                    setTimeout(() => {
+                        const summaryText = votesSummary.slice(0, 2).join(', ') + 
+                                          (votesSummary.length > 2 ? `, +${votesSummary.length - 2} more` : '');
+                        toast.success(`Your votes: ${summaryText}`, { duration: 4000 });
+                    }, 500);
+                    
+                    // Navigate to results with delay
+                    setTimeout(() => {
+                        console.log('🎯 Navigating to results page:', `/sessions/${sessionId}/results`);
+                        navigate(`/sessions/${sessionId}/results`);
+                    }, 1500);
+                    
+                    return; // Success - exit retry loop
+                    
+                } else {
+                    // Handle API errors
+                    const errorMessage = data.error || 'Vote submission failed';
+                    
+                    // Check for specific error types that shouldn't be retried
+                    if (errorMessage.includes('already voted') || 
+                        errorMessage.includes('not active') ||
+                        errorMessage.includes('not a member')) {
+                        throw new Error(`${errorMessage} (No retry needed)`);
+                    }
+                    
+                    throw new Error(errorMessage);
+                }
                 
-                // Small delay to ensure the vote is processed
-                setTimeout(() => {
-                    navigate(`/sessions/${sessionId}/results`);
-                }, 1000);
-            } else {
-                const errorData = await response.json();
-                setError(errorData.error || 'Failed to submit votes');
-                toast.error(errorData.error || 'Failed to submit votes.');
+            } catch (error) {
+                console.error(`Vote submission attempt ${attempt} failed:`, error);
+                
+                // Check if this is a non-retryable error
+                if (error.message.includes('No retry needed')) {
+                    setError(error.message.replace(' (No retry needed)', ''));
+                    toast.error(error.message.replace(' (No retry needed)', ''));
+                    setLoading(false);
+                    setIsRetrying(false);
+                    return;
+                }
+                
+                if (attempt === maxRetries) {
+                    // Final attempt failed
+                    setError(`Failed to submit votes after ${maxRetries} attempts: ${error.message}`);
+                    toast.error(`❌ Failed after ${maxRetries} attempts: ${error.message}`, { duration: 5000 });
+                    setLoading(false);
+                    setIsRetrying(false);
+                    return;
+                } else {
+                    // Retry with exponential backoff
+                    const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+                    const isNetworkError = error.message.includes('Network') || error.message.includes('fetch');
+                    
+                    toast.error(
+                        `⚠️ ${isNetworkError ? 'Network error' : 'Vote failed'}, retrying in ${delay/1000}s... (${attempt}/${maxRetries})`,
+                        { duration: delay - 200 }
+                    );
+                    
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
-        } catch (error) {
-            console.error('Error submitting votes:', error);
-            setError('Network error occurred while submitting votes');
-            toast.error('A network error occurred.');
-        } finally {
-            setLoading(false);
         }
+        
+        setLoading(false);
+        setIsRetrying(false);
+    };
+
+    // 🚀 NEW: Clear error and retry
+    const handleRetry = () => {
+        setError(null);
+        setRetryCount(0);
+        submitVotesWithRetry();
+    };
+
+    // 🚀 NEW: Reset and start fresh
+    const handleReset = () => {
+        setError(null);
+        setRetryCount(0);
+        setIsRetrying(false);
+        setSelectedGames([]);
+        checkExistingSession();
     };
 
     // Show error state
@@ -241,7 +326,21 @@ const QuickVote = ({ groupId }) => {
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl text-center">
                 <div className="text-6xl mb-4">✅</div>
                 <h2 className="text-2xl font-bold text-white mb-4">Votes Submitted!</h2>
-                <p className="text-white/70 mb-4">Thank you for voting!</p>
+                <p className="text-white/70 mb-2">Thank you for voting!</p>
+                
+                {/* 🚀 NEW: Show what was voted for */}
+                <div className="mb-4 p-3 bg-white/5 rounded-lg">
+                    <p className="text-white/60 text-sm mb-2">Your votes:</p>
+                    {selectedGames.map((gameId, index) => {
+                        const game = votableGames.find(g => g.id === gameId);
+                        return (
+                            <div key={gameId} className="text-white/80 text-sm">
+                                {index + 1}. {game?.name || 'Unknown'} ({selectedGames.length - index} points)
+                            </div>
+                        );
+                    })}
+                </div>
+                
                 <p className="text-white/60 text-sm">Redirecting to results...</p>
                 
                 <div className="mt-6">
@@ -261,12 +360,19 @@ const QuickVote = ({ groupId }) => {
         return (
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl text-center">
                 <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-white/70">Loading...</p>
+                <p className="text-white/70">
+                    {isRetrying ? `Retrying vote submission... (attempt ${retryCount})` : 'Loading...'}
+                </p>
+                {isRetrying && (
+                    <p className="text-white/50 text-sm mt-2">
+                        Having connection issues? We'll keep trying...
+                    </p>
+                )}
             </div>
         );
     }
 
-    // Main voting interface - rest of the component remains the same...
+    // Main voting interface
     return (
         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
             <div className="mb-6">
@@ -279,12 +385,28 @@ const QuickVote = ({ groupId }) => {
                 </p>
             </div>
 
-            {/* Error banner */}
+            {/* 🚀 ENHANCED: Error banner with retry option */}
             {error && (
                 <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">
-                    <div className="flex items-center space-x-2">
-                        <span>⚠️</span>
-                        <span>{error}</span>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                            <span>⚠️</span>
+                            <span>{error}</span>
+                        </div>
+                        <div className="flex space-x-2">
+                            <button
+                                onClick={handleRetry}
+                                className="px-3 py-1 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-xs transition-colors"
+                            >
+                                🔄 Retry
+                            </button>
+                            <button
+                                onClick={handleReset}
+                                className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition-colors"
+                            >
+                                🔄 Reset
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -367,16 +489,21 @@ const QuickVote = ({ groupId }) => {
                         <div className="text-white/60 text-sm">
                             <p>🏆 Games are ranked by preference</p>
                             <p>📊 Results will show the winning game based on total points</p>
+                            {selectedGames.length > 0 && (
+                                <p className="text-coral-300 mt-1">
+                                    ✨ Ready to submit {selectedGames.length} vote{selectedGames.length !== 1 ? 's' : ''}
+                                </p>
+                            )}
                         </div>
                         <button
-                            onClick={submitVotes}
+                            onClick={() => submitVotesWithRetry()}
                             disabled={selectedGames.length === 0 || loading}
                             className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:hover:transform-none"
                         >
                             {loading ? (
                                 <div className="flex items-center">
                                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                                    Submitting...
+                                    {isRetrying ? `Retrying... (${retryCount})` : 'Submitting...'}
                                 </div>
                             ) : (
                                 `Submit ${selectedGames.length} Vote${selectedGames.length !== 1 ? 's' : ''}`
@@ -395,6 +522,7 @@ const QuickVote = ({ groupId }) => {
                                     <li>• You can change your selections before submitting</li>
                                     <li>• Only multiplayer games owned by multiple squad members are shown</li>
                                     <li>• The game with the most points wins!</li>
+                                    <li>• 🚀 <strong>New:</strong> Automatic retry if submission fails</li>
                                 </ul>
                             </div>
                         </div>
