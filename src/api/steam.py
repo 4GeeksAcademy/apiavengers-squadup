@@ -6,6 +6,7 @@ from api.models import db, User, SteamGame
 from api.steam_service import steam_service
 from api.utils import APIException
 from sqlalchemy import text
+from datetime import datetime  # <-- ADD THIS IMPORT
 
 steam = Blueprint('steam', __name__)
 
@@ -127,7 +128,7 @@ def sync_games():
         
         # Check if user synced recently (prevent excessive API calls)
         if user.steam_library_synced_at:
-            from datetime import datetime, timedelta
+            from datetime import timedelta
             if datetime.utcnow() - user.steam_library_synced_at < timedelta(minutes=5):
                 return jsonify({
                     'success': False,
