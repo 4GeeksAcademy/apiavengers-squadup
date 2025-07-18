@@ -1,13 +1,14 @@
-// src/front/pages/GroupPage.jsx - ENHANCED WITH LIVE VOTING INTEGRATION
+// src/front/pages/GroupPage.jsx - UPDATED to use unified GroupMembersTab
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CommonGamesList from '../components/CommonGamesList';
-import LiveVotingSession from '../components/LiveVotingSession'; // 🚀 NEW: Import live voting
-import QuickVote from '../components/QuickVote'; // 🔄 KEEP: For creating new sessions
+import LiveVotingSession from '../components/LiveVotingSession';
+import QuickVote from '../components/QuickVote';
 import GroupInviteLink from '../components/GroupInviteLink';
 import GroupActionButtons from '../components/GroupActionButtons';
-import VoterStatusPanel from '../components/VoterStatusPanel'; // 🔄 ENHANCED: For live status
-import VotingReminders from '../components/VotingReminders'; // 🔄 ENHANCED: For session history
+import GroupMembersTab from '../components/GroupMembersTab'; // 🚀 NEW: Use unified component
+import VoterStatusPanel from '../components/VoterStatusPanel';
+import VotingReminders from '../components/VotingReminders';
 import authService from '../store/authService';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import toast from 'react-hot-toast';
@@ -23,7 +24,7 @@ const GroupPage = () => {
     const [activeTab, setActiveTab] = useState('vote');
     const [activeSessions, setActiveSessions] = useState([]);
     
-    // 🚀 NEW: Enhanced state for live voting
+    // Live voting state
     const [showLiveVoting, setShowLiveVoting] = useState(false);
     const [currentLiveSession, setCurrentLiveSession] = useState(null);
 
@@ -34,7 +35,7 @@ const GroupPage = () => {
         }
     }, [groupId]);
 
-    // 🚀 NEW: Check if there's an active voting session
+    // Check if there's an active voting session
     useEffect(() => {
         const activeVotingSession = activeSessions.find(s => s.status === 'voting');
         
@@ -95,13 +96,13 @@ const GroupPage = () => {
         }
     };
 
-    // 🚀 NEW: Handle session state changes
+    // Handle session state changes
     const handleSessionUpdate = () => {
         console.log('🔄 Session updated, refreshing data...');
         fetchActiveSessions();
     };
 
-    const handleGroupUpdate = (action, wasDeleted) => {
+    const handleGroupUpdate = (action, wasDeleted, data) => {
         if (wasDeleted || action === 'deleted') {
             navigate('/dashboard', { 
                 state: { message: `Group "${group?.name || 'Unknown'}" was deleted` }
@@ -110,6 +111,15 @@ const GroupPage = () => {
             navigate('/dashboard', { 
                 state: { message: `You left "${group?.name || 'the group'}"` }
             });
+        } else if (action === 'ownership_transferred') {
+            // Refresh group data after ownership transfer
+            fetchGroupData();
+        } else if (action === 'member_kicked') {
+            // Update group member count
+            setGroup(prev => ({
+                ...prev,
+                current_members: data?.remainingMembers || prev.current_members - 1
+            }));
         }
     };
 
@@ -162,7 +172,7 @@ const GroupPage = () => {
                                     </span>
                                 )}
                                 
-                                {/* 🚀 NEW: Live voting indicator */}
+                                {/* Live voting indicator */}
                                 {showLiveVoting && (
                                     <span className="px-3 py-1 bg-red-500/20 text-red-300 border border-red-500/30 rounded-full text-sm animate-pulse">
                                         🔴 Live Voting
@@ -188,7 +198,7 @@ const GroupPage = () => {
                                     <span className="text-white">{new Date(group.created_at).toLocaleDateString()}</span>
                                 </div>
                                 
-                                {/* 🚀 NEW: Active sessions count */}
+                                {/* Active sessions count */}
                                 {activeSessions.length > 0 && (
                                     <div className="flex items-center space-x-2">
                                         <span className="text-white/60">🎯</span>
@@ -227,7 +237,7 @@ const GroupPage = () => {
                     </div>
                 </div>
 
-                {/* 🚀 NEW: Active Sessions Alert */}
+                {/* Active Sessions Alert */}
                 {activeSessions.length > 0 && (
                     <div className="mb-6">
                         {activeSessions.map(session => (
@@ -304,7 +314,7 @@ const GroupPage = () => {
                     <div className="lg:col-span-2">
                         {activeTab === 'vote' && (
                             <div className="space-y-6">
-                                {/* 🚀 CONDITIONAL: Show live voting if session is active, otherwise show create option */}
+                                {/* Show live voting if session is active, otherwise show create option */}
                                 {showLiveVoting && currentLiveSession ? (
                                     <LiveVotingSession 
                                         groupId={groupId} 
@@ -313,13 +323,11 @@ const GroupPage = () => {
                                     />
                                 ) : (
                                     <>
-                                        {/* 🔄 KEEP: Existing QuickVote for creating new sessions */}
                                         <QuickVote 
                                             groupId={groupId}
                                             onSessionCreated={handleSessionUpdate}
                                         />
                                         
-                                        {/* 🔄 KEEP: Voting reminders */}
                                         <VotingReminders 
                                             groupId={groupId}
                                             recentSessions={activeSessions}
@@ -335,66 +343,13 @@ const GroupPage = () => {
                             </div>
                         )}
                         
+                        {/* 🚀 UPDATED: Use unified GroupMembersTab component */}
                         {activeTab === 'members' && (
-                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-                                <h3 className="text-white font-semibold mb-6 flex items-center">
-                                    <span className="text-xl mr-2">👥</span>
-                                    Squad Members ({group.current_members})
-                                </h3>
-                                <div className="space-y-4">
-                                    {group.members && group.members.length > 0 ? (
-                                        group.members.map((member) => (
-                                            <div key={member.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-                                                <div className="flex items-center space-x-4">
-                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center">
-                                                        <span className="text-white font-bold">
-                                                            {member.username?.[0]?.toUpperCase() || 'U'}
-                                                        </span>
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="text-white font-medium">{member.username}</h4>
-                                                        <div className="flex items-center space-x-3 text-sm text-white/60">
-                                                            {member.steam_connected ? (
-                                                                <>
-                                                                    <span className="flex items-center space-x-1">
-                                                                        <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                                                                        <span>Steam Connected</span>
-                                                                    </span>
-                                                                    {member.total_games && (
-                                                                        <span>{member.total_games} games</span>
-                                                                    )}
-                                                                </>
-                                                            ) : (
-                                                                <span className="flex items-center space-x-1">
-                                                                    <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-                                                                    <span>No Steam</span>
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center space-x-2">
-                                                    {member.id === group.creator?.id && (
-                                                        <span className="px-2 py-1 bg-coral-500/20 text-coral-300 border border-coral-500/30 rounded text-xs">
-                                                            Creator
-                                                        </span>
-                                                    )}
-                                                    {member.gaming_style && (
-                                                        <span className="px-2 py-1 bg-white/10 text-white/70 rounded text-xs">
-                                                            {member.gaming_style}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="text-center py-8">
-                                            <div className="text-4xl mb-4">👥</div>
-                                            <p className="text-white/70">No members found</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                            <GroupMembersTab 
+                                group={group}
+                                user={user}
+                                onGroupUpdate={handleGroupUpdate}
+                            />
                         )}
                     </div>
 
@@ -402,7 +357,7 @@ const GroupPage = () => {
                     <div className="space-y-6">
                         <GroupInviteLink group={group} />
                         
-                        {/* 🚀 CONDITIONAL: Show voter status only when voting is active */}
+                        {/* Show voter status only when voting is active */}
                         {showLiveVoting && currentLiveSession && (
                             <VoterStatusPanel 
                                 sessionId={currentLiveSession.id}
@@ -487,7 +442,7 @@ const GroupPage = () => {
                             </div>
                         </div>
 
-                        {/* Group Actions */}
+                        {/* Quick Actions */}
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
                             <h3 className="text-white font-semibold mb-4 flex items-center">
                                 <span className="text-xl mr-2">⚡</span>
@@ -530,7 +485,7 @@ const GroupPage = () => {
                                     Manage Members
                                 </button>
                                 
-                                {/* 🚀 NEW: Quick link to results if available */}
+                                {/* Quick link to results if available */}
                                 {activeSessions.length > 0 && (
                                     <button 
                                         onClick={() => {
