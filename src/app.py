@@ -27,6 +27,10 @@ from api.commands import setup_commands
 from api.steam_auth import steam_auth
 from api.steam import steam
 
+# 🚀 NEW: Import live voting blueprints
+from api.live_events import live_events
+from api.member_status import member_status
+
 # ============================================================================
 # App Initialization & Environment
 # ============================================================================
@@ -34,21 +38,6 @@ ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
 static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../dist/')
 app = Flask(__name__)
 app.url_map.strict_slashes = False
-
-# ============================================================================
-# 🚀 SSE Configuration for Live Voting Support
-# ============================================================================
-# SSE Configuration - Critical for real-time voting
-app.config['SSE_HEARTBEAT_INTERVAL'] = int(os.getenv('SSE_HEARTBEAT_INTERVAL', '30'))
-app.config['SSE_MAX_CONNECTIONS'] = int(os.getenv('SSE_MAX_CONNECTIONS', '100'))
-app.config['VOTING_AUTO_COMPLETE_THRESHOLD'] = float(os.getenv('VOTING_AUTO_COMPLETE_THRESHOLD', '0.8'))
-app.config['SSE_RETRY_TIMEOUT'] = int(os.getenv('SSE_RETRY_TIMEOUT', '5000'))  # 5 seconds
-app.config['SSE_CONNECTION_TIMEOUT'] = int(os.getenv('SSE_CONNECTION_TIMEOUT', '300'))  # 5 minutes
-
-print(f"🔴 SSE Configuration:")
-print(f"   Heartbeat Interval: {app.config['SSE_HEARTBEAT_INTERVAL']}s")
-print(f"   Max Connections: {app.config['SSE_MAX_CONNECTIONS']}")
-print(f"   Auto-complete Threshold: {app.config['VOTING_AUTO_COMPLETE_THRESHOLD']}")
 
 # ============================================================================
 # Enhanced Database Configuration with Connection Pooling
@@ -86,7 +75,7 @@ limiter = Limiter(
 )
 
 # ============================================================================
-# CORS Configuration for GitHub Codespaces - ENHANCED FOR SSE
+# CORS Configuration for GitHub Codespaces - ENHANCED
 # ============================================================================
 CODESPACE_NAME = os.getenv('CODESPACE_NAME')
 GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')
@@ -112,29 +101,16 @@ else:
         allowed_origins.append(codespace_frontend_url)
         print(f"🌐 Codespace frontend origin added: {codespace_frontend_url}")
 
-# 🚀 Enhanced CORS configuration for SSE support
+# Enhanced CORS configuration
 CORS(app, 
      origins=allowed_origins,
      supports_credentials=True,
-     allow_headers=[
-         'Content-Type', 
-         'Authorization', 
-         'X-Requested-With', 
-         'Cache-Control',  # Required for SSE
-         'Accept',
-         'Origin'
-     ],
+     allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
      methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-     max_age=86400,  # Cache preflight requests for 24 hours
-     expose_headers=[
-         'X-Total-Count',  # For SSE headers
-         'X-SSE-Connected',  # Custom SSE status header
-         'Cache-Control'
-     ]
+     max_age=86400  # Cache preflight requests for 24 hours
 )
 
 print(f"🔧 CORS configured for origins: {allowed_origins}")
-print(f"🔴 SSE CORS headers enabled")
 
 # ============================================================================
 # Enhanced JWT Configuration with Better Security
@@ -203,24 +179,21 @@ def revoked_token_callback(jwt_header, jwt_payload):
 # Security Headers and Production Enhancements
 # ============================================================================
 if ENV == "production":
-    try:
-        from flask_talisman import Talisman
-        
-        # Add security headers in production
-        Talisman(app, 
-            force_https=True,
-            strict_transport_security=True,
-            content_security_policy={
-                'default-src': "'self'",
-                'script-src': "'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
-                'style-src': "'self' 'unsafe-inline' https://fonts.googleapis.com",
-                'font-src': "'self' https://fonts.gstatic.com",
-                'img-src': "'self' data: https:",
-                'connect-src': "'self' https:"
-            }
-        )
-    except ImportError:
-        print("⚠️  Flask-Talisman not installed. Skipping security headers in production.")
+    from flask_talisman import Talisman
+    
+    # Add security headers in production
+    Talisman(app, 
+        force_https=True,
+        strict_transport_security=True,
+        content_security_policy={
+            'default-src': "'self'",
+            'script-src': "'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+            'style-src': "'self' 'unsafe-inline' https://fonts.googleapis.com",
+            'font-src': "'self' https://fonts.gstatic.com",
+            'img-src': "'self' data: https:",
+            'connect-src': "'self' https:"
+        }
+    )
 
 # ============================================================================
 # Logging Configuration
@@ -287,12 +260,25 @@ def ratelimit_handler(e):
 setup_admin(app)
 setup_commands(app)
 
-# Register blueprints - FIXED: No duplicate registrations
-app.register_blueprint(api, url_prefix='/api')           # Main API routes
-app.register_blueprint(auth, url_prefix='/api/auth')     # Auth routes  
-app.register_blueprint(gaming, url_prefix='/api/gaming') # Gaming routes
-app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Steam auth (OpenID)
-app.register_blueprint(steam, url_prefix='/api/steam')   # Steam API routes (library, sync, etc.)
+# Register blueprints - ENHANCED: Including new live voting blueprints
+app.register_blueprint(api, url_prefix='/api')                              # Main API routes
+app.register_blueprint(auth, url_prefix='/api/auth')                        # Auth routes  
+app.register_blueprint(gaming, url_prefix='/api/gaming')                    # Gaming routes
+app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')            # Steam auth (OpenID)
+app.register_blueprint(steam, url_prefix='/api/steam')                      # Steam API routes (library, sync, etc.)
+
+# 🚀 NEW: Register live voting blueprints
+app.register_blueprint(live_events, url_prefix='/api/live-events')          # Live event broadcasting
+app.register_blueprint(member_status, url_prefix='/api/member-status')      # Member status tracking
+
+print("✅ All blueprints registered successfully:")
+print("   - API routes: /api/*")
+print("   - Auth routes: /api/auth/*")
+print("   - Gaming routes: /api/gaming/*")
+print("   - Steam auth: /api/auth/steam/*")
+print("   - Steam API: /api/steam/*")
+print("   - 🚀 Live events: /api/live-events/*")
+print("   - 🚀 Member status: /api/member-status/*")
 
 # ============================================================================
 # Enhanced Route Configuration & Health Checks
@@ -309,18 +295,27 @@ def health_check():
         logger.error(f"Database health check failed: {e}")
         db_status = "unhealthy"
     
+    # 🚀 NEW: Check live voting system status
+    live_status = "healthy"
+    try:
+        # Simple check for live event storage
+        from api.live_events import event_store, active_connections
+        active_sessions = len(event_store)
+        total_connections = sum(len(conns) for conns in active_connections.values())
+        live_status = "healthy"
+    except Exception as e:
+        logger.error(f"Live voting health check failed: {e}")
+        live_status = "degraded"
+    
     return jsonify({
-        'status': 'healthy' if db_status == "healthy" else 'unhealthy',
+        'status': 'healthy' if db_status == "healthy" and live_status == "healthy" else 'degraded',
         'timestamp': datetime.utcnow().isoformat(),
         'environment': ENV,
         'database': db_status,
-        'version': '1.0.0',  # Add your app version
-        'sse_enabled': True,
-        'sse_config': {
-            'heartbeat_interval': app.config['SSE_HEARTBEAT_INTERVAL'],
-            'max_connections': app.config['SSE_MAX_CONNECTIONS'],
-            'auto_complete_threshold': app.config['VOTING_AUTO_COMPLETE_THRESHOLD']
-        }
+        'live_voting': live_status,
+        'live_sessions': active_sessions if live_status == "healthy" else 0,
+        'live_connections': total_connections if live_status == "healthy" else 0,
+        'version': '1.0.0'  # Add your app version
     }), 200 if db_status == "healthy" else 503
 
 @app.route('/')
@@ -345,7 +340,7 @@ def serve_any_other_file(path):
         response.cache_control.max_age = 0
         return response
 
-# 🚀 Enhanced OPTIONS handling with proper CORS for SSE
+# 🚀 ENHANCED: OPTIONS handling with proper CORS and SSE support
 @app.before_request
 def handle_options_and_security():
     """Handle OPTIONS requests and add security headers"""
@@ -354,13 +349,18 @@ def handle_options_and_security():
         origin = request.headers.get('Origin')
         if origin in allowed_origins:
             response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Cache-Control,Accept,Origin')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
         response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
         response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Expose-Headers', 'X-Total-Count,X-SSE-Connected,Cache-Control')
+        
+        # 🚀 NEW: Special headers for SSE endpoints
+        if request.path.startswith('/api/live-events/') or request.path.startswith('/api/member-status/'):
+            response.headers.add('Cache-Control', 'no-cache')
+            response.headers.add('Connection', 'keep-alive')
+        
         return response
 
-# 🚀 Add security headers to all responses with SSE support
+# 🚀 ENHANCED: Add security headers to all responses with SSE support
 @app.after_request
 def after_request(response):
     """Add security headers to all responses"""
@@ -370,17 +370,21 @@ def after_request(response):
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['X-XSS-Protection'] = '1; mode=block'
     
-    # 🚀 Special handling for SSE endpoints
-    if '/live-results' in request.path or '/voter-status-stream' in request.path:
-        response.headers['Cache-Control'] = 'no-cache'
-        response.headers['Connection'] = 'keep-alive'
-        response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
-        response.headers['X-SSE-Connected'] = 'true'
-    elif request.path.startswith('/api/'):
-        # Add cache control for regular API responses
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
+    # Add cache control for API responses
+    if request.path.startswith('/api/'):
+        # 🚀 NEW: Special handling for Server-Sent Events endpoints
+        if request.path.startswith('/api/live-events/') or request.path.startswith('/api/member-status/'):
+            # SSE-specific headers
+            response.headers['Cache-Control'] = 'no-cache'
+            response.headers['Connection'] = 'keep-alive'
+            response.headers['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering for SSE
+            response.headers['Access-Control-Allow-Origin'] = '*'  # Allow SSE from any origin in dev
+            response.headers['Access-Control-Allow-Headers'] = 'Authorization'
+        else:
+            # Regular API endpoints
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
     
     return response
 
@@ -394,25 +398,18 @@ def close_db(error):
         logger.error(f"Application context error: {error}")
         db.session.rollback()
 
-# ============================================================================
-# 🚀 SSE Connection Management
-# ============================================================================
-# Track SSE connections for monitoring
-app.sse_connections = defaultdict(int)
-
-@app.route('/api/sse/status')
-@limiter.limit("10 per minute")
-def sse_status():
-    """Get SSE connection status for monitoring"""
-    return jsonify({
-        'active_connections': dict(app.sse_connections),
-        'total_connections': sum(app.sse_connections.values()),
-        'max_connections': app.config['SSE_MAX_CONNECTIONS'],
-        'heartbeat_interval': app.config['SSE_HEARTBEAT_INTERVAL']
-    })
+# 🚀 NEW: Live voting cleanup on app shutdown
+@app.teardown_appcontext  
+def cleanup_live_connections(error):
+    """Clean up live voting connections on shutdown"""
+    try:
+        from api.live_events import cleanup_old_events
+        cleanup_old_events()
+    except Exception as e:
+        logger.error(f"Error during live voting cleanup: {e}")
 
 # ============================================================================
-# Main Entry Point with Enhanced Configuration for SSE
+# Main Entry Point with Enhanced Configuration
 # ============================================================================
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
@@ -428,14 +425,11 @@ if __name__ == '__main__':
     print(f"🚀 Starting SquadUp server in {ENV} mode on port {PORT}")
     print(f"🔧 Database: {'PostgreSQL' if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI'] else 'SQLite'}")
     print(f"🛡️  Rate limiting: {'Redis' if 'redis' in redis_url else 'Memory'}")
-    print(f"🔴 SSE support enabled with threading")
-    print(f"🌐 Frontend running on: {allowed_origins}")
+    print(f"🔴 Live voting: ENABLED with SSE support")
     
-    # 🚀 CRITICAL: SSE requires threaded=True for proper functionality
     app.run(
         host='0.0.0.0', 
         port=PORT, 
         debug=DEBUG,
-        threaded=True,  # CRITICAL: Required for SSE to work properly
-        use_reloader=False if ENV == "production" else True
+        threaded=True  # Enable threading for better performance with SSE
     )
