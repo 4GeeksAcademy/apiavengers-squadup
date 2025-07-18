@@ -1,4 +1,4 @@
-# src/app.py - ENHANCED VERSION with Codespace CORS Support - FIXED IMPORTS + SSE SUPPORT
+# src/app.py - FIXED IMPORT PATHS
 
 import os
 import sys
@@ -30,21 +30,20 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-# Local application imports with flexible path handling
+# FIXED: Local application imports with flexible path handling
 try:
     # Try direct imports first (when running from src/)
     from api.utils import APIException, utc_now
     from api.models import db
     from api.routes import api
     from api.auth import auth
-    from api.gaming import gaming, init_rate_limiting as init_gaming_rate_limiting
+    from api.gaming import gaming
     from api.admin import setup_admin
     from api.commands import setup_commands
     from api.steam_auth import steam_auth
     from api.steam import steam
-    # NEW: Import SSE blueprints
-    from api.live_events import live_events
-    from api.member_status import member_status
+    # NEW: Import live voting system
+    from api.live_voting_system import live_voting
 except ImportError:
     try:
         # Try with src prefix (when running from root)
@@ -52,14 +51,13 @@ except ImportError:
         from src.api.models import db
         from src.api.routes import api
         from src.api.auth import auth
-        from src.api.gaming import gaming, init_rate_limiting as init_gaming_rate_limiting
+        from src.api.gaming import gaming
         from src.api.admin import setup_admin
         from src.api.commands import setup_commands
         from src.api.steam_auth import steam_auth
         from src.api.steam import steam
-        # NEW: Import SSE blueprints
-        from src.api.live_events import live_events
-        from src.api.member_status import member_status
+        # NEW: Import live voting system
+        from src.api.live_voting_system import live_voting
     except ImportError as e:
         print(f"Import error: {e}")
         print(f"Current directory: {os.getcwd()}")
@@ -205,7 +203,7 @@ else:
 # Remove duplicates and empty values
 allowed_origins = list(set([url for url in allowed_origins if url]))
 
-# 🔧 CRITICAL: Enhanced CORS configuration for Codespaces + SSE Support
+# CRITICAL: Enhanced CORS configuration for Codespaces + SSE Support
 CORS(app, 
      origins=allowed_origins,
      supports_credentials=True,
@@ -407,7 +405,7 @@ def ratelimit_handler(e):
     }), 429
 
 # ============================================================================
-# Blueprint Registration - UPDATED WITH SSE SUPPORT
+# Blueprint Registration - UPDATED WITH LIVE VOTING
 # ============================================================================
 # Handle missing admin and commands modules gracefully
 try:
@@ -422,30 +420,18 @@ try:
 except Exception as e:
     print(f"⚠️ Commands module initialization failed: {e}")
 
-try:
-    gaming_limiter = init_gaming_rate_limiting(app)
-    print("✅ Gaming rate limiting initialized successfully")
-except Exception as e:
-    print(f"⚠️ Gaming rate limiting initialization failed: {e}")
-
 # Standard blueprint registration
 app.register_blueprint(api, url_prefix='/api')
 app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')
 app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')
 
-# NEW: Register SSE blueprints
+# NEW: Register live voting blueprint
 try:
-    app.register_blueprint(live_events, url_prefix='/api/gaming')
-    print("✅ Live events (SSE) blueprint registered")
+    app.register_blueprint(live_voting, url_prefix='/api/live-voting')
+    print("✅ Live voting system registered at /api/live-voting")
 except Exception as e:
-    print(f"⚠️ Live events blueprint registration failed: {e}")
-
-try:
-    app.register_blueprint(member_status, url_prefix='/api/gaming')
-    print("✅ Member status (SSE) blueprint registered")
-except Exception as e:
-    print(f"⚠️ Member status blueprint registration failed: {e}")
+    print(f"⚠️ Live voting blueprint registration failed: {e}")
 
 # Handle optional steam blueprint
 try:
@@ -455,7 +441,7 @@ except Exception as e:
     print(f"⚠️ Steam blueprint registration failed: {e}")
 
 # ============================================================================
-# SSE Manager Initialization - NEW
+# SSE Manager Initialization - UPDATED
 # ============================================================================
 class SSEManager:
     """Global SSE connection manager"""
@@ -547,11 +533,9 @@ def redirect_to_admin():
                 'health': '/health',
                 'api_status': '/api/status',
                 'cors_debug': '/api/cors-debug',
+                'live_voting': '/api/live-voting',
                 'sse_endpoints': [
-                    '/api/gaming/sessions/{id}/live-results',
-                    '/api/gaming/sessions/{id}/voter-status-stream',
-                    '/api/gaming/sessions/{id}/events',
-                    '/api/gaming/sessions/{id}/member-status'
+                    '/api/live-voting/sessions/{id}/live-stream',
                 ]
             }
         })
@@ -595,7 +579,7 @@ def after_request(response):
         response.headers['X-XSS-Protection'] = '1; mode=block'
     
     # Special handling for SSE endpoints
-    if any(sse_path in request.path for sse_path in ['/live-results', '/voter-status-stream', '/events', '/member-status']):
+    if any(sse_path in request.path for sse_path in ['/live-stream', '/live-results', '/voter-status-stream', '/events', '/member-status']):
         response.headers['Cache-Control'] = 'no-cache'
         response.headers['Connection'] = 'keep-alive'
         response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering for SSE
@@ -670,6 +654,10 @@ def api_status():
                 'steam_api': {
                     'status': 'operational' if os.getenv('STEAM_API_KEY') else 'limited',
                     'message': 'Available' if os.getenv('STEAM_API_KEY') else 'API key not configured'
+                },
+                'live_voting': {
+                    'status': 'operational',
+                    'endpoint': '/api/live-voting'
                 }
             },
             'features': {
@@ -706,30 +694,13 @@ def cors_debug():
         'timestamp': utc_now().isoformat(),
         'request_headers': dict(request.headers),
         'detected_codespace_urls': get_codespace_urls() if CODESPACE_NAME else None,
-        'sse_support': hasattr(app, 'sse_manager')
+        'sse_support': hasattr(app, 'sse_manager'),
+        'live_voting_available': True
     }
     
     logger.info(f"🔍 CORS Debug - Origin: {origin}, Allowed: {origin in allowed_origins}")
     
     return jsonify(debug_info)
-
-# Add this debug route to help troubleshoot
-@app.route('/api/cors-test', methods=['GET', 'OPTIONS'])
-@limiter.limit("60 per minute")
-def cors_test():
-    """Test CORS configuration"""
-    origin = request.headers.get('Origin', 'No Origin header')
-    
-    return jsonify({
-        'message': 'CORS test successful',
-        'request_origin': origin,
-        'origin_allowed': origin in allowed_origins,
-        'allowed_origins': allowed_origins,
-        'codespace_name': CODESPACE_NAME,
-        'frontend_url_env': os.getenv('FRONTEND_URL'),
-        'backend_url_env': os.getenv('VITE_BACKEND_URL'),
-        'timestamp': utc_now().isoformat()
-    })
 
 # ============================================================================
 # Main Entry Point
@@ -750,6 +721,7 @@ if __name__ == '__main__':
     
     print(f"🚀 Starting SquadUp server in {ENV} mode on port {PORT}")
     print(f"🔧 Database: {'PostgreSQL' if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI'] else 'SQLite'}")
+    print(f"📡 Live Voting: Available at /api/live-voting")
     
     if hasattr(app, 'sse_manager'):
         print(f"📡 SSE Manager: Initialized and ready")

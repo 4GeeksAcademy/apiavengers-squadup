@@ -1,5 +1,7 @@
+# src/api/routes.py - FIXED VERSION with correct model imports
+
 from flask import Flask, request, jsonify, url_for, Blueprint, current_app
-from api.models import db, User
+from api.models import db, User, GamingGroup, SteamGame, GameSession, Vote
 from api.utils import generate_sitemap, APIException
 from flask_cors import CORS
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -43,6 +45,35 @@ def test_auth():
             "profile": "/api/auth/profile (GET/PUT)"
         }
     }), 200
+
+@api.route('/test/models', methods=['GET'])
+def test_models():
+    """Test route to verify models are working"""
+    try:
+        # Test database connection
+        user_count = User.query.count()
+        group_count = GamingGroup.query.count()
+        game_count = SteamGame.query.count()
+        session_count = GameSession.query.count()
+        vote_count = Vote.query.count()
+        
+        return jsonify({
+            "message": "Models are working!",
+            "database_status": "connected",
+            "model_counts": {
+                "users": user_count,
+                "gaming_groups": group_count,
+                "steam_games": game_count,
+                "game_sessions": session_count,
+                "votes": vote_count
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "message": "Model test failed",
+            "error": str(e),
+            "database_status": "error"
+        }), 500
 
 # ============================================================================
 # NOTE: All Steam routes are now handled in steam.py blueprint

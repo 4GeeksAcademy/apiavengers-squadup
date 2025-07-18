@@ -1,723 +1,755 @@
-// src/front/components/LiveVotingSession.jsx - PHASE 5 IMPLEMENTATION: Enhanced with SSE Manager
+// src/front/components/LiveVotingSession.jsx - Complete Live Voting Flow
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import useAuth from '../hooks/useAuth';
 import authService from '../store/authService';
-import toast from 'react-hot-toast';
-import GameImage from './GameImage';
+import { apiUrl } from '../config/environment';
 
-// 🚀 PHASE 5: Import standardized components and enhanced SSE
-import { VotingLoadingState, DataLoadingState } from './LoadingState';
-import { NetworkErrorState, VotingErrorState } from './ErrorState';
-import SSEManager from '../services/sseManager';
-
-const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
+const LiveVotingSession = () => {
+    const { sessionId } = useParams();
     const navigate = useNavigate();
+    const { user, isAuthenticated } = useAuth();
     
-    // Core state
-    const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
-    const [commonGames, setCommonGames] = useState([]);
+    // Session state
+    const [sessionState, setSessionState] = useState('loading');
+    const [sessionData, setSessionData] = useState(null);
+    const [error, setError] = useState(null);
+    const [isConnected, setIsConnected] = useState(false);
+    
+    // Voting state
     const [selectedGames, setSelectedGames] = useState([]);
-    const [hasVoted, setHasVoted] = useState(false);
-    const [myVotes, setMyVotes] = useState([]);
-    const [votingComplete, setVotingComplete] = useState(false);
+    const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+    const [maxChoices, setMaxChoices] = useState(3);
     
-    // Live voting state
-    const [liveResults, setLiveResults] = useState([]);
-    const [voterStats, setVoterStats] = useState({ voted: 0, total: 0, percentage: 0 });
+    // SSE connection
+    const eventSourceRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
+    const [connectionAttempts, setConnectionAttempts] = useState(0);
+    const maxReconnectAttempts = 5;
     
-    // 🚀 PHASE 5: Enhanced connection state
-    const [connectionState, setConnectionState] = useState({
-        isConnected: false,
-        isReconnecting: false,
-        retryCount: 0,
-        lastUpdate: null,
-        error: null,
-        connectionId: null
-    });
-    
-    // SSE Manager ref
-    const sseManagerRef = useRef(null);
-
-    useEffect(() => {
-        if (session?.id) {
-            initializeSession();
-            setupEnhancedLiveUpdates();
-        }
+    // Connect to SSE stream
+    const connectToLiveStream = useCallback(() => {
+        if (!isAuthenticated || !sessionId) return;
         
-        return cleanup;
-    }, [session?.id]);
-
-    const initializeSession = async () => {
-        try {
-            setLoading(true);
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            
-            // Get session details and votable games
-            const [sessionResponse, myVotesResponse, votersResponse] = await Promise.all([
-                authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${session.id}`),
-                authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${session.id}/my-votes`),
-                authService.authenticatedFetch(`${backendUrl}/api/gaming/sessions/${session.id}/voters`)
-            ]);
-
-            if (sessionResponse.ok) {
-                const sessionData = await sessionResponse.json();
-                setCommonGames(sessionData.votable_games || []);
-            }
-
-            if (myVotesResponse.ok) {
-                const votesData = await myVotesResponse.json();
-                setHasVoted(votesData.has_voted);
-                if (votesData.has_voted) {
-                    setMyVotes(votesData.votes || []);
-                    setSelectedGames(votesData.votes?.map(v => v.game_id) || []);
-                }
-            }
-
-            if (votersResponse.ok) {
-                const votersData = await votersResponse.json();
-                setVoterStats(votersData.progress || { voted: 0, total: 0, percentage: 0 });
-            }
-
-        } catch (error) {
-            console.error('❌ Error initializing session:', error);
-            toast.error('Failed to load voting session');
-            setConnectionState(prev => ({ ...prev, error: error.message }));
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const setupEnhancedLiveUpdates = () => {
-        if (!session?.id) return;
-        
-        const backendUrl = import.meta.env.VITE_BACKEND_URL;
-        const endpoint = `${backendUrl}/api/gaming/sessions/${session.id}/live-results`;
-        
-        console.log('🚀 Setting up enhanced live voting updates...');
-        
-        // 🚀 PHASE 5: Create SSE Manager with enhanced options
-        const sseManager = new SSEManager(endpoint, {
-            maxRetries: 8,
-            retryDelay: 3000,
-            heartbeatTimeout: 45000,
-            reconnectMultiplier: 1.3,
-            maxReconnectDelay: 30000
-        });
-        
-        sseManagerRef.current = sseManager;
-        
-        // Connection established
-        sseManager.on('connected', (data) => {
-            console.log('✅ Enhanced live voting updates connected');
-            setConnectionState(prev => ({
-                ...prev,
-                isConnected: true,
-                isReconnecting: false,
-                error: null,
-                connectionId: data.connectionId,
-                retryCount: 0
-            }));
-            
-            toast.success('🔴 Live updates active!', { 
-                duration: 2000,
-                icon: '📡'
-            });
-        });
-        
-        // Connection lost
-        sseManager.on('disconnected', () => {
-            console.log('📡 Live voting updates disconnected');
-            setConnectionState(prev => ({
-                ...prev,
-                isConnected: false,
-                isReconnecting: false
-            }));
-        });
-        
-        // Reconnection scheduled
-        sseManager.on('reconnectScheduled', (data) => {
-            console.log(`🔄 Reconnecting in ${data.delay}ms (attempt ${data.retryCount})`);
-            setConnectionState(prev => ({
-                ...prev,
-                isReconnecting: true,
-                retryCount: data.retryCount
-            }));
-            
-            if (data.retryCount <= 3) {
-                toast.loading(`Reconnecting... (${data.retryCount}/${data.maxRetries})`, {
-                    duration: data.delay - 500
-                });
-            }
-        });
-        
-        // Data message received
-        sseManager.on('message', handleEnhancedLiveUpdate);
-        
-        // Heartbeat received
-        sseManager.on('heartbeat', (data) => {
-            setConnectionState(prev => ({
-                ...prev,
-                lastUpdate: new Date(data.timestamp).toISOString()
-            }));
-        });
-        
-        // Connection error
-        sseManager.on('error', (data) => {
-            console.error('❌ Live voting connection error:', data);
-            setConnectionState(prev => ({
-                ...prev,
-                error: 'Connection error',
-                retryCount: data.retryCount
-            }));
-        });
-        
-        // Max retries reached
-        sseManager.on('maxRetriesReached', (data) => {
-            console.log('❌ Max reconnection attempts reached');
-            setConnectionState(prev => ({
-                ...prev,
-                isReconnecting: false,
-                error: 'Unable to maintain live connection'
-            }));
-            
-            toast.error('Lost live connection. Results may be delayed.', {
-                duration: 5000,
-                icon: '⚠️'
-            });
-            
-            // Fallback to polling
-            setupPollingFallback();
-        });
-        
-        // Authentication error
-        sseManager.on('authError', () => {
-            console.error('🔐 Authentication error for live updates');
-            toast.error('Authentication expired. Please refresh the page.');
-            setConnectionState(prev => ({
-                ...prev,
-                error: 'Authentication required'
-            }));
-        });
-        
-        // Server error
-        sseManager.on('serverError', (data) => {
-            console.error('🔥 Server error:', data.message);
-            setConnectionState(prev => ({
-                ...prev,
-                error: `Server error: ${data.message}`
-            }));
-        });
-        
-        // Start the connection
-        sseManager.connect();
-    };
-
-    const handleEnhancedLiveUpdate = useCallback((data) => {
-        console.log('📡 Enhanced live voting update:', data);
-        
-        setConnectionState(prev => ({
-            ...prev,
-            lastUpdate: new Date().toISOString()
-        }));
-        
-        // Update live results
-        if (data.results) {
-            setLiveResults(prevResults => {
-                // Show notification for significant changes
-                if (prevResults.length > 0 && data.results.length > 0) {
-                    const oldLeader = prevResults[0];
-                    const newLeader = data.results[0];
-                    
-                    if (oldLeader && newLeader && oldLeader.game.id !== newLeader.game.id) {
-                        toast.success(`🏆 New leader: ${newLeader.game.name}!`, {
-                            duration: 4000,
-                            icon: '👑'
-                        });
-                    }
-                }
-                
-                return data.results;
-            });
-        }
-        
-        // Update voter statistics
-        if (data.total_voters !== undefined) {
-            setVoterStats(prevStats => {
-                const newStats = {
-                    voted: data.total_voters,
-                    total: data.total_members || prevStats.total,
-                    percentage: data.total_members > 0 ? (data.total_voters / data.total_members * 100) : 0
-                };
-                
-                // Show notification for new votes
-                if (prevStats.voted > 0 && newStats.voted > prevStats.voted) {
-                    const newVotes = newStats.voted - prevStats.voted;
-                    toast.success(
-                        `🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}! (${newStats.voted}/${newStats.total})`,
-                        { 
-                            duration: 3000,
-                            icon: '📊'
-                        }
-                    );
-                }
-                
-                return newStats;
-            });
-        }
-        
-        // Handle voting completion
-        if (data.voting_complete && !votingComplete) {
-            setVotingComplete(true);
-            
-            toast.success('🏁 Voting complete! Final results ready.', { 
-                duration: 5000,
-                icon: '🎉'
-            });
-            
-            // Show winner if available
-            if (data.winner) {
-                setTimeout(() => {
-                    toast.success(`🏆 Winner: ${data.winner.game.name}!`, {
-                        duration: 6000,
-                        icon: '👑'
-                    });
-                }, 1000);
-            }
-            
-            // Notify parent component
-            if (onSessionUpdate) {
-                onSessionUpdate();
-            }
-            
-            // Disconnect SSE since voting is complete
-            setTimeout(() => {
-                cleanup();
-            }, 10000); // Keep connection for 10 more seconds for final updates
-        }
-        
-        // Handle new voter data
-        if (data.new_voter) {
-            toast.success(`${data.new_voter.username} just voted!`, {
-                duration: 3000,
-                icon: '✅'
-            });
-        }
-        
-        // Handle voter left
-        if (data.voter_left) {
-            toast(`${data.voter_left.username} left the session`, {
-                duration: 2000,
-                icon: '👋'
-            });
-        }
-    }, [votingComplete, onSessionUpdate]);
-
-    const setupPollingFallback = () => {
-        console.log('📊 Setting up polling fallback...');
-        
-        const pollInterval = setInterval(async () => {
-            if (connectionState.isConnected || votingComplete) {
-                clearInterval(pollInterval);
-                return;
-            }
-            
-            try {
-                const backendUrl = import.meta.env.VITE_BACKEND_URL;
-                const response = await authService.authenticatedFetch(
-                    `${backendUrl}/api/gaming/sessions/${session.id}/results`
-                );
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    // Update with polling data
-                    if (data.results) setLiveResults(data.results);
-                    if (data.total_voters !== undefined) {
-                        setVoterStats({
-                            voted: data.total_voters,
-                            total: data.total_members || 0,
-                            percentage: data.total_members > 0 ? (data.total_voters / data.total_members * 100) : 0
-                        });
-                    }
-                    if (data.voting_complete) setVotingComplete(true);
-                }
-            } catch (error) {
-                console.error('Polling error:', error);
-            }
-        }, 8000); // Poll every 8 seconds
-        
-        // Store interval for cleanup
-        setTimeout(() => clearInterval(pollInterval), 300000); // Stop after 5 minutes
-    };
-
-    const toggleGameSelection = (gameId) => {
-        if (hasVoted || submitting) return;
-        
-        setSelectedGames(prev => {
-            if (prev.includes(gameId)) {
-                return prev.filter(id => id !== gameId);
-            } else if (prev.length < 3) {
-                return [...prev, gameId];
-            } else {
-                toast.error('You can only select up to 3 games');
-                return prev;
-            }
-        });
-    };
-
-    const submitVotes = async () => {
-        if (selectedGames.length === 0) {
-            toast.error('Please select at least one game');
+        const token = authService.getAccessToken();
+        if (!token) {
+            setError('Authentication required');
             return;
         }
-
-        setSubmitting(true);
-        const loadingToast = toast.loading('Submitting your votes...');
-
+        
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const url = `${apiUrl}/api/live-voting/sessions/${sessionId}/live-stream?token=${encodeURIComponent(token)}`;
             
-            const gameVotes = selectedGames.map((gameId, index) => ({
-                game_id: gameId,
-                priority: selectedGames.length - index // 3 points for 1st choice, 2 for 2nd, 1 for 3rd
-            }));
-
+            console.log('🔗 Connecting to live voting stream:', url);
+            
+            const eventSource = new EventSource(url);
+            eventSourceRef.current = eventSource;
+            
+            eventSource.onopen = () => {
+                console.log('✅ Live voting stream connected');
+                setIsConnected(true);
+                setConnectionAttempts(0);
+                setError(null);
+            };
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleLiveEvent(data);
+                } catch (error) {
+                    console.error('Error parsing SSE message:', error);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('❌ Live voting stream error:', error);
+                setIsConnected(false);
+                
+                if (connectionAttempts < maxReconnectAttempts) {
+                    const delay = Math.min(1000 * Math.pow(2, connectionAttempts), 30000);
+                    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${connectionAttempts + 1})`);
+                    
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        setConnectionAttempts(prev => prev + 1);
+                        connectToLiveStream();
+                    }, delay);
+                } else {
+                    setError('Connection lost. Please refresh the page.');
+                }
+            };
+            
+        } catch (error) {
+            console.error('Failed to create EventSource:', error);
+            setError('Failed to connect to live session');
+        }
+    }, [isAuthenticated, sessionId, connectionAttempts]);
+    
+    // Handle live events from SSE
+    const handleLiveEvent = (data) => {
+        console.log('📡 Live event received:', data);
+        
+        switch (data.type) {
+            case 'session_state':
+                setSessionData(data);
+                setSessionState(data.state || 'unknown');
+                if (data.voting_settings) {
+                    setMaxChoices(data.voting_settings.max_choices || 3);
+                }
+                break;
+                
+            case 'state_change':
+                setSessionState(data.new_state);
+                break;
+                
+            case 'voting_started':
+                setSessionState('voting');
+                setSessionData(prev => ({
+                    ...prev,
+                    state: 'voting',
+                    votable_games: data.votable_games,
+                    voting_settings: data.voting_settings
+                }));
+                if (data.voting_settings) {
+                    setMaxChoices(data.voting_settings.max_choices || 3);
+                }
+                break;
+                
+            case 'vote_submitted':
+                if (sessionData && sessionData.members_status) {
+                    setSessionData(prev => ({
+                        ...prev,
+                        progress: data.progress,
+                        members_status: prev.members_status.map(member =>
+                            member.id === data.user_id
+                                ? { ...member, has_voted: true, status: 'voted' }
+                                : member
+                        )
+                    }));
+                }
+                break;
+                
+            case 'voting_completed':
+                setSessionState('results');
+                setSessionData(prev => ({
+                    ...prev,
+                    state: 'results',
+                    results: data.final_results,
+                    winner: data.winner
+                }));
+                break;
+                
+            case 'user_connected':
+            case 'user_disconnected':
+                // Update connection count in UI
+                break;
+                
+            case 'heartbeat':
+                // Keep connection alive
+                break;
+                
+            case 'error':
+                setError(data.error || 'An error occurred');
+                break;
+                
+            default:
+                console.log('Unknown event type:', data.type);
+        }
+    };
+    
+    // Initialize connection
+    useEffect(() => {
+        if (isAuthenticated && sessionId) {
+            connectToLiveStream();
+        }
+        
+        return () => {
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+                eventSourceRef.current = null;
+            }
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+        };
+    }, [isAuthenticated, sessionId, connectToLiveStream]);
+    
+    // Start voting phase
+    const startVoting = async () => {
+        try {
             const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/sessions/${session.id}/vote`,
+                `/api/live-voting/sessions/${sessionId}/start-voting`,
+                { method: 'POST' }
+            );
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to start voting');
+            }
+            
+            console.log('✅ Voting started successfully');
+        } catch (error) {
+            console.error('❌ Failed to start voting:', error);
+            setError(error.message);
+        }
+    };
+    
+    // Submit vote
+    const submitVote = async () => {
+        if (selectedGames.length === 0) {
+            setError('Please select at least one game');
+            return;
+        }
+        
+        if (selectedGames.length > maxChoices) {
+            setError(`Please select no more than ${maxChoices} games`);
+            return;
+        }
+        
+        setIsSubmittingVote(true);
+        setError(null);
+        
+        try {
+            // Convert selected games to vote format
+            const gameVotes = selectedGames.map((game, index) => ({
+                game_id: game.id,
+                priority: selectedGames.length - index  // Higher priority for earlier selections
+            }));
+            
+            const response = await authService.authenticatedFetch(
+                `/api/live-voting/sessions/${sessionId}/submit-vote`,
                 {
                     method: 'POST',
                     body: JSON.stringify({ game_votes: gameVotes })
                 }
             );
-
-            const data = await response.json();
-            toast.dismiss(loadingToast);
-
-            if (response.ok && data.success) {
-                setHasVoted(true);
-                setMyVotes(gameVotes);
-                
-                toast.success('🎉 Vote submitted successfully!', {
-                    duration: 4000,
-                    icon: '✅'
-                });
-                
-                // Show vote summary
-                setTimeout(() => {
-                    const summary = selectedGames.map((gameId, index) => {
-                        const game = commonGames.find(g => g.id === gameId);
-                        return `${index + 1}. ${game?.name || 'Unknown'}`;
-                    }).slice(0, 2).join(', ');
-                    
-                    toast.success(`Your votes: ${summary}${selectedGames.length > 2 ? '...' : ''}`, {
-                        duration: 5000
-                    });
-                }, 1000);
-                
-                if (onSessionUpdate) {
-                    onSessionUpdate();
-                }
-            } else {
-                toast.error(data.error || 'Failed to submit vote');
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Vote submission error:', error);
-            toast.error('Network error submitting vote');
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    const forceReconnect = () => {
-        if (sseManagerRef.current) {
-            sseManagerRef.current.forceReconnect();
-            toast.loading('Reconnecting...', { duration: 2000 });
-        }
-    };
-
-    const cleanup = () => {
-        if (sseManagerRef.current) {
-            console.log('🧹 Cleaning up SSE Manager...');
-            sseManagerRef.current.destroy();
-            sseManagerRef.current = null;
-        }
-    };
-
-    // Format time ago
-    const formatTimeAgo = (dateString) => {
-        if (!dateString) return '';
-        try {
-            const date = new Date(dateString);
-            const now = new Date();
-            const diffMs = now - date;
-            const diffSecs = Math.floor(diffMs / 1000);
             
-            if (diffSecs < 60) return 'just now';
-            const diffMins = Math.floor(diffSecs / 60);
-            if (diffMins < 60) return `${diffMins}m ago`;
-            const diffHours = Math.floor(diffMins / 60);
-            return `${diffHours}h ago`;
-        } catch {
-            return '';
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to submit vote');
+            }
+            
+            const result = await response.json();
+            console.log('✅ Vote submitted successfully:', result);
+            
+            // Clear selected games
+            setSelectedGames([]);
+            
+        } catch (error) {
+            console.error('❌ Failed to submit vote:', error);
+            setError(error.message);
+        } finally {
+            setIsSubmittingVote(false);
         }
     };
-
-    // 🚀 PHASE 5: Use standardized VotingLoadingState
-    if (loading) {
-        return <VotingLoadingState />;
+    
+    // Toggle game selection
+    const toggleGameSelection = (game) => {
+        setSelectedGames(prev => {
+            const isSelected = prev.find(g => g.id === game.id);
+            
+            if (isSelected) {
+                return prev.filter(g => g.id !== game.id);
+            } else if (prev.length < maxChoices) {
+                return [...prev, game];
+            } else {
+                setError(`You can only select ${maxChoices} games`);
+                return prev;
+            }
+        });
+    };
+    
+    // Complete voting manually
+    const completeVoting = async () => {
+        try {
+            const response = await authService.authenticatedFetch(
+                `/api/live-voting/sessions/${sessionId}/complete-voting`,
+                { method: 'POST' }
+            );
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to complete voting');
+            }
+            
+            console.log('✅ Voting completed successfully');
+        } catch (error) {
+            console.error('❌ Failed to complete voting:', error);
+            setError(error.message);
+        }
+    };
+    
+    // Render loading state
+    if (sessionState === 'loading') {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-white mx-auto mb-4"></div>
+                    <h2 className="text-2xl font-bold text-white mb-2">Loading Live Session...</h2>
+                    <p className="text-white/70">
+                        {isConnected ? 'Connected to live stream' : 'Connecting...'}
+                    </p>
+                </div>
+            </div>
+        );
     }
-
-    // 🚀 PHASE 5: Handle connection errors with NetworkErrorState
-    if (connectionState.error && !connectionState.isConnected && !votingComplete) {
-        return <NetworkErrorState 
-            error={connectionState.error}
-            onRetry={forceReconnect}
-            onRefresh={() => window.location.reload()}
-            helpText="Live voting connection failed. You can still vote, but results may not update in real-time."
-        />;
-    }
-
-    return (
-        <div className="space-y-6">
-            {/* Enhanced Live Status Header */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-2xl font-bold text-white flex items-center">
-                        🗳️ Enhanced Live Voting
-                        <div className="ml-3 flex items-center space-x-2">
-                            <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                                connectionState.isConnected ? 'bg-green-400 animate-pulse' : 
-                                connectionState.isReconnecting ? 'bg-yellow-400 animate-pulse' :
-                                'bg-red-400'
-                            }`}></div>
-                            <span className={`text-sm font-medium ${
-                                connectionState.isConnected ? 'text-green-300' :
-                                connectionState.isReconnecting ? 'text-yellow-300' :
-                                'text-red-300'
-                            }`}>
-                                {connectionState.isConnected ? 'Live' :
-                                 connectionState.isReconnecting ? `Reconnecting (${connectionState.retryCount})` :
-                                 'Offline'}
-                            </span>
-                        </div>
-                    </h2>
-                    
-                    <div className="text-right">
-                        <div className="text-2xl font-bold text-coral-400">
-                            {voterStats.voted}/{voterStats.total}
-                        </div>
-                        <div className="text-white/60 text-sm">votes collected</div>
-                        {connectionState.lastUpdate && (
-                            <div className="text-white/40 text-xs mt-1">
-                                Updated {formatTimeAgo(connectionState.lastUpdate)}
-                            </div>
-                        )}
-                    </div>
-                </div>
-                
-                <div className="mb-4">
-                    <h3 className="text-lg font-semibold text-white mb-2">{session.session_name}</h3>
-                    <p className="text-white/70">{session.description}</p>
-                </div>
-                
-                {/* Enhanced Progress Bar */}
-                <div className="w-full bg-white/10 rounded-full h-3 mb-4">
-                    <div 
-                        className="bg-gradient-to-r from-coral-500 to-marine-500 h-3 rounded-full transition-all duration-500 flex items-center justify-center"
-                        style={{ width: `${voterStats.percentage || 0}%` }}
-                    >
-                        {voterStats.percentage > 15 && (
-                            <span className="text-white text-xs font-bold">
-                                {Math.round(voterStats.percentage)}%
-                            </span>
-                        )}
-                    </div>
-                </div>
-                
-                {/* Connection Status & Actions */}
-                <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center space-x-4">
-                        <span className="text-white/60">
-                            Status: {connectionState.isConnected ? '✅ Real-time' : 
-                                    connectionState.isReconnecting ? '🔄 Reconnecting...' : 
-                                    '📊 Polling mode'}
-                        </span>
-                        
-                        {connectionState.connectionId && (
-                            <span className="text-white/40 text-xs font-mono">
-                                {connectionState.connectionId.slice(0, 6)}
-                            </span>
-                        )}
-                    </div>
-                    
-                    {connectionState.error && !connectionState.isConnected && (
+    
+    // Render error state
+    if (error) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+                <div className="text-center max-w-md mx-auto p-6">
+                    <div className="text-red-400 text-6xl mb-4">⚠️</div>
+                    <h2 className="text-2xl font-bold text-white mb-4">Connection Error</h2>
+                    <p className="text-white/70 mb-6">{error}</p>
+                    <div className="space-x-4">
                         <button
-                            onClick={forceReconnect}
-                            className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors text-xs"
+                            onClick={() => window.location.reload()}
+                            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
                         >
-                            🔄 Reconnect
+                            Reload Page
                         </button>
+                        <button
+                            onClick={() => navigate('/dashboard')}
+                            className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold"
+                        >
+                            Back to Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    
+    // Render lobby state
+    if (sessionState === 'lobby' || sessionState === 'planning') {
+        return (
+            <LobbyView
+                sessionData={sessionData}
+                user={user}
+                onStartVoting={startVoting}
+                isConnected={isConnected}
+            />
+        );
+    }
+    
+    // Render voting state
+    if (sessionState === 'voting') {
+        return (
+            <VotingView
+                sessionData={sessionData}
+                user={user}
+                selectedGames={selectedGames}
+                maxChoices={maxChoices}
+                onToggleGame={toggleGameSelection}
+                onSubmitVote={submitVote}
+                onCompleteVoting={completeVoting}
+                isSubmittingVote={isSubmittingVote}
+                isConnected={isConnected}
+            />
+        );
+    }
+    
+    // Render results state
+    if (sessionState === 'results' || sessionState === 'completed') {
+        return (
+            <ResultsView
+                sessionData={sessionData}
+                user={user}
+                onBackToDashboard={() => navigate('/dashboard')}
+                isConnected={isConnected}
+            />
+        );
+    }
+    
+    // Unknown state
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+            <div className="text-center">
+                <h2 className="text-2xl font-bold text-white mb-4">Unknown Session State</h2>
+                <p className="text-white/70 mb-6">Session state: {sessionState}</p>
+                <button
+                    onClick={() => navigate('/dashboard')}
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                >
+                    Back to Dashboard
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// Lobby View Component
+const LobbyView = ({ sessionData, user, onStartVoting, isConnected }) => {
+    const canStartVoting = sessionData?.can_start_voting && 
+                          sessionData?.session?.creator_id === user?.id;
+    
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
+            <div className="max-w-6xl mx-auto">
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <h1 className="text-4xl font-bold text-white mb-2">
+                        🎮 {sessionData?.session?.session_name || 'Gaming Session'}
+                    </h1>
+                    <p className="text-white/70">
+                        Preparing to vote on games • {isConnected ? '🟢 Live' : '🔴 Disconnected'}
+                    </p>
+                </div>
+                
+                {/* Members */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-4">
+                        👥 Group Members ({sessionData?.members?.length || 0})
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {sessionData?.members?.map(member => (
+                            <div key={member.id} className="bg-white/5 rounded-lg p-4 flex items-center space-x-3">
+                                <img
+                                    src={member.avatar_url || '/default-avatar.png'}
+                                    alt={member.username}
+                                    className="w-10 h-10 rounded-full"
+                                />
+                                <div className="flex-1">
+                                    <p className="text-white font-semibold">{member.username}</p>
+                                    <div className="flex items-center space-x-2 text-sm">
+                                        {member.steam_connected ? (
+                                            <span className="text-green-400">🎮 Steam Connected</span>
+                                        ) : (
+                                            <span className="text-red-400">❌ Steam Not Connected</span>
+                                        )}
+                                        <span className="text-white/60">
+                                            {member.total_games} games
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                
+                {/* Common Games Preview */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-4">
+                        🎯 Common Multiplayer Games ({sessionData?.total_common_games || 0})
+                    </h2>
+                    {sessionData?.common_games?.length > 0 ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {sessionData.common_games.slice(0, 12).map(game => (
+                                <div key={game.id} className="bg-white/5 rounded-lg p-3 text-center">
+                                    <img
+                                        src={game.header_image || '/game-placeholder.jpg'}
+                                        alt={game.name}
+                                        className="w-full h-20 object-cover rounded mb-2"
+                                    />
+                                    <p className="text-white text-sm font-medium truncate">
+                                        {game.name}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-8">
+                            <p className="text-white/70 text-lg mb-4">
+                                No common multiplayer games found
+                            </p>
+                            <p className="text-white/50">
+                                Make sure group members have connected Steam accounts with public profiles
+                            </p>
+                        </div>
                     )}
                 </div>
                 
-                {/* Error Display */}
-                {connectionState.error && (
-                    <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-300 text-sm">
-                        ⚠️ {connectionState.error}
+                {/* Action Buttons */}
+                <div className="text-center">
+                    {canStartVoting ? (
+                        <button
+                            onClick={onStartVoting}
+                            disabled={!sessionData?.can_start_voting}
+                            className="px-8 py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-xl font-bold text-lg transition-colors"
+                        >
+                            🚀 Start Voting
+                        </button>
+                    ) : (
+                        <div className="text-white/70">
+                            Waiting for session creator to start voting...
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Voting View Component
+const VotingView = ({ sessionData, user, selectedGames, maxChoices, onToggleGame, onSubmitVote, onCompleteVoting, isSubmittingVote, isConnected }) => {
+    const userHasVoted = sessionData?.user_has_voted;
+    const canCompleteVoting = sessionData?.session?.creator_id === user?.id;
+    
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
+            <div className="max-w-6xl mx-auto">
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <h1 className="text-4xl font-bold text-white mb-2">
+                        🗳️ Vote for Your Favorite Games
+                    </h1>
+                    <p className="text-white/70">
+                        Select up to {maxChoices} games • {isConnected ? '🟢 Live' : '🔴 Disconnected'}
+                    </p>
+                    
+                    {/* Progress Bar */}
+                    <div className="mt-4 max-w-md mx-auto">
+                        <div className="bg-white/20 rounded-full h-3">
+                            <div
+                                className="bg-green-500 h-3 rounded-full transition-all duration-300"
+                                style={{ width: `${sessionData?.progress?.percentage || 0}%` }}
+                            />
+                        </div>
+                        <p className="text-white/70 text-sm mt-2">
+                            {sessionData?.progress?.voted || 0} of {sessionData?.progress?.total || 0} members voted
+                        </p>
+                    </div>
+                </div>
+                
+                {/* User's Vote Status */}
+                {userHasVoted && (
+                    <div className="bg-green-600/20 border border-green-500 rounded-xl p-6 mb-8">
+                        <h2 className="text-xl font-bold text-green-400 mb-4">✅ Your Vote Submitted</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {sessionData?.user_votes?.map((vote, index) => (
+                                <div key={vote.game.id} className="bg-white/10 rounded-lg p-4 flex items-center space-x-3">
+                                    <div className="text-2xl font-bold text-green-400">
+                                        #{index + 1}
+                                    </div>
+                                    <img
+                                        src={vote.game.header_image || '/game-placeholder.jpg'}
+                                        alt={vote.game.name}
+                                        className="w-12 h-12 object-cover rounded"
+                                    />
+                                    <div>
+                                        <p className="text-white font-semibold">{vote.game.name}</p>
+                                        <p className="text-white/60 text-sm">{vote.priority} points</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
-            </div>
-
-            {/* Voting Interface */}
-            {!hasVoted && !votingComplete ? (
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-white mb-4">
-                        Cast Your Vote ({selectedGames.length}/3 selected)
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        {commonGames.map((game) => {
-                            const isSelected = selectedGames.includes(game.id);
-                            const selectionIndex = selectedGames.indexOf(game.id);
-                            
-                            return (
-                                <div
-                                    key={game.id}
-                                    onClick={() => toggleGameSelection(game.id)}
-                                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:scale-105 ${
-                                        isSelected 
-                                            ? 'bg-coral-500/20 border-coral-500 shadow-lg shadow-coral-500/25' 
-                                            : 'bg-white/5 border-white/20 hover:border-white/40'
-                                    }`}
-                                >
-                                    <div className="flex items-center space-x-3">
-                                        <GameImage
-                                            src={game.header_image}
+                
+                {/* Voting Interface */}
+                {!userHasVoted && (
+                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+                        <h2 className="text-2xl font-bold text-white mb-4">
+                            Select Your Games ({selectedGames.length}/{maxChoices})
+                        </h2>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+                            {sessionData?.votable_games?.map(game => {
+                                const isSelected = selectedGames.find(g => g.id === game.id);
+                                const selectionIndex = selectedGames.findIndex(g => g.id === game.id);
+                                
+                                return (
+                                    <div
+                                        key={game.id}
+                                        onClick={() => onToggleGame(game)}
+                                        className={`relative cursor-pointer transition-all duration-200 rounded-lg overflow-hidden ${
+                                            isSelected 
+                                                ? 'ring-4 ring-blue-500 scale-105' 
+                                                : 'hover:scale-102 hover:ring-2 hover:ring-blue-300'
+                                        }`}
+                                    >
+                                        <img
+                                            src={game.header_image || '/game-placeholder.jpg'}
                                             alt={game.name}
-                                            fallbackText={game.name}
-                                            className="w-20 h-12 object-cover rounded"
+                                            className="w-full h-32 object-cover"
                                         />
-                                        <div className="flex-1">
-                                            <h4 className="text-white font-medium">{game.name}</h4>
-                                            <p className="text-white/60 text-sm">
-                                                {game.short_description?.substring(0, 60) || 'No description'}...
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                                        <div className="absolute bottom-2 left-2 right-2">
+                                            <p className="text-white font-semibold text-sm truncate">
+                                                {game.name}
                                             </p>
                                         </div>
                                         {isSelected && (
-                                            <div className="w-8 h-8 bg-coral-500 rounded-full flex items-center justify-center text-white font-bold">
+                                            <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold">
                                                 {selectionIndex + 1}
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                        <div className="text-white/70 text-sm">
-                            <p>Select up to 3 games in order of preference</p>
-                            <p>1st choice = 3 points, 2nd = 2 points, 3rd = 1 point</p>
+                                );
+                            })}
                         </div>
                         
-                        <button
-                            onClick={submitVotes}
-                            disabled={selectedGames.length === 0 || submitting}
-                            className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {submitting ? 'Submitting...' : `Submit ${selectedGames.length} Vote${selectedGames.length !== 1 ? 's' : ''}`}
-                        </button>
-                    </div>
-                </div>
-            ) : (
-                /* Already Voted Display */
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-8 text-center">
-                    <div className="text-6xl mb-4">✅</div>
-                    <h3 className="text-2xl font-bold text-white mb-4">
-                        {votingComplete ? 'Voting Complete!' : 'Vote Submitted!'}
-                    </h3>
-                    <p className="text-white/70 mb-4">
-                        {votingComplete 
-                            ? 'All votes have been collected. Results are being calculated...'
-                            : 'Thank you for voting! Watch the live progress above.'
-                        }
-                    </p>
-                    
-                    {/* Show what user voted for */}
-                    {myVotes.length > 0 && (
-                        <div className="mb-6 p-4 bg-white/5 rounded-lg">
-                            <p className="text-white/60 text-sm mb-2">Your votes:</p>
-                            {myVotes.map((vote, index) => (
-                                <div key={vote.game_id || index} className="text-white/80 text-sm">
-                                    {index + 1}. {vote.game?.name || commonGames.find(g => g.id === vote.game_id)?.name || 'Unknown'} ({vote.priority || (selectedGames.length - index)} points)
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    
-                    <div className="flex justify-center space-x-4">
-                        <button
-                            onClick={() => navigate(`/sessions/${session.id}/results`)}
-                            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors"
-                        >
-                            📊 View Results
-                        </button>
-                        
-                        {votingComplete && (
+                        <div className="text-center">
                             <button
-                                onClick={() => navigate(`/groups/${groupId}`)}
-                                className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-medium rounded-xl transition-colors"
+                                onClick={onSubmitVote}
+                                disabled={selectedGames.length === 0 || isSubmittingVote}
+                                className="px-8 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-xl font-bold text-lg transition-colors"
                             >
-                                🎉 Back to Group
+                                {isSubmittingVote ? (
+                                    <>
+                                        <span className="animate-spin mr-2">⏳</span>
+                                        Submitting Vote...
+                                    </>
+                                ) : (
+                                    `🗳️ Submit Vote (${selectedGames.length} games)`
+                                )}
                             </button>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Enhanced Live Results Preview */}
-            {liveResults.length > 0 && (
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-white">🏆 Live Results Preview</h3>
-                        <div className={`flex items-center space-x-2 px-2 py-1 rounded-full text-xs ${
-                            connectionState.isConnected ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'
-                        }`}>
-                            <div className={`w-1.5 h-1.5 rounded-full ${
-                                connectionState.isConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
-                            }`}></div>
-                            <span>Real-time</span>
                         </div>
                     </div>
-                    
-                    <div className="space-y-2">
-                        {liveResults.slice(0, 3).map((result, index) => (
-                            <div key={result.game.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                                <div className="flex items-center space-x-3">
-                                    <span className="text-lg">
-                                        {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                                    </span>
-                                    <span className="text-white font-medium">{result.game.name}</span>
-                                    <span className="text-white/60 text-sm">({result.vote_count} votes)</span>
+                )}
+                
+                {/* Member Status */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-4">👥 Voting Status</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {sessionData?.members_status?.map(member => (
+                            <div key={member.id} className="bg-white/5 rounded-lg p-4 text-center">
+                                <img
+                                    src={member.avatar_url || '/default-avatar.png'}
+                                    alt={member.username}
+                                    className="w-12 h-12 rounded-full mx-auto mb-2"
+                                />
+                                <p className="text-white font-semibold text-sm">{member.username}</p>
+                                <div className="mt-2">
+                                    {member.has_voted ? (
+                                        <span className="text-green-400 text-xs">✅ Voted</span>
+                                    ) : (
+                                        <span className="text-yellow-400 text-xs">⏳ Voting...</span>
+                                    )}
                                 </div>
-                                <span className="text-coral-400 font-bold">{result.total_points} pts</span>
                             </div>
                         ))}
                     </div>
-                    
-                    <div className="mt-4 text-center">
+                </div>
+                
+                {/* Admin Controls */}
+                {canCompleteVoting && (
+                    <div className="text-center">
                         <button
-                            onClick={() => navigate(`/sessions/${session.id}/results`)}
-                            className="px-4 py-2 bg-coral-500/20 text-coral-300 border border-coral-500/30 rounded-lg text-sm hover:bg-coral-500/30 transition-colors"
+                            onClick={onCompleteVoting}
+                            className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold"
                         >
-                            View Full Results
+                            🏁 Complete Voting Early
                         </button>
                     </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// Results View Component
+const ResultsView = ({ sessionData, user, onBackToDashboard, isConnected }) => {
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
+            <div className="max-w-4xl mx-auto">
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <h1 className="text-4xl font-bold text-white mb-2">
+                        🏆 Voting Results
+                    </h1>
+                    <p className="text-white/70">
+                        The votes are in! • {isConnected ? '🟢 Live' : '🔴 Disconnected'}
+                    </p>
                 </div>
-            )}
+                
+                {/* Winner */}
+                {sessionData?.winner && (
+                    <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500 rounded-xl p-8 mb-8 text-center">
+                        <div className="text-6xl mb-4">🥇</div>
+                        <h2 className="text-3xl font-bold text-yellow-400 mb-2">Winner!</h2>
+                        <img
+                            src={sessionData.winner.game.header_image || '/game-placeholder.jpg'}
+                            alt={sessionData.winner.game.name}
+                            className="w-64 h-32 object-cover rounded-lg mx-auto mb-4"
+                        />
+                        <h3 className="text-2xl font-bold text-white mb-2">
+                            {sessionData.winner.game.name}
+                        </h3>
+                        <p className="text-white/70">
+                            {sessionData.winner.total_points} points • {sessionData.winner.vote_count} votes
+                        </p>
+                    </div>
+                )}
+                
+                {/* Full Results */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-6">📊 Complete Results</h2>
+                    <div className="space-y-4">
+                        {sessionData?.results?.map((result, index) => (
+                            <div key={result.game.id} className="bg-white/5 rounded-lg p-4 flex items-center space-x-4">
+                                <div className="text-2xl font-bold text-white">
+                                    #{index + 1}
+                                </div>
+                                <img
+                                    src={result.game.header_image || '/game-placeholder.jpg'}
+                                    alt={result.game.name}
+                                    className="w-16 h-16 object-cover rounded"
+                                />
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-semibold text-white">{result.game.name}</h3>
+                                    <p className="text-white/60">
+                                        {result.total_points} points • {result.vote_count} votes • 
+                                        {result.average_score.toFixed(1)} avg
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <div className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                                        {result.total_points} pts
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                
+                {/* Statistics */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-4">📈 Session Statistics</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                            <div className="text-3xl font-bold text-blue-400">
+                                {sessionData?.statistics?.total_voters || 0}
+                            </div>
+                            <div className="text-white/60">Voters</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-3xl font-bold text-green-400">
+                                {Math.round(sessionData?.statistics?.participation_rate || 0)}%
+                            </div>
+                            <div className="text-white/60">Participation</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-3xl font-bold text-purple-400">
+                                {sessionData?.statistics?.total_votes_cast || 0}
+                            </div>
+                            <div className="text-white/60">Total Votes</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-3xl font-bold text-yellow-400">
+                                {sessionData?.results?.length || 0}
+                            </div>
+                            <div className="text-white/60">Games Voted</div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="text-center space-x-4">
+                    <button
+                        onClick={onBackToDashboard}
+                        className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-colors"
+                    >
+                        🏠 Back to Dashboard
+                    </button>
+                    <button
+                        onClick={() => window.print()}
+                        className="px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white rounded-xl font-bold text-lg transition-colors"
+                    >
+                        🖨️ Print Results
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };

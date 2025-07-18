@@ -16,6 +16,7 @@ import { Demo } from "./pages/Demo";
 import FindGames from "./pages/FindGames.jsx";
 import Friends from "./pages/Friends.jsx";
 import { GameLibrary } from "./pages/GameLibrary";
+import LiveVotingSession from "./components/LiveVotingSession";
 
 export const router = createBrowserRouter(
     createRoutesFromElements(
@@ -33,6 +34,9 @@ export const router = createBrowserRouter(
                 <Route path="/groups" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/groups/:groupId" element={<ProtectedRoute><GroupPage /></ProtectedRoute>} />
                 <Route path="/sessions/:sessionId/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
+                
+                {/* NEW: Live Voting Session Route */}
+                <Route path="/live-voting/:sessionId" element={<ProtectedRoute><LiveVotingSession /></ProtectedRoute>} />
                 
                 {/* Demo route - unprotected for easy access */}
                 <Route path="/demo" element={<Demo />} />

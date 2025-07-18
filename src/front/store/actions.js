@@ -1,4 +1,4 @@
-// src/front/store/actions.js - CORRECTED with proper URL prefixes
+// src/front/store/actions.js - CORRECTED VERSION with proper URL prefixes
 
 import authService from './authService.js';
 
@@ -10,7 +10,7 @@ import authService from './authService.js';
 export const transferGroupOwnership = async (dispatch, groupId, userId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}/transfer-ownership/${userId}`,
+            `/api/gaming/groups/${groupId}/transfer-ownership/${userId}`,
             { method: 'POST' }
         );
 
@@ -47,7 +47,7 @@ export const transferGroupOwnership = async (dispatch, groupId, userId) => {
 export const fetchGroupMembers = async (dispatch, groupId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}/members`
+            `/api/gaming/groups/${groupId}/members`
         );
 
         const data = await response.json();
@@ -83,7 +83,7 @@ export const fetchGroupMembers = async (dispatch, groupId) => {
 export const kickGroupMember = async (dispatch, groupId, userId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}/kick/${userId}`,
+            `/api/gaming/groups/${groupId}/kick/${userId}`,
             { method: 'POST' }
         );
 
@@ -128,7 +128,7 @@ export const kickGroupMember = async (dispatch, groupId, userId) => {
 export const submitVotes = async (dispatch, sessionId, gameVotes) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/sessions/${sessionId}/vote`,
+            `/api/gaming/sessions/${sessionId}/vote`,
             {
                 method: 'POST',
                 body: JSON.stringify({ game_votes: gameVotes })
@@ -174,7 +174,7 @@ export const submitVotes = async (dispatch, sessionId, gameVotes) => {
 export const fetchSessionResults = async (dispatch, sessionId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/sessions/${sessionId}/results`
+            `/api/gaming/sessions/${sessionId}/results`
         );
 
         const data = await response.json();
@@ -217,7 +217,7 @@ export const fetchSessionResults = async (dispatch, sessionId) => {
 export const fetchSessionVoters = async (dispatch, sessionId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/sessions/${sessionId}/voters`
+            `/api/gaming/sessions/${sessionId}/voters`
         );
 
         const data = await response.json();
@@ -255,7 +255,7 @@ export const fetchSessionVoters = async (dispatch, sessionId) => {
 export const fetchMyVotes = async (dispatch, sessionId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/sessions/${sessionId}/my-votes`
+            `/api/gaming/sessions/${sessionId}/my-votes`
         );
 
         const data = await response.json();
@@ -281,7 +281,7 @@ export const fetchMyVotes = async (dispatch, sessionId) => {
 export const startVotingSession = async (dispatch, groupId, sessionData) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}/start-vote`,
+            `/api/gaming/groups/${groupId}/start-vote`,
             {
                 method: 'POST',
                 body: JSON.stringify(sessionData)
@@ -326,7 +326,7 @@ export const startVotingSession = async (dispatch, groupId, sessionData) => {
 export const closeVotingSession = async (dispatch, sessionId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/sessions/${sessionId}/close`,
+            `/api/gaming/sessions/${sessionId}/close`,
             { method: 'POST' }
         );
 
@@ -365,14 +365,14 @@ export const closeVotingSession = async (dispatch, sessionId) => {
 };
 
 // ============================================================================
-// EXISTING GROUP ACTIONS - CORRECTED URLS
+// GROUP CRUD OPERATIONS - CORRECTED URLS
 // ============================================================================
 
 // Create a new group
 export const createGroup = async (dispatch, groupData) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups`,
+            `/api/gaming/groups`,
             {
                 method: 'POST',
                 body: JSON.stringify(groupData)
@@ -412,7 +412,7 @@ export const createGroup = async (dispatch, groupData) => {
 export const joinGroup = async (dispatch, inviteCode) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/join/${inviteCode}`,
+            `/api/gaming/groups/join/${inviteCode}`,
             { method: 'POST' }
         );
 
@@ -449,7 +449,7 @@ export const joinGroup = async (dispatch, inviteCode) => {
 export const leaveGroup = async (dispatch, groupId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}/leave`,
+            `/api/gaming/groups/${groupId}/leave`,
             { method: 'POST' }
         );
 
@@ -492,7 +492,7 @@ export const leaveGroup = async (dispatch, groupId) => {
 export const deleteGroup = async (dispatch, groupId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}`,
+            `/api/gaming/groups/${groupId}`,
             { method: 'DELETE' }
         );
 
@@ -533,7 +533,7 @@ export const deleteGroup = async (dispatch, groupId) => {
 export const fetchUserGroups = async (dispatch) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups`
+            `/api/gaming/groups`
         );
 
         const data = await response.json();
@@ -561,7 +561,7 @@ export const fetchUserGroups = async (dispatch) => {
 export const fetchGroupDetails = async (dispatch, groupId) => {
     try {
         const response = await authService.authenticatedFetch(
-            `${authService.getApiUrl()}/api/gaming/groups/${groupId}`
+            `/api/gaming/groups/${groupId}`
         );
 
         const data = await response.json();
@@ -585,6 +585,78 @@ export const fetchGroupDetails = async (dispatch, groupId) => {
     }
 };
 
+// Get active session for a group
+export const fetchActiveSession = async (dispatch, groupId) => {
+    try {
+        const response = await authService.authenticatedFetch(
+            `/api/gaming/groups/${groupId}/active-session`
+        );
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            return { 
+                success: true, 
+                session: data.session,
+                votableGames: data.votable_games
+            };
+        } else {
+            throw new Error(data.error || 'Failed to fetch active session');
+        }
+    } catch (error) {
+        console.error('Fetch active session error:', error);
+        dispatch({
+            type: 'SET_MESSAGE',
+            payload: {
+                type: 'error',
+                text: 'Failed to load active session',
+                details: error.message
+            }
+        });
+        return { success: false, error: error.message };
+    }
+};
+
+// Get group's common games
+export const fetchGroupCommonGames = async (dispatch, groupId) => {
+    try {
+        const response = await authService.authenticatedFetch(
+            `/api/gaming/groups/${groupId}/common-games`
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+            return { 
+                success: true, 
+                games: data.games || [],
+                stats: {
+                    steamConnectedCount: data.steam_connected_count,
+                    totalMembers: data.total_members,
+                    totalGames: data.total_games
+                }
+            };
+        } else {
+            throw new Error(data.error || 'Failed to fetch common games');
+        }
+    } catch (error) {
+        console.error('Fetch common games error:', error);
+        dispatch({
+            type: 'SET_MESSAGE',
+            payload: {
+                type: 'error',
+                text: 'Failed to load common games',
+                details: error.message
+            }
+        });
+        return { success: false, error: error.message };
+    }
+};
+
+// ============================================================================
+// REAL-TIME SSE CONNECTIONS - CORRECTED TOKEN PARAMETER
+// ============================================================================
+
 // Real-time live results stream
 export const createLiveResultsStream = (sessionId, onUpdate, onError) => {
     const token = authService.getAccessToken();
@@ -594,7 +666,7 @@ export const createLiveResultsStream = (sessionId, onUpdate, onError) => {
     }
 
     const eventSource = new EventSource(
-        `${authService.getApiUrl()}/api/gaming/sessions/${sessionId}/live-results?authorization=${encodeURIComponent(token)}`
+        `/api/gaming/sessions/${sessionId}/live-results?token=${encodeURIComponent(token)}`
     );
 
     eventSource.onmessage = (event) => {
@@ -617,6 +689,167 @@ export const createLiveResultsStream = (sessionId, onUpdate, onError) => {
     return eventSource;
 };
 
+// Real-time voter status stream
+export const createVoterStatusStream = (sessionId, onUpdate, onError) => {
+    const token = authService.getAccessToken();
+    if (!token) {
+        onError(new Error('No authentication token'));
+        return null;
+    }
+
+    const eventSource = new EventSource(
+        `/api/gaming/sessions/${sessionId}/voter-status-stream?token=${encodeURIComponent(token)}`
+    );
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.error) {
+                onError(new Error(data.error));
+            } else {
+                onUpdate(data);
+            }
+        } catch (error) {
+            onError(error);
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        onError(error);
+    };
+
+    return eventSource;
+};
+
+// Real-time session events stream (comprehensive)
+export const createSessionEventsStream = (sessionId, onUpdate, onError) => {
+    const token = authService.getAccessToken();
+    if (!token) {
+        onError(new Error('No authentication token'));
+        return null;
+    }
+
+    const eventSource = new EventSource(
+        `/api/gaming/sessions/${sessionId}/events?token=${encodeURIComponent(token)}`
+    );
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.error) {
+                onError(new Error(data.error));
+            } else {
+                onUpdate(data);
+            }
+        } catch (error) {
+            onError(error);
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        onError(error);
+    };
+
+    return eventSource;
+};
+
+// Member status stream (Kahoot-style)
+export const createMemberStatusStream = (sessionId, onUpdate, onError) => {
+    const token = authService.getAccessToken();
+    if (!token) {
+        onError(new Error('No authentication token'));
+        return null;
+    }
+
+    const eventSource = new EventSource(
+        `/api/gaming/sessions/${sessionId}/member-status?token=${encodeURIComponent(token)}`
+    );
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.error) {
+                onError(new Error(data.error));
+            } else {
+                onUpdate(data);
+            }
+        } catch (error) {
+            onError(error);
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        onError(error);
+    };
+
+    return eventSource;
+};
+
+// ============================================================================
+// SESSION STATUS UTILITIES
+// ============================================================================
+
+// Get session status (polling fallback)
+export const fetchSessionStatus = async (dispatch, sessionId) => {
+    try {
+        const response = await authService.authenticatedFetch(
+            `/api/gaming/sessions/${sessionId}/status`
+        );
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            return { 
+                success: true, 
+                status: data.status,
+                results: data.results,
+                voters: data.voters,
+                cached: data.cached
+            };
+        } else {
+            throw new Error(data.error || 'Failed to fetch session status');
+        }
+    } catch (error) {
+        console.error('Fetch session status error:', error);
+        return { success: false, error: error.message };
+    }
+};
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+// Generic error handler for actions
+export const handleActionError = (error, context, dispatch) => {
+    console.error(`${context} error:`, error);
+    
+    const errorMessage = error.message || 'An unexpected error occurred';
+    const isNetworkError = error.name === 'TypeError' || errorMessage.includes('fetch');
+    const isAuthError = errorMessage.includes('401') || errorMessage.includes('unauthorized');
+    
+    if (isAuthError && dispatch) {
+        dispatch({ type: 'logout' });
+        return { 
+            success: false, 
+            error: 'Your session has expired. Please log in again.',
+            shouldRedirect: true 
+        };
+    }
+    
+    if (isNetworkError && dispatch) {
+        dispatch({
+            type: 'SET_MESSAGE',
+            payload: {
+                type: 'error',
+                text: 'Network connection error',
+                details: 'Please check your internet connection and try again.'
+            }
+        });
+    }
+    
+    return { success: false, error: errorMessage };
+};
+
 // Export all functions
 export default {
     // Group management
@@ -629,6 +862,8 @@ export default {
     deleteGroup,
     fetchUserGroups,
     fetchGroupDetails,
+    fetchActiveSession,
+    fetchGroupCommonGames,
     
     // Voting system
     submitVotes,
@@ -637,7 +872,14 @@ export default {
     fetchMyVotes,
     startVotingSession,
     closeVotingSession,
+    fetchSessionStatus,
+    
+    // Real-time SSE streams
+    createLiveResultsStream,
+    createVoterStatusStream,
+    createSessionEventsStream,
+    createMemberStatusStream,
     
     // Utilities
-    createLiveResultsStream
+    handleActionError
 };

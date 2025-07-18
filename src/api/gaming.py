@@ -1,536 +1,20 @@
-"""
-Gaming group management routes - ENHANCED WITH CRITICAL RATE LIMITING FIXES + SSE APP CONTEXT FIXES
-- Rate limiting with Flask-Limiter
-- Caching with custom decorators
-- Optimized SSE endpoints with proper Flask app context
-- Race condition protection with atomic transactions
-- Real-time updates via Server-Sent Events
-- Comprehensive vote validation
-- Error recovery and retry logic
-- Ownership transfer functionality
-- Enhanced member management
-- Live voting status streams
-- Improved parameter validation
-- Compatible with enhanced Vote model from models.py
-- FIXED: Modern timezone-aware datetime usage
-- FIXED: SSE generators with proper Flask app context management
-- COMPLETE: All existing endpoints + new group management endpoints
-"""
-from flask import Blueprint, request, jsonify, Response, current_app
+# src/api/gaming.py - SIMPLIFIED VERSION that integrates with live_voting_system.py
+
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api.models import db, User, GamingGroup, GameSession, SteamGame, Vote
-from api.utils import APIException
-
-# CRITICAL RATE LIMITING IMPORTS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from functools import lru_cache, wraps
-import time
-
+from api.utils import APIException, utc_now
 import secrets
 import string
 import json
-import logging
-import queue
-import threading
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import func, desc
 
 gaming = Blueprint('gaming', __name__)
 
 # ============================================================================
-# RATE LIMITER CONFIGURATION
-# ============================================================================
-
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["1000 per hour"],  # More generous default
-    storage_uri="memory://"  # Use memory storage for development
-)
-
-# ============================================================================
-# SSE APP CONTEXT DECORATOR - CRITICAL FIX
-# ============================================================================
-
-def with_app_context_sse(f):
-    """Decorator to ensure Flask app context is maintained in SSE generators"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        def generator():
-            app = current_app._get_current_object()
-            with app.app_context():
-                try:
-                    yield from f(*args, **kwargs)
-                except GeneratorExit:
-                    current_app.logger.info("Gaming SSE client disconnected")
-                except Exception as e:
-                    current_app.logger.error(f"Gaming SSE Generator error: {e}")
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        
-        return Response(
-            generator(),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Authorization',
-                'X-Accel-Buffering': 'no'
-            }
-        )
-    return decorated_function
-
-# ============================================================================
-# CACHING DECORATOR
-# ============================================================================
-
-def cache_for_seconds(seconds=30):
-    """Cache function results for specified seconds"""
-    def decorator(func):
-        cache = {}
-        
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Create cache key
-            cache_key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
-            current_time = time.time()
-            
-            # Check cache
-            if cache_key in cache:
-                cached_time, cached_result = cache[cache_key]
-                if current_time - cached_time < seconds:
-                    return cached_result
-            
-            # Execute function and cache result
-            result = func(*args, **kwargs)
-            cache[cache_key] = (current_time, result)
-            
-            # Clean old entries
-            keys_to_remove = []
-            for key, (cached_time, _) in cache.items():
-                if current_time - cached_time > seconds * 2:
-                    keys_to_remove.append(key)
-            
-            for key in keys_to_remove:
-                del cache[key]
-            
-            return result
-        return wrapper
-    return decorator
-
-# ============================================================================
-# MODERN DATETIME HELPER - TIMEZONE AWARE
-# ============================================================================
-
-def utc_now():
-    """
-    Modern timezone-aware UTC datetime helper.
-    Replaces deprecated datetime.utcnow() for Python 3.12+ compatibility.
-    """
-    return datetime.now(timezone.utc)
-
-# ============================================================================
-# JSON HELPER FUNCTIONS
-# ============================================================================
-
-def safe_json_dumps(data):
-    """Safely serialize data to JSON string"""
-    try:
-        if data is None:
-            return None
-        return json.dumps(data)
-    except (TypeError, ValueError):
-        return str(data) if data else None
-
-def safe_json_loads(data, default=None):
-    """Safely deserialize JSON string"""
-    try:
-        if data is None:
-            return default
-        return json.loads(data)
-    except (TypeError, ValueError):
-        return default
-
-# ============================================================================
-# SSE MANAGER FOR PROPER CONNECTION HANDLING
-# ============================================================================
-
-class VotingSSEManager:
-    """Manages Server-Sent Events connections for real-time voting updates"""
-    def __init__(self):
-        self.listeners = {}  # session_id -> list of queues
-        self.lock = threading.Lock()
-    
-    def add_listener(self, session_id, listener_queue):
-        with self.lock:
-            if session_id not in self.listeners:
-                self.listeners[session_id] = []
-            self.listeners[session_id].append(listener_queue)
-    
-    def remove_listener(self, session_id, listener_queue):
-        with self.lock:
-            if session_id in self.listeners:
-                try:
-                    self.listeners[session_id].remove(listener_queue)
-                    if not self.listeners[session_id]:
-                        del self.listeners[session_id]
-                except ValueError:
-                    pass
-    
-    def broadcast_update(self, session_id, data):
-        with self.lock:
-            if session_id in self.listeners:
-                dead_listeners = []
-                for i, listener in enumerate(self.listeners[session_id]):
-                    try:
-                        listener.put_nowait(data)
-                    except queue.Full:
-                        dead_listeners.append(listener)
-                
-                # Remove dead listeners
-                for dead_listener in dead_listeners:
-                    try:
-                        self.listeners[session_id].remove(dead_listener)
-                    except ValueError:
-                        pass
-
-# Initialize the SSE manager
-voting_sse_manager = VotingSSEManager()
-
-# ============================================================================
-# ENHANCED VALIDATION FUNCTIONS
-# ============================================================================
-
-def validate_group_id(f):
-    """Enhanced decorator to validate group ID parameter with detailed error handling"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        group_id = kwargs.get('group_id') or request.view_args.get('group_id')
-        
-        # Check for invalid group IDs
-        if not group_id or group_id == 'undefined' or group_id == 'null':
-            logging.error(f"Invalid group_id received: {group_id}")
-            return jsonify({
-                'error': 'Invalid group ID provided',
-                'code': 'INVALID_GROUP_ID'
-            }), 400
-            
-        # Validate group ID format (assuming integer)
-        try:
-            group_id_int = int(group_id)
-            if group_id_int <= 0:
-                raise ValueError("Group ID must be positive")
-            kwargs['group_id'] = group_id_int
-        except (ValueError, TypeError):
-            logging.error(f"Group ID is not a valid integer: {group_id}")
-            return jsonify({
-                'error': 'Group ID must be a valid positive integer',
-                'code': 'INVALID_GROUP_ID_FORMAT'
-            }), 400
-            
-        return f(*args, **kwargs)
-    return decorated_function
-
-def validate_vote_submission(game_votes, group_id, user_id):
-    """Validate votes before submission to prevent invalid data"""
-    errors = []
-    
-    # Check vote count
-    if len(game_votes) == 0:
-        errors.append("At least one vote is required")
-    elif len(game_votes) > 3:
-        errors.append("Maximum 3 votes allowed")
-    
-    # Check for duplicate games in single submission
-    game_ids = [vote.get('game_id') for vote in game_votes]
-    if len(game_ids) != len(set(game_ids)):
-        errors.append("Cannot vote for the same game multiple times")
-    
-    # Validate priorities (should be 3, 2, 1 for first, second, third choice)
-    priorities = [vote.get('priority') for vote in game_votes]
-    expected_priorities = list(range(len(game_votes), 0, -1))  # [3,2,1] for 3 votes
-    
-    if sorted(priorities, reverse=True) != expected_priorities:
-        errors.append("Invalid vote priorities. Should be 3 for 1st choice, 2 for 2nd, 1 for 3rd")
-    
-    # Validate that all games exist and are available to group
-    try:
-        common_games = get_group_common_games_helper(group_id)
-        valid_game_ids = {game['id'] for game in common_games}
-        
-        for vote in game_votes:
-            game_id = vote.get('game_id')
-            if not game_id:
-                errors.append("Missing game_id in vote")
-                continue
-                
-            if game_id not in valid_game_ids:
-                game = SteamGame.query.get(game_id)
-                game_name = game.name if game else f"Game {game_id}"
-                errors.append(f"'{game_name}' is not available to this group")
-    except Exception as e:
-        errors.append("Could not validate game availability")
-        logging.error(f"Error validating games: {str(e)}")
-    
-    return errors
-
-def serialize_group_safe(group):
-    """Enhanced safely serialize group data with validation"""
-    if not group or not hasattr(group, 'id'):
-        logging.error(f"Invalid group object for serialization: {group}")
-        return None
-        
-    try:
-        return {
-            'id': group.id,
-            'name': group.name or 'Unnamed Group',
-            'description': group.description,
-            'creator': {
-                'id': group.creator.id,
-                'username': group.creator.username
-            } if group.creator else None,
-            'current_members': len(group.members) if group.members else 0,
-            'max_members': group.max_members or 10,
-            'invite_code': group.invite_code,
-            'is_public': group.is_public or False,
-            'created_at': group.created_at.isoformat() if group.created_at else None,
-            'members': [
-                {
-                    'id': member.id,
-                    'username': member.username,
-                    'steam_connected': getattr(member, 'steam_connected', False),
-                    'total_games': getattr(member, 'total_games', 0)
-                } for member in (group.members or [])
-            ]
-        }
-    except Exception as e:
-        logging.error(f"Error serializing group {group.id if group else 'None'}: {str(e)}")
-        return None
-
-# ============================================================================
-# CACHED HELPER FUNCTIONS FOR LIVE VOTING SUPPORT
-# ============================================================================
-
-@lru_cache(maxsize=100)
-def get_voter_status_data_cached(session_id, cache_time=None):
-    """Cached version of get_voter_status_data"""
-    if cache_time is None:
-        cache_time = int(time.time() / 10) * 10  # Cache for 10-second buckets
-    
-    return get_voter_status_data(session_id)
-
-def get_session_results_data(session_id):
-    """Helper function to get session results data for live updates"""
-    try:
-        session = GameSession.query.get_or_404(session_id)
-        
-        # Get all votes for this session using Vote model
-        votes = Vote.query.filter_by(session_id=session_id).all()
-        
-        # Calculate game results
-        game_scores = {}
-        total_voters = len(set(vote.user_id for vote in votes))
-        
-        for vote in votes:
-            game_id = vote.game_id
-            priority = vote.priority
-            
-            if game_id not in game_scores:
-                game_scores[game_id] = {
-                    'total_points': 0,
-                    'vote_count': 0,
-                    'voters': set()
-                }
-            
-            game_scores[game_id]['total_points'] += priority
-            game_scores[game_id]['vote_count'] += 1
-            game_scores[game_id]['voters'].add(vote.user_id)
-        
-        # Get game details and create results
-        results = []
-        for game_id, scores in game_scores.items():
-            game = SteamGame.query.get(game_id)
-            if game:
-                # Safe access to game attributes
-                game_data = {
-                    'id': game.id,
-                    'name': getattr(game, 'name', f'Game {game.id}'),
-                    'header_image': getattr(game, 'header_image', ''),
-                    'short_description': getattr(game, 'short_description', ''),
-                    'genres': getattr(game, 'genres', '').split(',') if getattr(game, 'genres', '') else [],
-                    'multiplayer': getattr(game, 'multiplayer', False)
-                }
-                
-                results.append({
-                    'game': game_data,
-                    'total_points': scores['total_points'],
-                    'vote_count': len(scores['voters']),
-                    'average_score': scores['total_points'] / len(scores['voters']) if scores['voters'] else 0
-                })
-        
-        # Sort by total points, then by vote count
-        results.sort(key=lambda x: (x['total_points'], x['vote_count']), reverse=True)
-        
-        # Get total member count
-        total_members = len(session.group.members) if session.group else 0
-        
-        # Determine if voting is complete
-        voting_complete = (session.status == 'completed' or 
-                          (total_voters >= total_members * 0.8 and total_voters >= 2))
-        
-        # Auto-complete session if threshold met
-        if voting_complete and session.status == 'voting':
-            session.status = 'completed'
-            session.updated_at = utc_now()
-            
-            # Set winner if we have results
-            if results:
-                winner = results[0]
-                # Store winner info in session if your model supports it
-                try:
-                    session.vote_results = json.dumps({
-                        'winner_game_id': winner['game']['id'],
-                        'winner_points': winner['total_points'],
-                        'winner_votes': winner['vote_count']
-                    })
-                except:
-                    pass
-            
-            db.session.commit()
-        
-        return {
-            'results': results,
-            'total_voters': total_voters,
-            'total_members': total_members,
-            'voting_complete': voting_complete,
-            'session_status': session.status,
-            'winner': results[0] if results and voting_complete else None,
-            'timestamp': utc_now().isoformat()
-        }
-        
-    except Exception as e:
-        current_app.logger.error(f"Error getting session results: {e}")
-        return {
-            'results': [],
-            'total_voters': 0,
-            'total_members': 0,
-            'voting_complete': False,
-            'session_status': 'error',
-            'winner': None,
-            'timestamp': utc_now().isoformat(),
-            'error': str(e)
-        }
-
-def get_voter_status_data(session_id):
-    """Helper function to get voter status data for live updates"""
-    try:
-        session = GameSession.query.get_or_404(session_id)
-        
-        # Get all group members
-        members = session.group.members if session.group else []
-        
-        # Get users who have voted
-        voted_user_ids = set()
-        votes = Vote.query.filter_by(session_id=session_id).all()
-        for vote in votes:
-            voted_user_ids.add(vote.user_id)
-        
-        # Separate into voted and pending
-        recent_voters = []
-        pending_voters = []
-        
-        for member in members:
-            user_data = {
-                'id': member.id,
-                'username': member.username,
-                'avatar_url': getattr(member, 'avatar_url', None) or getattr(member, 'steam_avatar_url', None)
-            }
-            
-            if member.id in voted_user_ids:
-                recent_voters.append(user_data)
-            else:
-                pending_voters.append(user_data)
-        
-        # Sort recent voters by vote time (most recent first)
-        vote_times = {}
-        for vote in votes:
-            if vote.user_id not in vote_times or vote.created_at > vote_times[vote.user_id]:
-                vote_times[vote.user_id] = vote.created_at
-        
-        recent_voters.sort(key=lambda x: vote_times.get(x['id'], datetime.min), reverse=True)
-        
-        # Calculate progress
-        total_members = len(members)
-        voted_count = len(voted_user_ids)
-        progress_percentage = (voted_count / total_members * 100) if total_members > 0 else 0
-        
-        # Check if voting is complete
-        voting_complete = (session.status == 'completed' or 
-                          (voted_count >= total_members * 0.8 and voted_count >= 2))
-        
-        return {
-            'progress': {
-                'voted': voted_count,
-                'total': total_members,
-                'percentage': round(progress_percentage, 1)
-            },
-            'recent_voters': recent_voters,
-            'pending_voters': pending_voters,
-            'voting_complete': voting_complete,
-            'session_status': session.status,
-            'timestamp': utc_now().isoformat()
-        }
-        
-    except Exception as e:
-        current_app.logger.error(f"Error getting voter status: {e}")
-        return {
-            'progress': {'voted': 0, 'total': 0, 'percentage': 0},
-            'recent_voters': [],
-            'pending_voters': [],
-            'voting_complete': False,
-            'session_status': 'error',
-            'timestamp': utc_now().isoformat(),
-            'error': str(e)
-        }
-
-def get_group_common_games_helper(group_id):
-    """Helper function to get common games for a group"""
-    try:
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            return []
-        
-        # Get Steam-connected members
-        steam_members = [m for m in group.members if getattr(m, 'steam_id', None) and getattr(m, 'steam_connected', False)]
-        if len(steam_members) < 2:
-            return []
-        
-        # Get user IDs
-        user_ids = [m.id for m in steam_members]
-        
-        # Use steam_service to find common games
-        try:
-            from api.steam_service import steam_service
-            if steam_service:
-                common_games = steam_service.find_common_games(user_ids)
-                # Filter for multiplayer games only
-                multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
-                return multiplayer_games[:20]  # Limit to 20 games
-        except ImportError:
-            logging.warning("Steam service not available")
-        
-        return []
-        
-    except Exception as e:
-        logging.error(f"Error getting common games: {str(e)}")
-        return []
-
-# ============================================================================
-# GROUP MANAGEMENT ENDPOINTS - NEW ADDITIONS
+# GROUP MANAGEMENT ENDPOINTS 
 # ============================================================================
 
 @gaming.route('/groups', methods=['GET'])
-@limiter.limit("60 per minute")
 @jwt_required()
 def get_user_groups():
     """Get all gaming groups for the current user"""
@@ -539,55 +23,40 @@ def get_user_groups():
         user = User.query.get(current_user_id)
         
         if not user:
-            return jsonify({
-                'success': False,
-                'error': 'User not found'
-            }), 404
+            return jsonify({'success': False, 'error': 'User not found'}), 404
         
-        # Get all groups where user is a member
+        # Get user's groups using the correct relationship name
         user_groups = []
-        
-        # Try relationship-based approach first
-        try:
-            if hasattr(user, 'gaming_groups'):
-                for group in user.gaming_groups:
-                    serialized_group = serialize_group_safe(group)
-                    if serialized_group:
-                        user_groups.append(serialized_group)
-        except:
-            pass
-        
-        # If the relationship doesn't exist or failed, query directly
-        if not user_groups:
-            try:
-                # Query groups where user is a member
-                groups = GamingGroup.query.filter(GamingGroup.members.contains(user)).all()
-                for group in groups:
-                    serialized_group = serialize_group_safe(group)
-                    if serialized_group:
-                        user_groups.append(serialized_group)
-            except Exception as query_error:
-                logging.error(f"Error querying user groups: {query_error}")
-                # Return empty list instead of error
-                user_groups = []
+        for group in user.member_of_groups:  # Use correct relationship name
+            group_data = {
+                'id': group.id,
+                'name': group.name,
+                'description': group.description,
+                'creator': {
+                    'id': group.creator.id if group.creator else None,
+                    'username': group.creator.username if group.creator else 'Unknown'
+                },
+                'current_members': len(group.members),
+                'max_members': group.max_members,
+                'invite_code': group.invite_code,
+                'is_public': group.is_public,
+                'created_at': group.created_at.isoformat(),
+                'is_creator': group.creator_id == current_user_id,
+                'has_active_session': any(s.status in ['planning', 'voting'] for s in group.sessions)
+            }
+            user_groups.append(group_data)
         
         return jsonify({
             'success': True,
             'groups': user_groups,
-            'count': len(user_groups),
-            'user_id': current_user_id
+            'count': len(user_groups)
         }), 200
         
     except Exception as e:
-        logging.error(f"Error getting user groups: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error while fetching groups',
-            'message': str(e)
-        }), 500
+        current_app.logger.error(f"Error getting user groups: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @gaming.route('/groups', methods=['POST'])
-@limiter.limit("10 per minute")
 @jwt_required()
 def create_group():
     """Create a new gaming group"""
@@ -596,33 +65,15 @@ def create_group():
         user = User.query.get(current_user_id)
         
         if not user:
-            return jsonify({
-                'success': False,
-                'error': 'User not found'
-            }), 404
+            return jsonify({'success': False, 'error': 'User not found'}), 404
         
         data = request.get_json()
         if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No data provided'
-            }), 400
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
         
-        # Validate required fields
         name = data.get('name', '').strip()
         if not name:
-            return jsonify({
-                'success': False,
-                'error': 'Group name is required'
-            }), 400
-        
-        # Check if user already has a group with this name
-        existing_group = GamingGroup.query.filter_by(name=name, creator_id=current_user_id).first()
-        if existing_group:
-            return jsonify({
-                'success': False,
-                'error': 'You already have a group with this name'
-            }), 400
+            return jsonify({'success': False, 'error': 'Group name is required'}), 400
         
         # Generate invite code
         invite_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
@@ -644,30 +95,27 @@ def create_group():
         db.session.add(new_group)
         db.session.commit()
         
-        # Serialize the created group
-        serialized_group = serialize_group_safe(new_group)
-        
-        logging.info(f"Group '{name}' created by user {user.username} (ID: {current_user_id})")
-        
         return jsonify({
             'success': True,
-            'group': serialized_group,
+            'group': {
+                'id': new_group.id,
+                'name': new_group.name,
+                'description': new_group.description,
+                'invite_code': new_group.invite_code,
+                'creator': {'id': user.id, 'username': user.username},
+                'current_members': 1,
+                'max_members': new_group.max_members
+            },
             'message': 'Group created successfully'
         }), 201
         
     except Exception as e:
         db.session.rollback()
-        logging.error(f"Error creating group: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error while creating group',
-            'message': str(e)
-        }), 500
+        current_app.logger.error(f"Error creating group: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @gaming.route('/groups/<int:group_id>', methods=['GET'])
-@limiter.limit("60 per minute")
 @jwt_required()
-@validate_group_id
 def get_group_details(group_id):
     """Get detailed information about a specific group"""
     try:
@@ -675,549 +123,451 @@ def get_group_details(group_id):
         user = User.query.get(current_user_id)
         
         if not user:
-            return jsonify({
-                'success': False,
-                'error': 'User not found'
-            }), 404
+            return jsonify({'success': False, 'error': 'User not found'}), 404
         
         group = GamingGroup.query.get(group_id)
         if not group:
-            return jsonify({
-                'success': False,
-                'error': 'Group not found'
-            }), 404
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
         
-        # Check if user has access to this group
         if user not in group.members:
-            return jsonify({
-                'success': False,
-                'error': 'You are not a member of this group'
-            }), 403
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
         
-        # Serialize group with full details
-        serialized_group = serialize_group_safe(group)
-        if not serialized_group:
-            return jsonify({
-                'success': False,
-                'error': 'Error serializing group data'
-            }), 500
-        
-        # Add additional details
-        serialized_group['is_creator'] = (group.creator_id == current_user_id)
-        serialized_group['user_role'] = 'creator' if group.creator_id == current_user_id else 'member'
-        
-        # Get recent sessions if any
-        recent_sessions = GameSession.query.filter_by(group_id=group_id).order_by(desc(GameSession.created_at)).limit(5).all()
-        serialized_group['recent_sessions'] = [
-            {
+        # Get recent sessions
+        recent_sessions = []
+        for session in group.sessions[-5:]:  # Last 5 sessions
+            session_data = {
                 'id': session.id,
+                'session_name': getattr(session, 'session_name', 'Voting Session'),
                 'status': session.status,
-                'created_at': session.created_at.isoformat() if session.created_at else None
-            } for session in recent_sessions
-        ]
+                'created_at': session.created_at.isoformat(),
+                'vote_count': len(session.votes) if session.votes else 0
+            }
+            recent_sessions.append(session_data)
+        
+        group_data = {
+            'id': group.id,
+            'name': group.name,
+            'description': group.description,
+            'creator': {
+                'id': group.creator.id if group.creator else None,
+                'username': group.creator.username if group.creator else 'Unknown'
+            },
+            'current_members': len(group.members),
+            'max_members': group.max_members,
+            'invite_code': group.invite_code,
+            'is_public': group.is_public,
+            'created_at': group.created_at.isoformat(),
+            'is_creator': group.creator_id == current_user_id,
+            'members': [
+                {
+                    'id': member.id,
+                    'username': member.username,
+                    'avatar_url': member.avatar_url or member.steam_avatar_url,
+                    'steam_connected': member.is_steam_connected,
+                    'total_games': member.total_games or 0
+                } for member in group.members
+            ],
+            'recent_sessions': recent_sessions,
+            'has_active_session': any(s.status in ['planning', 'voting'] for s in group.sessions)
+        }
+        
+        return jsonify({'success': True, 'group': group_data}), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting group details: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/join/<invite_code>', methods=['POST'])
+@jwt_required()
+def join_group_by_invite(invite_code):
+    """Join a group using invite code"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        group = GamingGroup.query.filter_by(invite_code=invite_code).first()
+        if not group:
+            return jsonify({'success': False, 'error': 'Invalid invite code'}), 404
+        
+        if user in group.members:
+            return jsonify({'success': False, 'error': 'Already a member'}), 400
+        
+        if len(group.members) >= group.max_members:
+            return jsonify({'success': False, 'error': 'Group is full'}), 400
+        
+        group.members.append(user)
+        db.session.commit()
         
         return jsonify({
             'success': True,
-            'group': serialized_group
+            'message': f'Successfully joined {group.name}',
+            'group': {
+                'id': group.id,
+                'name': group.name,
+                'current_members': len(group.members)
+            }
         }), 200
         
     except Exception as e:
-        logging.error(f"Error getting group details for group {group_id}: {str(e)}")
+        db.session.rollback()
+        current_app.logger.error(f"Error joining group: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/<int:group_id>/leave', methods=['POST'])
+@jwt_required()
+def leave_group(group_id):
+    """Leave a group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
+        
+        if user not in group.members:
+            return jsonify({'success': False, 'error': 'Not a member'}), 400
+        
+        # Don't allow creator to leave if there are other members
+        if group.creator_id == current_user_id and len(group.members) > 1:
+            return jsonify({
+                'success': False, 
+                'error': 'Transfer ownership before leaving'
+            }), 400
+        
+        group.members.remove(user)
+        
+        # If creator is leaving and they're the only member, delete the group
+        if group.creator_id == current_user_id and len(group.members) == 0:
+            db.session.delete(group)
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Left group successfully'}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error leaving group: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+# ============================================================================
+# MISSING ENDPOINTS THAT ACTIONS.JS EXPECTS
+# ============================================================================
+
+@gaming.route('/groups/<int:group_id>/transfer-ownership/<int:new_owner_id>', methods=['POST'])
+@jwt_required()
+def transfer_group_ownership(group_id, new_owner_id):
+    """Transfer group ownership to another member"""
+    try:
+        current_user_id = get_jwt_identity()
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
+        
+        if group.creator_id != current_user_id:
+            return jsonify({'success': False, 'error': 'Only group creator can transfer ownership'}), 403
+        
+        new_owner = User.query.get(new_owner_id)
+        if not new_owner:
+            return jsonify({'success': False, 'error': 'New owner not found'}), 404
+        
+        if new_owner not in group.members:
+            return jsonify({'success': False, 'error': 'New owner must be a group member'}), 400
+        
+        old_creator_name = group.creator.username if group.creator else 'Unknown'
+        group.creator_id = new_owner_id
+        db.session.commit()
+        
         return jsonify({
-            'success': False,
-            'error': 'Internal server error while fetching group details'
-        }), 500
+            'success': True,
+            'message': f'Ownership transferred to {new_owner.username}',
+            'old_creator': old_creator_name,
+            'new_creator': new_owner.username
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error transferring ownership: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/<int:group_id>/kick/<int:user_id>', methods=['POST'])
+@jwt_required()
+def kick_group_member(group_id, user_id):
+    """Kick a member from the group"""
+    try:
+        current_user_id = get_jwt_identity()
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
+        
+        if group.creator_id != current_user_id:
+            return jsonify({'success': False, 'error': 'Only group creator can kick members'}), 403
+        
+        if user_id == current_user_id:
+            return jsonify({'success': False, 'error': 'Cannot kick yourself'}), 400
+        
+        user_to_kick = User.query.get(user_id)
+        if not user_to_kick:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        if user_to_kick not in group.members:
+            return jsonify({'success': False, 'error': 'User is not a member'}), 400
+        
+        group.members.remove(user_to_kick)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'{user_to_kick.username} has been removed from the group',
+            'kicked_user': user_to_kick.username,
+            'remaining_members': len(group.members)
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error kicking member: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @gaming.route('/groups/<int:group_id>/members', methods=['GET'])
-@limiter.limit("60 per minute")
 @jwt_required()
-@validate_group_id
 def get_group_members(group_id):
     """Get detailed member information for a group"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
         group = GamingGroup.query.get(group_id)
         if not group:
-            return jsonify({'error': 'Group not found'}), 404
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
         
         if user not in group.members:
-            return jsonify({'error': 'You are not a member of this group'}), 403
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
         
-        # Format member details
         members_data = []
         for member in group.members:
             member_info = {
                 'id': member.id,
                 'username': member.username,
-                'steam_connected': getattr(member, 'steam_connected', False),
-                'steam_id': getattr(member, 'steam_id', None),
-                'avatar_url': getattr(member, 'avatar_url', None) or getattr(member, 'steam_avatar_url', None),
-                'total_games': getattr(member, 'total_games', 0),
+                'avatar_url': member.avatar_url or member.steam_avatar_url,
+                'steam_connected': member.is_steam_connected,
+                'steam_id': member.steam_id,
+                'total_games': member.total_games or 0,
                 'is_creator': member.id == group.creator_id,
-                'joined_at': getattr(member, 'created_at', None),
-                'last_seen': getattr(member, 'updated_at', None)
+                'joined_at': member.created_at.isoformat() if member.created_at else None
             }
             members_data.append(member_info)
         
-        # Sort by creator first, then by join date
-        members_data.sort(key=lambda x: (not x['is_creator'], x['joined_at'] or ''))
+        # Sort by creator first, then by username
+        members_data.sort(key=lambda x: (not x['is_creator'], x['username']))
         
         return jsonify({
             'success': True,
             'members': members_data,
             'total_members': len(members_data),
-            'steam_connected_members': len([m for m in members_data if m['steam_connected']]),
-            'group_id': group_id
+            'steam_connected_count': len([m for m in members_data if m['steam_connected']]),
+            'current_user_is_creator': group.creator_id == current_user_id
         }), 200
         
     except Exception as e:
-        logging.error(f"Error getting group members for group {group_id}: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])
-@jwt_required()
-@validate_group_id
-def get_group_common_games(group_id):
-    """Enhanced: Get common games for a group with comprehensive validation"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-            
-        # Find the group with additional validation
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            logging.warning(f"Group {group_id} not found for user {user.id}")
-            return jsonify({
-                'error': 'Group not found',
-                'code': 'GROUP_NOT_FOUND'
-            }), 404
-            
-        # Check if user is a member of the group
-        if user not in group.members:
-            logging.warning(f"User {user.id} attempted to access group {group_id} without membership")
-            return jsonify({
-                'error': 'You are not a member of this group',
-                'code': 'ACCESS_DENIED'
-            }), 403
-            
-        # Get Steam-connected members
-        steam_members = [member for member in group.members if getattr(member, 'steam_connected', False)]
-        
-        if len(steam_members) < 2:
-            return jsonify({
-                'games': [],
-                'message': 'Need at least 2 Steam-connected members to find common games',
-                'steam_connected_count': len(steam_members),
-                'total_members': len(group.members)
-            }), 200
-            
-        # Get user IDs
-        user_ids = [m.id for m in steam_members]
-        
-        # Use steam_service to find common games
-        try:
-            from api.steam_service import steam_service
-            if steam_service:
-                common_games = steam_service.find_common_games(user_ids)
-                # Filter for multiplayer games only
-                multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
-                
-                return jsonify({
-                    'games': multiplayer_games[:20],  # Limit to 20 games
-                    'group_id': group.id,
-                    'steam_connected_count': len(steam_members),
-                    'total_members': len(group.members),
-                    'total_games': len(multiplayer_games)
-                }), 200
-            else:
-                return jsonify({
-                    'error': 'Steam service not available',
-                    'code': 'SERVICE_UNAVAILABLE'
-                }), 503
-        except ImportError:
-            return jsonify({
-                'error': 'Steam service not available',
-                'code': 'SERVICE_UNAVAILABLE'
-            }), 503
-        
-    except Exception as e:
-        logging.error(f"Error getting common games for group {group_id}: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error while fetching common games',
-            'code': 'INTERNAL_ERROR'
-        }), 500
+        current_app.logger.error(f"Error getting group members: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 # ============================================================================
-# MISSING QUICK VOTE ENDPOINTS - FIXES 405 ERROR
+# LIVE VOTING SESSION MANAGEMENT (Simplified)
 # ============================================================================
 
 @gaming.route('/groups/<int:group_id>/start-vote', methods=['POST'])
-@limiter.limit("20 per minute")  # INCREASED from 10 per minute
 @jwt_required()
-@validate_group_id
 def start_group_vote(group_id):
-    """Start a quick voting session for a group"""
+    """Start a voting session for a group - simplified version"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
         group = GamingGroup.query.get(group_id)
         if not group:
-            return jsonify({'error': 'Group not found'}), 404
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
         
         if user not in group.members:
-            return jsonify({'error': 'You are not a member of this group'}), 403
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
         
         # Check if there's already an active session
         active_session = GameSession.query.filter_by(
             group_id=group_id, 
-            status='voting'
+            status__in=['planning', 'voting']
         ).first()
         
         if active_session:
-            # Return existing session info
-            try:
-                common_games = get_group_common_games_helper(group_id)
-                return jsonify({
-                    'success': True,
-                    'session': {
-                        'id': active_session.id,
-                        'group_id': group_id,
-                        'status': active_session.status,
-                        'session_name': getattr(active_session, 'session_name', 'Quick Vote'),
-                        'description': getattr(active_session, 'description', 'Quick voting session'),
-                        'created_at': active_session.created_at.isoformat(),
-                        'creator': {
-                            'id': user.id,
-                            'username': user.username
-                        }
-                    },
-                    'common_games': common_games,
-                    'message': 'Rejoined existing voting session'
-                }), 200
-            except Exception as games_error:
-                logging.error(f"Error fetching common games for existing session: {games_error}")
-                return jsonify({
-                    'success': True,
-                    'session': {
-                        'id': active_session.id,
-                        'group_id': group_id,
-                        'status': active_session.status,
-                        'session_name': getattr(active_session, 'session_name', 'Quick Vote'),
-                        'description': getattr(active_session, 'description', 'Quick voting session'),
-                        'created_at': active_session.created_at.isoformat()
-                    },
-                    'common_games': [],
-                    'message': 'Rejoined existing voting session'
-                }), 200
+            return jsonify({
+                'success': True,
+                'session': {
+                    'id': active_session.id,
+                    'status': active_session.status,
+                    'session_name': getattr(active_session, 'session_name', 'Voting Session')
+                },
+                'message': 'Rejoined existing session'
+            }), 200
         
         # Get request data
         data = request.get_json() or {}
-        session_name = data.get('session_name', f'Quick Vote - {utc_now().strftime("%Y-%m-%d %H:%M")}')
-        description = data.get('description', '🗳️ Quick voting session for group game selection')
+        session_name = data.get('session_name', f'Vote - {utc_now().strftime("%Y-%m-%d %H:%M")}')
         
-        # Get common games before creating session
-        try:
-            common_games = get_group_common_games_helper(group_id)
-            if len(common_games) == 0:
-                return jsonify({
-                    'error': 'No common multiplayer games found for this group',
-                    'details': 'Make sure group members have connected Steam accounts with public profiles and own some multiplayer games.'
-                }), 400
-                
-        except Exception as games_error:
-            logging.error(f"Error fetching common games: {games_error}")
-            return jsonify({
-                'error': 'Failed to fetch common games for voting',
-                'details': 'Could not load group\'s common games. Please ensure Steam accounts are properly connected.'
-            }), 500
-        
-        # Create new voting session
+        # Create new session in lobby state
         new_session = GameSession(
             group_id=group_id,
             creator_id=current_user_id,
-            status='voting',
-            created_at=utc_now()
-        )
-        
-        # Add optional fields if your model supports them
-        if hasattr(new_session, 'session_name'):
-            new_session.session_name = session_name
-        if hasattr(new_session, 'description'):
-            new_session.description = description
-        if hasattr(new_session, 'max_choices'):
-            new_session.max_choices = 3
-        if hasattr(new_session, 'auto_complete_threshold'):
-            new_session.auto_complete_threshold = 0.8
-        if hasattr(new_session, 'votable_games'):
-            new_session.votable_games = safe_json_dumps(common_games[:20])
-        
-        db.session.add(new_session)
-        db.session.commit()
-        
-        logging.info(f"Quick voting session {new_session.id} started for group {group_id} by user {user.username}")
-        
-        # Broadcast session start event if live events are available
-        try:
-            from api.live_events import broadcast_event
-            broadcast_event(new_session.id, 'session_started', {
-                'session_name': session_name,
-                'creator': user.username,
-                'game_count': len(common_games),
-                'max_choices': 3
-            })
-        except ImportError:
-            logging.warning("Live events module not available for broadcasting")
-        except Exception as broadcast_error:
-            logging.error(f"Failed to broadcast session start: {broadcast_error}")
-        
-        return jsonify({
-            'success': True,
-            'session': {
-                'id': new_session.id,
-                'group_id': group_id,
-                'status': new_session.status,
-                'session_name': getattr(new_session, 'session_name', session_name),
-                'description': getattr(new_session, 'description', description),
-                'created_at': new_session.created_at.isoformat(),
-                'max_choices': getattr(new_session, 'max_choices', 3),
-                'auto_complete_threshold': getattr(new_session, 'auto_complete_threshold', 0.8),
-                'creator': {
-                    'id': user.id,
-                    'username': user.username
-                }
-            },
-            'common_games': common_games,
-            'message': 'Quick voting session started successfully!'
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        logging.error(f"Error starting quick vote for group {group_id}: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error while starting voting session',
-            'details': 'Please try again in a moment'
-        }), 500
-
-
-@gaming.route('/groups/<int:group_id>/active-session', methods=['GET'])
-@limiter.limit("30 per minute")
-@jwt_required()
-@validate_group_id
-def get_active_session(group_id):
-    """Get active voting session for a group"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            return jsonify({'error': 'Group not found'}), 404
-        
-        if user not in group.members:
-            return jsonify({'error': 'You are not a member of this group'}), 403
-        
-        # Find active session
-        active_session = GameSession.query.filter_by(
-            group_id=group_id, 
-            status='voting'
-        ).first()
-        
-        if not active_session:
-            return jsonify({
-                'success': True,
-                'session': None,
-                'message': 'No active voting session'
-            }), 200
-        
-        # Get votable games
-        votable_games = []
-        if hasattr(active_session, 'votable_games') and active_session.votable_games:
-            try:
-                votable_games = safe_json_loads(active_session.votable_games, [])
-            except:
-                # Fallback to fetching common games
-                try:
-                    votable_games = get_group_common_games_helper(group_id)
-                except:
-                    votable_games = []
-        else:
-            # Fallback to fetching common games
-            try:
-                votable_games = get_group_common_games_helper(group_id)
-            except:
-                votable_games = []
-        
-        return jsonify({
-            'success': True,
-            'session': {
-                'id': active_session.id,
-                'group_id': group_id,
-                'status': active_session.status,
-                'session_name': getattr(active_session, 'session_name', 'Voting Session'),
-                'description': getattr(active_session, 'description', 'Group voting session'),
-                'created_at': active_session.created_at.isoformat(),
-                'max_choices': getattr(active_session, 'max_choices', 3),
-                'auto_complete_threshold': getattr(active_session, 'auto_complete_threshold', 0.8)
-            },
-            'votable_games': votable_games,
-            'message': 'Active session found'
-        }), 200
-        
-    except Exception as e:
-        logging.error(f"Error getting active session for group {group_id}: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@gaming.route('/sessions/<int:session_id>/my-votes', methods=['GET'])
-@limiter.limit("60 per minute")
-@jwt_required()
-def get_my_session_votes(session_id):
-    """Get current user's votes for a session"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        session = GameSession.query.get(session_id)
-        if not session:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        if user not in session.group.members:
-            return jsonify({'error': 'Access denied'}), 403
-        
-        # Get user's votes for this session using Vote model
-        votes = Vote.query.filter_by(
-            session_id=session_id,
-            user_id=current_user_id
-        ).order_by(desc(Vote.priority)).all()
-        
-        if not votes:
-            return jsonify({
-                'success': True,
-                'has_voted': False,
-                'votes': [],
-                'vote_count': 0,
-                'can_vote': session.status == 'voting'
-            }), 200
-        
-        # Format votes with game details
-        formatted_votes = []
-        for vote in votes:
-            game = SteamGame.query.get(vote.game_id)
-            vote_data = {
-                'game_id': vote.game_id,
-                'priority': vote.priority,
-                'points': vote.priority,
-                'created_at': vote.created_at.isoformat() if vote.created_at else None
-            }
-            
-            if game:
-                vote_data['game'] = {
-                    'id': game.id,
-                    'name': game.name,
-                    'header_image': getattr(game, 'header_image', ''),
-                    'short_description': getattr(game, 'short_description', '')
-                }
-            
-            formatted_votes.append(vote_data)
-        
-        return jsonify({
-            'success': True,
-            'has_voted': True,
-            'votes': formatted_votes,
-            'vote_count': len(formatted_votes),
-            'can_vote': False  # Already voted
-        }), 200
-        
-    except Exception as e:
-        logging.error(f"Error getting user votes for session {session_id}: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-# ============================================================================
-# SESSION MANAGEMENT ENDPOINTS
-# ============================================================================
-
-@gaming.route('/groups/<int:group_id>/sessions', methods=['POST'])
-@limiter.limit("20 per minute")
-@jwt_required()
-@validate_group_id
-def create_voting_session(group_id):
-    """Create a new voting session for a group"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            return jsonify({'error': 'Group not found'}), 404
-        
-        if user not in group.members:
-            return jsonify({'error': 'You are not a member of this group'}), 403
-        
-        # Check if there's already an active session
-        active_session = GameSession.query.filter_by(
-            group_id=group_id, 
-            status='voting'
-        ).first()
-        
-        if active_session:
-            return jsonify({
-                'error': 'There is already an active voting session for this group',
-                'active_session_id': active_session.id
-            }), 400
-        
-        # Create new session
-        new_session = GameSession(
-            group_id=group_id,
-            creator_id=current_user_id,
-            status='voting',
+            session_name=session_name,
+            description=data.get('description', 'Group voting session'),
+            status='planning',  # Start in planning/lobby state
+            max_choices=data.get('max_choices', 3),
+            auto_complete_threshold=data.get('auto_complete_threshold', 0.8),
             created_at=utc_now()
         )
         
         db.session.add(new_session)
         db.session.commit()
         
-        logging.info(f"Voting session {new_session.id} created for group {group_id} by user {user.username}")
-        
         return jsonify({
             'success': True,
             'session': {
                 'id': new_session.id,
-                'group_id': group_id,
+                'session_name': new_session.session_name,
                 'status': new_session.status,
                 'created_at': new_session.created_at.isoformat(),
-                'creator': {
-                    'id': user.id,
-                    'username': user.username
-                }
+                'max_choices': new_session.max_choices,
+                'auto_complete_threshold': new_session.auto_complete_threshold
             },
             'message': 'Voting session created successfully'
         }), 201
         
     except Exception as e:
         db.session.rollback()
-        logging.error(f"Error creating voting session: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        current_app.logger.error(f"Error starting vote: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/<int:group_id>/active-session', methods=['GET'])
+@jwt_required()
+def get_active_session(group_id):
+    """Get active voting session for a group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
+        
+        if user not in group.members:
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
+        
+        active_session = GameSession.query.filter_by(
+            group_id=group_id
+        ).filter(
+            GameSession.status.in_(['planning', 'voting'])
+        ).first()
+        
+        if not active_session:
+            return jsonify({
+                'success': True,
+                'session': None,
+                'message': 'No active session'
+            }), 200
+        
+        return jsonify({
+            'success': True,
+            'session': {
+                'id': active_session.id,
+                'session_name': getattr(active_session, 'session_name', 'Voting Session'),
+                'status': active_session.status,
+                'created_at': active_session.created_at.isoformat(),
+                'max_choices': getattr(active_session, 'max_choices', 3),
+                'auto_complete_threshold': getattr(active_session, 'auto_complete_threshold', 0.8),
+                'is_creator': active_session.creator_id == current_user_id
+            }
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting active session: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])
+@jwt_required()
+def get_group_common_games(group_id):
+    """Get common games for a group from synced Steam libraries"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
+        
+        if user not in group.members:
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
+        
+        # Get Steam-connected members
+        steam_members = [m for m in group.members if m.is_steam_connected and m.steam_id]
+        
+        if len(steam_members) < 2:
+            return jsonify({
+                'success': True,
+                'games': [],
+                'message': 'Need at least 2 Steam-connected members',
+                'steam_connected_count': len(steam_members),
+                'total_members': len(group.members)
+            }), 200
+        
+        # Get common games using database query
+        from sqlalchemy import func
+        from api.models import user_games
+        
+        user_ids = [m.id for m in steam_members]
+        
+        # Find games owned by ALL steam members and are multiplayer
+        common_games_query = db.session.query(SteamGame).join(
+            user_games
+        ).filter(
+            user_games.c.user_id.in_(user_ids)
+        ).group_by(
+            SteamGame.id
+        ).having(
+            func.count(func.distinct(user_games.c.user_id)) == len(user_ids)
+        ).filter(
+            # Only multiplayer games
+            (SteamGame.multiplayer == True) | (SteamGame.co_op == True)
+        ).order_by(
+            SteamGame.name
+        ).limit(50)
+        
+        games = []
+        for game in common_games_query:
+            game_data = game.serialize()
+            game_data['owned_by_all'] = True
+            game_data['owner_count'] = len(user_ids)
+            games.append(game_data)
+        
+        return jsonify({
+            'success': True,
+            'games': games,
+            'total_games': len(games),
+            'steam_connected_count': len(steam_members),
+            'total_members': len(group.members)
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting common games: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+# ============================================================================
+# SESSION RESULTS AND VOTING (Legacy endpoints for compatibility)
+# ============================================================================
 
 @gaming.route('/sessions/<int:session_id>/results', methods=['GET'])
-@limiter.limit("60 per minute")
-@cache_for_seconds(15)
 @jwt_required()
 def get_session_results(session_id):
     """Get voting results for a session"""
@@ -1227,675 +577,77 @@ def get_session_results(session_id):
         
         session = GameSession.query.get(session_id)
         if not session:
-            return jsonify({'error': 'Session not found'}), 404
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
         
         if user not in session.group.members:
-            return jsonify({'error': 'Access denied'}), 403
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
         
-        # Get results data
-        results_data = get_session_results_data(session_id)
+        # Get results using Vote model
+        results = Vote.get_session_results(session_id)
+        total_voters = Vote.get_voter_count(session_id)
+        total_members = len(session.group.members)
         
         return jsonify({
             'success': True,
             'session_id': session_id,
-            **results_data
+            'results': results,
+            'winner': results[0] if results else None,
+            'total_voters': total_voters,
+            'total_members': total_members,
+            'voting_complete': session.status == 'completed',
+            'session_status': session.status
         }), 200
         
     except Exception as e:
-        logging.error(f"Error getting session results: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        current_app.logger.error(f"Error getting session results: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
-# ============================================================================
-# RATE LIMITED ENDPOINTS - CRITICAL SSE FIXES WITH APP CONTEXT
-# ============================================================================
-
-@gaming.route('/sessions/<int:session_id>/voters', methods=['GET'])
-@limiter.limit("120 per minute")  # INCREASED from 60 per minute
-@cache_for_seconds(5)  # REDUCED from 10 seconds
+@gaming.route('/sessions/<int:session_id>/my-votes', methods=['GET'])
 @jwt_required()
-def get_session_voters(session_id):
-    """FIXED: Get voter status for a session with rate limiting and caching"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        # Use cached session lookup
-        session = GameSession.query.get(session_id)
-        
-        if not session:
-            return jsonify({
-                'success': False,
-                'error': 'Session not found'
-            }), 404
-        
-        if user not in session.group.members:
-            return jsonify({
-                'success': False,
-                'error': 'Access denied'
-            }), 403
-        
-        # Get voter status data with caching
-        try:
-            voter_data = get_voter_status_data_cached(session_id)
-        except Exception as voter_error:
-            logging.error(f"Error getting voter data: {voter_error}")
-            # Return minimal fallback data
-            return jsonify({
-                'success': True,
-                'progress': {'voted': 0, 'total': len(session.group.members), 'percentage': 0},
-                'recent_voters': [],
-                'pending_voters': [],
-                'voting_complete': False,
-                'session_status': session.status,
-                'timestamp': utc_now().isoformat(),
-                'cached': True
-            }), 200
-        
-        return jsonify({
-            'success': True,
-            **voter_data
-        }), 200
-        
-    except Exception as e:
-        logging.error(f"Error in get_session_voters: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error',
-            'timestamp': utc_now().isoformat()
-        }), 500
-
-@gaming.route('/sessions/<int:session_id>/live-results')
-@limiter.limit("50 per minute")
-def stream_live_results(session_id):
-    """FIXED: Stream live voting results - Direct Response without extra context handling"""
-    
-    # Token validation
-    token = request.args.get('token')
-    if not token:
-        return Response(
-            f"data: {json.dumps({'error': 'Authentication token required'})}\n\n",
-            mimetype='text/event-stream',
-            status=401
-        )
-    
-    try:
-        from flask_jwt_extended import decode_token
-        decoded_token = decode_token(token)
-        current_user_id = decoded_token['sub']
-        
-        user = User.query.get(current_user_id)
-        if not user:
-            return Response(
-                f"data: {json.dumps({'error': 'Invalid user'})}\n\n",
-                mimetype='text/event-stream',
-                status=401
-            )
-    except Exception as e:
-        return Response(
-            f"data: {json.dumps({'error': 'Invalid authentication token'})}\n\n",
-            mimetype='text/event-stream',
-            status=401
-        )
-    
-    session = GameSession.query.get(session_id)
-    if not session:
-        return Response(
-            f"data: {json.dumps({'error': 'Session not found'})}\n\n",
-            mimetype='text/event-stream',
-            status=404
-        )
-        
-    if user not in session.group.members:
-        return Response(
-            f"data: {json.dumps({'error': 'Access denied'})}\n\n",
-            mimetype='text/event-stream',
-            status=403
-        )
-    
-    def generate_live_results():
-        """Generator that maintains app context internally"""
-        app = current_app._get_current_object()
-        
-        with app.app_context():
-            last_voter_count = 0
-            last_update_time = None
-            heartbeat_counter = 0
-            max_iterations = 300  # 5 minutes max
-            
-            try:
-                while heartbeat_counter < max_iterations:
-                    # Longer intervals to reduce load
-                    if heartbeat_counter % 5 != 0:  # Only check every 5 seconds
-                        time.sleep(1)
-                        heartbeat_counter += 1
-                        continue
-                    
-                    # Refresh database session
-                    db.session.expire_all()
-                    session = GameSession.query.get(session_id)
-                    if not session:
-                        yield f"data: {json.dumps({'error': 'Session no longer exists'})}\n\n"
-                        break
-                    
-                    try:
-                        results_data = get_session_results_data(session_id)
-                        current_voter_count = results_data.get('total_voters', 0)
-                        total_members = results_data.get('total_members', 0)
-                    except Exception as results_error:
-                        app.logger.error(f"Error getting session results: {results_error}")
-                        current_voter_count = 0
-                        total_members = len(session.group.members) if session.group else 0
-                        results_data = {
-                            'results': [],
-                            'total_voters': current_voter_count,
-                            'total_members': total_members,
-                            'voting_complete': False,
-                            'session_status': session.status,
-                            'winner': None,
-                            'timestamp': utc_now().isoformat()
-                        }
-                    
-                    # Send update only if there are changes or heartbeat
-                    should_update = (
-                        current_voter_count != last_voter_count or
-                        heartbeat_counter % 30 == 0 or  # Heartbeat every 30 iterations
-                        last_update_time is None
-                    )
-                    
-                    if should_update:
-                        voting_complete = (
-                            session.status == 'completed' or 
-                            current_voter_count >= total_members
-                        )
-                        
-                        if not session.status == 'completed' and current_voter_count >= total_members:
-                            session.status = 'completed'
-                            db.session.commit()
-                            voting_complete = True
-                        
-                        results_data.update({
-                            'voting_complete': voting_complete,
-                            'session_status': session.status,
-                            'progress_percentage': (current_voter_count / total_members * 100) if total_members > 0 else 0
-                        })
-                        
-                        yield f"data: {json.dumps(results_data)}\n\n"
-                        
-                        last_voter_count = current_voter_count
-                        last_update_time = utc_now()
-                        
-                        if voting_complete:
-                            app.logger.info(f"Live results stream ended for session {session_id} - voting complete")
-                            break
-                    else:
-                        # Send heartbeat less frequently
-                        if heartbeat_counter % 30 == 0:
-                            yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': utc_now().isoformat()})}\n\n"
-                    
-                    heartbeat_counter += 1
-                    time.sleep(1)
-                    
-            except GeneratorExit:
-                app.logger.info("Live results SSE client disconnected")
-            except Exception as e:
-                app.logger.error(f"SSE Generator error: {str(e)}")
-                yield f"data: {json.dumps({'error': f'Generator error: {str(e)}'})}\n\n"
-    
-    return Response(
-        generate_live_results(),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Authorization',
-            'X-Accel-Buffering': 'no'
-        }
-    )
-
-@gaming.route('/sessions/<int:session_id>/voter-status-stream')
-@limiter.limit("50 per minute")
-def voter_status_stream(session_id):
-    """FIXED: Server-Sent Events endpoint for real-time voter status"""
-    
-    # Token validation
-    token = request.args.get('token')
-    if not token:
-        return Response(
-            f"data: {json.dumps({'error': 'Authentication token required'})}\n\n",
-            mimetype='text/event-stream',
-            status=401
-        )
-    
-    try:
-        from flask_jwt_extended import decode_token
-        decoded_token = decode_token(token)
-        current_user_id = decoded_token['sub']
-        
-        user = User.query.get(current_user_id)
-        if not user:
-            return Response(
-                f"data: {json.dumps({'error': 'Invalid user'})}\n\n",
-                mimetype='text/event-stream',
-                status=401
-            )
-    except Exception as e:
-        return Response(
-            f"data: {json.dumps({'error': 'Invalid authentication token'})}\n\n",
-            mimetype='text/event-stream',
-            status=401
-        )
-    
-    session = GameSession.query.get(session_id)
-    if not session:
-        return Response(
-            f"data: {json.dumps({'error': 'Session not found'})}\n\n",
-            mimetype='text/event-stream',
-            status=404
-        )
-    
-    if user not in session.group.members:
-        return Response(
-            f"data: {json.dumps({'error': 'Access denied'})}\n\n",
-            mimetype='text/event-stream',
-            status=403
-        )
-    
-    def voter_event_stream():
-        """Generator that maintains app context internally"""
-        app = current_app._get_current_object()
-        
-        with app.app_context():
-            last_voter_count = 0
-            heartbeat_counter = 0
-            max_iterations = 300  # 5 minutes max
-            
-            try:
-                while heartbeat_counter < max_iterations:
-                    # Check only every 10 seconds to reduce load
-                    if heartbeat_counter % 10 != 0:
-                        time.sleep(1)
-                        heartbeat_counter += 1
-                        continue
-                    
-                    # Refresh database session
-                    db.session.expire_all()
-                    session = GameSession.query.get(session_id)
-                    if not session:
-                        yield f"data: {json.dumps({'error': 'Session no longer exists'})}\n\n"
-                        break
-                    
-                    try:
-                        voter_data = get_voter_status_data_cached(session_id)
-                        current_voter_count = voter_data.get('progress', {}).get('voted', 0)
-                    except Exception as voter_error:
-                        app.logger.error(f"Error getting voter status: {voter_error}")
-                        current_voter_count = 0
-                        voter_data = {
-                            'progress': {'voted': 0, 'total': len(session.group.members), 'percentage': 0},
-                            'recent_voters': [],
-                            'pending_voters': [],
-                            'voting_complete': False,
-                            'session_status': session.status,
-                            'timestamp': utc_now().isoformat()
-                        }
-                    
-                    # Send update only if changes or heartbeat
-                    if (current_voter_count != last_voter_count or 
-                        heartbeat_counter % 60 == 0):  # Heartbeat every 60 iterations
-                        
-                        yield f"data: {json.dumps(voter_data)}\n\n"
-                        last_voter_count = current_voter_count
-                    
-                    if voter_data.get('voting_complete') or session.status == 'completed':
-                        app.logger.info(f"Voter status stream ended for session {session_id} - voting complete")
-                        break
-                    
-                    heartbeat_counter += 1
-                    time.sleep(1)
-                    
-            except GeneratorExit:
-                app.logger.info("Voter status SSE client disconnected")
-            except Exception as e:
-                app.logger.error(f"Voter Status SSE Error: {e}")
-                yield f"data: {json.dumps({'error': 'Connection error'})}\n\n"
-    
-    return Response(
-        voter_event_stream(),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Authorization'
-        }
-    )
-
-@gaming.route('/sessions/<int:session_id>/status', methods=['GET'])
-@limiter.limit("120 per minute")  # INCREASED from 60 per minute
-@cache_for_seconds(3)  # REDUCED from 5 seconds
-@jwt_required()
-def get_session_status(session_id):
-    """FIXED: Get current session status with rate limiting and caching"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        session = GameSession.query.get(session_id)
-        
-        if not session:
-            return jsonify({
-                'success': False,
-                'error': 'Session not found'
-            }), 404
-        
-        if user not in session.group.members:
-            return jsonify({
-                'success': False,
-                'error': 'Access denied'
-            }), 403
-        
-        # Use cached data
-        try:
-            status_data = get_session_results_data(session_id)
-            voter_data = get_voter_status_data_cached(session_id)
-        except Exception as data_error:
-            logging.error(f"Error getting status data: {data_error}")
-            status_data = {
-                'results': [],
-                'total_voters': 0,
-                'total_members': len(session.group.members),
-                'voting_complete': session.status == 'completed',
-                'session_status': session.status,
-                'winner': None,
-                'timestamp': utc_now().isoformat()
-            }
-            voter_data = {
-                'progress': {'voted': 0, 'total': len(session.group.members), 'percentage': 0},
-                'recent_voters': [],
-                'pending_voters': [],
-                'voting_complete': session.status == 'completed',
-                'session_status': session.status,
-                'timestamp': utc_now().isoformat()
-            }
-        
-        return jsonify({
-            "success": True,
-            "type": "status_update",
-            "session_id": session_id,
-            "status": session.status,
-            "results": status_data,
-            "voters": voter_data,
-            "timestamp": utc_now().isoformat(),
-            "cached": True
-        }), 200
-        
-    except Exception as e:
-        logging.error(f"Error getting session status: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error'
-        }), 500
-
-# ============================================================================
-# VOTING ENDPOINTS
-# ============================================================================
-
-@gaming.route('/sessions/<int:session_id>/vote', methods=['POST'])
-@limiter.limit("30 per minute")  # INCREASED from 20 per minute
-@jwt_required()
-def submit_vote(session_id):
-    """Enhanced: Submit votes with SSE broadcast and atomic transactions"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        # Use atomic transaction for race condition protection
-        with db.session.begin():
-            # Lock the session row to prevent concurrent modifications
-            session = GameSession.query.with_for_update().get(session_id)
-            
-            if not session:
-                raise APIException("Session not found", status_code=404)
-            
-            if session.status != 'voting':
-                raise APIException("This voting session is not active", status_code=400)
-            
-            group = session.group
-            if user not in group.members:
-                raise APIException("You are not a member of this group", status_code=403)
-            
-            data = request.get_json()
-            game_votes = data.get('game_votes', [])
-            
-            if not game_votes:
-                raise APIException("No votes provided", status_code=400)
-            
-            # Comprehensive vote validation
-            validation_errors = validate_vote_submission(game_votes, group.id, current_user_id)
-            if validation_errors:
-                raise APIException(f"Validation failed: {'; '.join(validation_errors)}", status_code=400)
-            
-            # Check if user has already voted using Vote model
-            existing_vote = Vote.query.filter_by(session_id=session_id, user_id=current_user_id).first()
-            if existing_vote:
-                raise APIException("You have already voted in this session", status_code=400)
-            
-            # Create votes using the new Vote model
-            created_votes = []
-            for vote_data in game_votes:
-                vote = Vote(
-                    session_id=session_id,
-                    user_id=current_user_id,
-                    game_id=vote_data['game_id'],
-                    priority=vote_data['priority']
-                )
-                db.session.add(vote)
-                created_votes.append(vote)
-            
-            # Flush to check constraints before commit
-            db.session.flush()
-            
-            # Check if voting is complete
-            total_members = len(group.members)
-            total_voters = db.session.query(func.count(func.distinct(Vote.user_id))).filter_by(session_id=session_id).scalar() or 0
-            
-            # Auto-complete if all members voted or threshold reached
-            auto_complete_threshold = 0.8  # Default threshold
-            
-            if (total_voters >= total_members or 
-                (total_voters >= total_members * auto_complete_threshold and total_voters >= 2)):
-                session.status = 'completed'
-                if hasattr(session, 'updated_at'):
-                    session.updated_at = utc_now()
-                logging.info(f"Voting session {session_id} auto-completed: {total_voters}/{total_members} members voted")
-            
-            # Update session timestamp
-            if hasattr(session, 'updated_at'):
-                session.updated_at = utc_now()
-            
-            # Commit happens automatically with 'with' block
-        
-        # CRITICAL: Broadcast update to all SSE listeners AFTER successful commit
-        try:
-            updated_results = get_session_results_data(session_id)
-            voting_sse_manager.broadcast_update(session_id, updated_results)
-            logging.info(f"Broadcasted SSE update for session {session_id}")
-        except Exception as sse_error:
-            logging.error(f"Failed to broadcast SSE update: {sse_error}")
-            # Don't fail the vote submission for SSE errors
-        
-        logging.info(f"Vote submitted by {user.username} for session {session_id} ({len(created_votes)} votes)")
-        
-        return jsonify({
-            "success": True,
-            "message": "Vote submitted successfully",
-            "session_status": session.status,
-            "total_voters": total_voters,
-            "total_members": total_members,
-            "votes_created": len(created_votes),
-            "voting_complete": session.status == 'completed'
-        }), 200
-        
-    except APIException as e:
-        return jsonify({"success": False, "error": e.message}), e.status_code
-    except Exception as e:
-        logging.error(f"Error submitting vote: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
-
-@gaming.route('/sessions/<int:session_id>/vote', methods=['GET'])
-@limiter.limit("60 per minute")
-@jwt_required()
-def get_user_vote(session_id):
-    """Get the current user's vote for a session"""
+def get_my_session_votes(session_id):
+    """Get current user's votes for a session"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
         session = GameSession.query.get(session_id)
         if not session:
-            return jsonify({'error': 'Session not found'}), 404
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
         
         if user not in session.group.members:
-            return jsonify({'error': 'Access denied'}), 403
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
         
-        # Get user's votes for this session
-        votes = Vote.query.filter_by(
-            session_id=session_id,
-            user_id=current_user_id
-        ).order_by(desc(Vote.priority)).all()
+        # Get user's votes
+        votes = Vote.get_user_votes(session_id, current_user_id)
+        has_voted = len(votes) > 0
         
-        if not votes:
-            return jsonify({
-                'success': True,
-                'has_voted': False,
-                'votes': []
-            }), 200
-        
-        # Format votes
         formatted_votes = []
         for vote in votes:
             game = SteamGame.query.get(vote.game_id)
-            formatted_votes.append({
+            vote_data = {
                 'game_id': vote.game_id,
                 'priority': vote.priority,
-                'game': {
+                'points': vote.priority,
+                'created_at': vote.created_at.isoformat()
+            }
+            
+            if game:
+                vote_data['game'] = {
                     'id': game.id,
                     'name': game.name,
-                    'header_image': getattr(game, 'header_image', ''),
-                    'short_description': getattr(game, 'short_description', '')
-                } if game else None,
-                'created_at': vote.created_at.isoformat() if vote.created_at else None
-            })
+                    'header_image': game.header_image
+                }
+            
+            formatted_votes.append(vote_data)
         
         return jsonify({
             'success': True,
-            'has_voted': True,
+            'has_voted': has_voted,
             'votes': formatted_votes,
-            'vote_count': len(formatted_votes)
+            'vote_count': len(formatted_votes),
+            'can_vote': not has_voted and session.status == 'voting'
         }), 200
         
     except Exception as e:
-        logging.error(f"Error getting user vote: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-# ============================================================================
-# GROUP MEMBER MANAGEMENT ENDPOINTS
-# ============================================================================
-
-@gaming.route('/groups/join/<invite_code>', methods=['POST'])
-@limiter.limit("20 per minute")
-@jwt_required()
-def join_group_by_invite(invite_code):
-    """Join a group using invite code"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        # Find group by invite code
-        group = GamingGroup.query.filter_by(invite_code=invite_code).first()
-        if not group:
-            return jsonify({'error': 'Invalid invite code'}), 404
-        
-        # Check if user is already a member
-        if user in group.members:
-            return jsonify({'error': 'You are already a member of this group'}), 400
-        
-        # Check if group is full
-        if len(group.members) >= group.max_members:
-            return jsonify({'error': 'Group is full'}), 400
-        
-        # Add user to group
-        group.members.append(user)
-        db.session.commit()
-        
-        logging.info(f"User {user.username} joined group {group.name} via invite code")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Successfully joined {group.name}',
-            'group': serialize_group_safe(group)
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        logging.error(f"Error joining group: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@gaming.route('/groups/<int:group_id>/leave', methods=['POST'])
-@limiter.limit("20 per minute")
-@jwt_required()
-@validate_group_id
-def leave_group(group_id):
-    """Leave a group"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            return jsonify({'error': 'Group not found'}), 404
-        
-        if user not in group.members:
-            return jsonify({'error': 'You are not a member of this group'}), 400
-        
-        # Don't allow creator to leave if there are other members
-        if group.creator_id == current_user_id and len(group.members) > 1:
-            return jsonify({
-                'error': 'Transfer ownership before leaving the group',
-                'code': 'TRANSFER_OWNERSHIP_REQUIRED'
-            }), 400
-        
-        # Remove user from group
-        group.members.remove(user)
-        
-        # If creator is leaving and they're the only member, delete the group
-        if group.creator_id == current_user_id and len(group.members) == 0:
-            db.session.delete(group)
-            logging.info(f"Group {group.name} deleted as creator {user.username} was the last member")
-        
-        db.session.commit()
-        
-        logging.info(f"User {user.username} left group {group.name}")
-        
-        return jsonify({
-            'success': True,
-            'message': 'Successfully left the group'
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        logging.error(f"Error leaving group: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-# ============================================================================
-# INITIALIZE RATE LIMITING FUNCTION
-# ============================================================================
-
-def init_rate_limiting(app):
-    """Initialize rate limiting for the Flask app"""
-    limiter.init_app(app)
-    return limiter
+        current_app.logger.error(f"Error getting user votes: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500

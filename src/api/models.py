@@ -1,11 +1,11 @@
-# src/api/models.py - COMPLETE ENHANCED VERSION with Vote model and live voting support
+# src/api/models.py - COMPLETE FIXED VERSION matching gaming.py requirements
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey, UniqueConstraint, CheckConstraint, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime, timezone, timedelta  # 🔧 ADD: Import timedelta for Steam sync
+from datetime import datetime, timezone, timedelta
 import json
-import pytz  # 🔧 ADD: Import pytz for timezone handling
+import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
@@ -17,6 +17,10 @@ db = SQLAlchemy()
 def utc_now():
     """Modern replacement for deprecated datetime.utcnow()"""
     return datetime.now(timezone.utc)
+
+# ============================================================================
+# ASSOCIATION TABLES
+# ============================================================================
 
 user_games = Table(
     'user_games',
@@ -80,7 +84,7 @@ def safe_json_dumps(data):
         return str(data) if data else None
 
 # ============================================================================
-# USER MODEL
+# USER MODEL - ENHANCED
 # ============================================================================
 
 class User(db.Model):
@@ -108,20 +112,22 @@ class User(db.Model):
     favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
     
-    # 🚀 Enhanced gaming statistics
+    # Enhanced gaming statistics
     total_games: Mapped[int] = mapped_column(Integer, default=0)
     total_votes_cast: Mapped[int] = mapped_column(Integer, default=0)
     favorite_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
     gaming_activity_level: Mapped[str] = mapped_column(String(20), default='moderate')  # casual, moderate, hardcore
 
-    # Relationships
+    # Relationships - FIXED NAMES to match gaming.py
     owned_games = relationship('SteamGame', secondary=user_games, back_populates='owners')
     member_of_groups = relationship('GamingGroup', secondary=group_members, back_populates='members')
+    gaming_groups = relationship('GamingGroup', secondary=group_members, back_populates='members')  # ALIAS for gaming.py compatibility
     created_groups = relationship('GamingGroup', back_populates='creator', foreign_keys='GamingGroup.creator_id')
+    created_sessions = relationship('GameSession', back_populates='creator', foreign_keys='GameSession.creator_id')
     votes = relationship('Vote', back_populates='user', cascade='all, delete-orphan')
     favorite_game = relationship('SteamGame', foreign_keys=[favorite_game_id])
 
-    # 🔧 ENHANCED: Compatibility properties
+    # Compatibility properties
     @property 
     def steam_connected_alias(self):
         """Alias for steam_connected for backward compatibility"""
@@ -138,7 +144,7 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-    # 🔧 NEW: Steam sync helper methods for Option 3
+    # Steam sync helper methods
     def can_sync_steam(self):
         """
         Check if user can sync Steam library (5 minute cooldown)
@@ -194,15 +200,11 @@ class User(db.Model):
         return int(remaining.total_seconds())
 
     def update_steam_sync_time(self):
-        """
-        Update the last Steam sync timestamp to now
-        """
+        """Update the last Steam sync timestamp to now"""
         self.steam_library_synced_at = datetime.utcnow()
 
     def get_steam_sync_status(self):
-        """
-        Get comprehensive Steam sync status information
-        """
+        """Get comprehensive Steam sync status information"""
         if not self.steam_id:
             return {
                 "connected": False,
@@ -236,13 +238,13 @@ class User(db.Model):
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "is_active": self.is_active,
             
-            # 🔧 ENHANCED: Add both field names for compatibility
+            # FIXED: Add both field names for compatibility
             "steam_connected": self.steam_connected or self.is_steam_connected,
-            "is_steam_connected": self.steam_connected or self.is_steam_connected,  # Alias
+            "is_steam_connected": self.steam_connected or self.is_steam_connected,
             "steam_id": self.steam_id,
             "steam_username": self.steam_username,
             "steam_avatar": self.steam_avatar_url,
-            "steam_avatar_url": self.steam_avatar_url,  # Both field names
+            "steam_avatar_url": self.steam_avatar_url,
             "steam_profile_url": self.steam_profile_url,
             
             "gaming_style": self.gaming_style,
@@ -317,7 +319,7 @@ class SteamGame(db.Model):
             "header_image": self.header_image,
             "website": self.website,
             
-            # 🔧 ENHANCED: Handle JSON parsing safely
+            # Handle JSON parsing safely
             "genres": self._parse_json_field(self.genres),
             "categories": self._parse_json_field(self.categories), 
             "tags": self._parse_json_field(self.tags),
@@ -329,8 +331,6 @@ class SteamGame(db.Model):
             "price": self.price,
             "release_date": self.release_date.isoformat() if self.release_date else None,
             "owner_count": len(self.owners) if self.owners else 0,
-            
-            # 🔧 ADD: Additional compatibility fields
             "supported_languages": self._parse_json_field(self.supported_languages)
         }
 
@@ -353,7 +353,7 @@ class GamingGroup(db.Model):
     preferred_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
     
-    # 🚀 Enhanced group statistics and settings
+    # Enhanced group statistics and settings
     total_sessions: Mapped[int] = mapped_column(Integer, default=0)
     active_sessions: Mapped[int] = mapped_column(Integer, default=0)
     default_auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)
@@ -444,17 +444,20 @@ class GamingGroup(db.Model):
             return []
 
 # ============================================================================
-# GAME SESSION MODEL
+# GAME SESSION MODEL - FIXED AND COMPLETE
 # ============================================================================
 
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     
+    # FIXED: Required relationships
     group_id: Mapped[int] = mapped_column(Integer, ForeignKey('gaming_group.id', ondelete='CASCADE'), nullable=False)
+    creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)  # ADDED: Missing creator field
     
+    # FIXED: Core session fields matching gaming.py
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
-    session_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=True)
+    session_name: Mapped[str] = mapped_column(String(200), nullable=False, default='Voting Session')  # ADDED
+    description: Mapped[str] = mapped_column(Text, nullable=True)  # ADDED
     scheduled_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default='planning')  # planning, voting, completed, cancelled
@@ -462,7 +465,7 @@ class GameSession(db.Model):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     vote_results: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string for backwards compatibility
     
-    # 🚀 ENHANCED LIVE VOTING FIELDS:
+    # ADDED: Enhanced live voting fields that gaming.py expects
     auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)  # Auto-complete at 80%
     max_choices: Mapped[int] = mapped_column(Integer, default=3)  # Max games per vote
     winner_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
@@ -471,8 +474,9 @@ class GameSession(db.Model):
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     votable_games: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string of available games
     
-    # Relationships
+    # FIXED: Complete relationships
     group = relationship('GamingGroup', back_populates='sessions')
+    creator = relationship('User', back_populates='created_sessions', foreign_keys=[creator_id])  # ADDED
     game = relationship('SteamGame', foreign_keys=[game_id])
     winner_game = relationship('SteamGame', foreign_keys=[winner_game_id])
     votes = relationship('Vote', back_populates='session', cascade='all, delete-orphan')
@@ -481,6 +485,8 @@ class GameSession(db.Model):
         return {
             "id": self.id,
             "group_id": self.group_id,
+            "creator_id": self.creator_id,  # ADDED
+            "creator": self.creator.serialize() if self.creator else None,  # ADDED
             "game": self.game.serialize() if self.game else None,
             "session_name": self.session_name,
             "description": self.description,
@@ -491,7 +497,7 @@ class GameSession(db.Model):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "vote_results": safe_json_loads(self.vote_results, {}),
             "vote_count": len(self.votes) if self.votes else 0,
-            # 🚀 ENHANCED FIELDS:
+            # ADDED: Enhanced fields that gaming.py expects
             "auto_complete_threshold": self.auto_complete_threshold,
             "max_choices": self.max_choices,
             "winner_game": self.winner_game.serialize() if self.winner_game else None,
@@ -502,7 +508,7 @@ class GameSession(db.Model):
         }
 
 # ============================================================================
-# VOTE MODEL - ENHANCED FOR ATOMIC VOTING
+# VOTE MODEL - ENHANCED FOR ATOMIC VOTING (Already correct)
 # ============================================================================
 
 class Vote(db.Model):
@@ -517,7 +523,7 @@ class Vote(db.Model):
     priority: Mapped[int] = mapped_column(Integer, nullable=False)  # 1, 2, or 3 points
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     
-    # 🔧 CRITICAL: Database-level constraints to prevent race conditions
+    # Database-level constraints to prevent race conditions
     __table_args__ = (
         # Prevent duplicate votes: one vote per user per game per session
         UniqueConstraint('session_id', 'user_id', 'game_id', name='unique_user_game_vote'),
@@ -556,9 +562,7 @@ class Vote(db.Model):
     
     @classmethod
     def get_session_results(cls, session_id):
-        """
-        🔧 ENHANCED: Calculate voting results with better error handling
-        """
+        """Calculate voting results with better error handling"""
         try:
             from sqlalchemy import func
             
@@ -619,9 +623,7 @@ class Vote(db.Model):
     
     @classmethod
     def get_voter_count(cls, session_id):
-        """
-        🔧 ENHANCED: Get voter count with error handling
-        """
+        """Get voter count with error handling"""
         try:
             from sqlalchemy import func
             return db.session.query(func.count(func.distinct(cls.user_id))).filter_by(session_id=session_id).scalar() or 0
@@ -635,9 +637,7 @@ class Vote(db.Model):
     
     @classmethod
     def has_user_voted(cls, session_id, user_id):
-        """
-        🔧 ENHANCED: Check if user voted with error handling
-        """
+        """Check if user voted with error handling"""
         try:
             return cls.query.filter_by(session_id=session_id, user_id=user_id).first() is not None
         except Exception:
@@ -645,9 +645,7 @@ class Vote(db.Model):
     
     @classmethod
     def get_user_votes(cls, session_id, user_id):
-        """
-        🔧 ENHANCED: Get user votes with error handling
-        """
+        """Get user votes with error handling"""
         try:
             return cls.query.filter_by(session_id=session_id, user_id=user_id).order_by(cls.priority.desc()).all()
         except Exception:
