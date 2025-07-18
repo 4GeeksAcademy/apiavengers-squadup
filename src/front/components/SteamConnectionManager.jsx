@@ -1,12 +1,13 @@
-// src/front/components/SteamConnectionManager.jsx - Unified Steam Connection Component
+// src/front/components/SteamConnectionManager.jsx - Enhanced with Sync Cooldown Management
 
 import React, { useState, useEffect } from 'react';
 import steamService from '../services/steamService.js';
+import { formatLastPlayed } from '../utils/steamUtils.js';
 import toast from 'react-hot-toast';
 
 /**
  * Unified Steam Connection Manager Component
- * Handles all Steam connection methods with consistent UI/UX
+ * Handles all Steam connection methods with sync cooldown management
  */
 const SteamConnectionManager = ({ 
     user, 
@@ -17,10 +18,14 @@ const SteamConnectionManager = ({
     className = "" 
 }) => {
     const [loading, setLoading] = useState(false);
-    const [connectionMethod, setConnectionMethod] = useState('openid'); // 'openid' or 'manual'
+    const [connectionMethod, setConnectionMethod] = useState('openid');
     const [steamId, setSteamId] = useState('');
     const [showInstructions, setShowInstructions] = useState(false);
     const [error, setError] = useState('');
+    
+    // Sync cooldown management
+    const [syncCooldownEnd, setSyncCooldownEnd] = useState(null);
+    const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
     const isConnected = user?.steam_connected || user?.is_steam_connected;
 
@@ -29,6 +34,73 @@ const SteamConnectionManager = ({
         setError('');
         setSteamId('');
     }, [connectionMethod]);
+
+    // Cooldown timer effect
+    useEffect(() => {
+        let interval;
+        
+        if (syncCooldownEnd) {
+            interval = setInterval(() => {
+                const now = Date.now();
+                const remaining = Math.max(0, Math.ceil((syncCooldownEnd - now) / 1000));
+                setCooldownSeconds(remaining);
+                
+                if (remaining <= 0) {
+                    setSyncCooldownEnd(null);
+                    setCooldownSeconds(0);
+                }
+            }, 1000);
+        }
+        
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [syncCooldownEnd]);
+
+    // Initialize cooldown from last sync time
+    useEffect(() => {
+        if (user?.steam_library_synced_at && !syncCooldownEnd) {
+            const lastSync = new Date(user.steam_library_synced_at).getTime();
+            const cooldownDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
+            const cooldownEnd = lastSync + cooldownDuration;
+            const now = Date.now();
+            
+            if (now < cooldownEnd) {
+                setSyncCooldownEnd(cooldownEnd);
+                setCooldownSeconds(Math.ceil((cooldownEnd - now) / 1000));
+            }
+        }
+    }, [user?.steam_library_synced_at]);
+
+    /**
+     * Parse cooldown time from error message
+     */
+    const parseCooldownFromError = (errorMessage) => {
+        const match = errorMessage.match(/wait (\d+) seconds/);
+        if (match) {
+            const seconds = parseInt(match[1]);
+            const cooldownEnd = Date.now() + (seconds * 1000);
+            setSyncCooldownEnd(cooldownEnd);
+            setCooldownSeconds(seconds);
+            return seconds;
+        }
+        return null;
+    };
+
+    /**
+     * Format cooldown display
+     */
+    const formatCooldown = (seconds) => {
+        if (seconds <= 0) return '';
+        
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        
+        if (minutes > 0) {
+            return `${minutes}m ${remainingSeconds}s`;
+        }
+        return `${remainingSeconds}s`;
+    };
 
     /**
      * Handle Steam connection via OpenID
@@ -39,7 +111,6 @@ const SteamConnectionManager = ({
         
         try {
             await steamService.connectViaOpenID(window.location.pathname);
-            // Note: This will redirect, so no need for success handling
         } catch (error) {
             setError(steamService.getErrorMessage(error));
             toast.error(steamService.getErrorMessage(error));
@@ -67,7 +138,6 @@ const SteamConnectionManager = ({
             toast.dismiss(loadingToast);
             toast.success(`${result.message} Synced ${result.newGames} games!`);
             
-            // Update user data
             if (onUserUpdate && result.user) {
                 onUserUpdate(result.user);
             }
@@ -101,10 +171,13 @@ const SteamConnectionManager = ({
             toast.dismiss(loadingToast);
             toast.success(result.message);
             
-            // Update user data
             if (onUserUpdate) {
                 onUserUpdate({ ...user, steam_connected: false, is_steam_connected: false });
             }
+            
+            // Clear cooldown when disconnecting
+            setSyncCooldownEnd(null);
+            setCooldownSeconds(0);
             
         } catch (error) {
             toast.dismiss(loadingToast);
@@ -116,11 +189,16 @@ const SteamConnectionManager = ({
     };
 
     /**
-     * Handle library sync
+     * Handle library sync with enhanced cooldown management
      */
     const handleSync = async () => {
         if (!isConnected) {
             toast.error('Please connect your Steam account first');
+            return;
+        }
+
+        if (cooldownSeconds > 0) {
+            toast.error(`Please wait ${formatCooldown(cooldownSeconds)} before syncing again`);
             return;
         }
 
@@ -133,9 +211,12 @@ const SteamConnectionManager = ({
             toast.dismiss(loadingToast);
             toast.success(`${result.message} Found ${result.newGames} new games!`);
             
-            // Refresh user data if callback provided
+            // Set cooldown after successful sync
+            const cooldownEnd = Date.now() + (5 * 60 * 1000); // 5 minutes
+            setSyncCooldownEnd(cooldownEnd);
+            setCooldownSeconds(300);
+            
             if (onUserUpdate) {
-                // You might want to fetch fresh user data here
                 onUserUpdate({ 
                     ...user, 
                     steam_library_synced_at: new Date().toISOString(),
@@ -146,7 +227,15 @@ const SteamConnectionManager = ({
         } catch (error) {
             toast.dismiss(loadingToast);
             const errorMessage = steamService.getErrorMessage(error);
-            toast.error(errorMessage);
+            
+            // Parse cooldown from error if present
+            const cooldownFromError = parseCooldownFromError(errorMessage);
+            
+            if (cooldownFromError) {
+                toast.error(`Sync on cooldown. Please wait ${formatCooldown(cooldownFromError)}`);
+            } else {
+                toast.error(errorMessage);
+            }
         } finally {
             setLoading(false);
         }
@@ -174,10 +263,15 @@ const SteamConnectionManager = ({
                         {showSyncButton && (
                             <button
                                 onClick={handleSync}
-                                disabled={loading}
-                                className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors disabled:opacity-50"
+                                disabled={loading || cooldownSeconds > 0}
+                                className={`px-2 py-1 text-white text-xs rounded transition-colors disabled:opacity-50 ${
+                                    cooldownSeconds > 0 
+                                        ? 'bg-orange-500 cursor-not-allowed' 
+                                        : 'bg-blue-500 hover:bg-blue-600'
+                                }`}
+                                title={cooldownSeconds > 0 ? `Cooldown: ${formatCooldown(cooldownSeconds)}` : 'Sync library'}
                             >
-                                🔄
+                                {cooldownSeconds > 0 ? '⏳' : '🔄'}
                             </button>
                         )}
                         {showLibraryButton && (
@@ -235,11 +329,36 @@ const SteamConnectionManager = ({
                             </p>
                             {user?.steam_library_synced_at && (
                                 <p className="text-white/50 text-xs">
-                                    Last synced: {steamService.formatLastPlayed(user.steam_library_synced_at)}
+                                    Last synced: {formatLastPlayed(user.steam_library_synced_at)}
                                 </p>
                             )}
                         </div>
                     </div>
+                    
+                    {/* Sync Cooldown Notice */}
+                    {cooldownSeconds > 0 && (
+                        <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                                <span className="text-orange-400">⏳</span>
+                                <div>
+                                    <p className="text-orange-300 text-sm font-medium">
+                                        Sync Cooldown Active
+                                    </p>
+                                    <p className="text-orange-400/80 text-xs">
+                                        Next sync available in {formatCooldown(cooldownSeconds)}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="mt-2 w-full bg-orange-500/20 rounded-full h-1.5">
+                                <div 
+                                    className="bg-orange-400 h-1.5 rounded-full transition-all duration-1000"
+                                    style={{ 
+                                        width: `${Math.max(0, 100 - ((300 - cooldownSeconds) / 300 * 100))}%` 
+                                    }}
+                                ></div>
+                            </div>
+                        </div>
+                    )}
                     
                     <div className="flex flex-wrap gap-2">
                         {showLibraryButton && (
@@ -253,10 +372,20 @@ const SteamConnectionManager = ({
                         {showSyncButton && (
                             <button 
                                 onClick={handleSync}
-                                disabled={loading}
-                                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center gap-2 disabled:opacity-50"
+                                disabled={loading || cooldownSeconds > 0}
+                                className={`px-4 py-2 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center gap-2 disabled:opacity-50 ${
+                                    cooldownSeconds > 0 
+                                        ? 'bg-orange-500 cursor-not-allowed' 
+                                        : 'bg-blue-500 hover:bg-blue-600'
+                                }`}
                             >
-                                🔄 {loading ? 'Syncing...' : 'Sync Games'}
+                                {loading ? (
+                                    <>⏳ Syncing...</>
+                                ) : cooldownSeconds > 0 ? (
+                                    <>⏳ Cooldown ({formatCooldown(cooldownSeconds)})</>
+                                ) : (
+                                    <>🔄 Sync Games</>
+                                )}
                             </button>
                         )}
                         <button 

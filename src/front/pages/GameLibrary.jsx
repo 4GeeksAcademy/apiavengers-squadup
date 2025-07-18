@@ -5,6 +5,7 @@ import useGlobalReducer from '../hooks/useGlobalReducer';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import steamService from '../services/steamService.js';
+import authService from '../store/authService.js';
 import SteamConnectionManager from '../components/SteamConnectionManager';
 import { 
     formatPlaytime, 

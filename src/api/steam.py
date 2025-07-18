@@ -108,7 +108,7 @@ def sync_games():
     limiter = get_limiter()
     if limiter:
         # Rate limit sync to prevent spam - 2 syncs per minute
-        limiter.limit("2 per minute")(lambda: None)()
+        limiter.limit("5 per minute")(lambda: None)()
     
     try:
         user_id = get_jwt_identity()
@@ -317,7 +317,7 @@ def get_game_details(app_id):
     limiter = get_limiter()
     if limiter:
         # Rate limit game details to prevent Steam API abuse
-        limiter.limit("30 per minute")(lambda: None)()
+        limiter.limit("60 per minute")(lambda: None)()
     
     try:
         if not steam_service:

@@ -24,8 +24,13 @@ root.render(
     <React.StrictMode>
         <ErrorBoundary>
             <StoreProvider>
-                <RouterProvider router={router} />
-                <Toaster 
+                <RouterProvider 
+                    router={router} 
+                    future={{
+                        v7_startTransition: true
+                    }}
+                />
+                <Toaster
                     position="top-right"
                     toastOptions={{
                         duration: 4000,

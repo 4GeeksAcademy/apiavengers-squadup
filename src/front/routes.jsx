@@ -30,6 +30,7 @@ export const router = createBrowserRouter(
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
                 
                 {/* Group-related routes */}
+                <Route path="/groups" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/groups/:groupId" element={<ProtectedRoute><GroupPage /></ProtectedRoute>} />
                 <Route path="/sessions/:sessionId/results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
                 
@@ -48,5 +49,10 @@ export const router = createBrowserRouter(
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
         </Route>
-    )
+    ),
+    {
+        future: {
+            v7_startTransition: true,
+        },
+    }
 );

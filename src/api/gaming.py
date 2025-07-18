@@ -826,7 +826,7 @@ def get_session_results(session_id):
 # ============================================================================
 
 @gaming.route('/sessions/<int:session_id>/voters', methods=['GET'])
-@limiter.limit("30 per minute")  # CRITICAL: Reduced from 200 per hour
+@limiter.limit("60 per minute")  # CRITICAL: Reduced from 200 per hour
 @cache_for_seconds(10)  # CRITICAL: Cache for 10 seconds
 @jwt_required()
 def get_session_voters(session_id):
@@ -881,7 +881,7 @@ def get_session_voters(session_id):
         }), 500
 
 @gaming.route('/sessions/<int:session_id>/live-results')
-@limiter.limit("5 per minute")  # CRITICAL: Limit SSE connections
+@limiter.limit("15 per minute")  # FIXED: Increased for SSE streams
 def stream_live_results(session_id):
     """FIXED: Stream live voting results with proper rate limiting"""
     
@@ -1022,7 +1022,7 @@ def stream_live_results(session_id):
     )
 
 @gaming.route('/sessions/<int:session_id>/voter-status-stream')
-@limiter.limit("5 per minute")  # CRITICAL: Limit SSE connections
+@limiter.limit("15 per minute")  # FIXED: Increased for SSE streams
 def voter_status_stream(session_id):
     """FIXED: Server-Sent Events endpoint for real-time voter status with rate limiting"""
     
@@ -1205,7 +1205,7 @@ def get_session_status(session_id):
 # ============================================================================
 
 @gaming.route('/sessions/<int:session_id>/vote', methods=['POST'])
-@limiter.limit("10 per minute")  # Prevent vote spam
+@limiter.limit("20 per minute")  # Prevent vote spam
 @jwt_required()
 def submit_vote(session_id):
     """Enhanced: Submit votes with SSE broadcast and atomic transactions"""
