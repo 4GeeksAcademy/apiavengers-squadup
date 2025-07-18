@@ -1,22 +1,25 @@
-// services/sseManager.js - Enhanced SSE Connection Manager
+// services/sseManager.js - Enhanced SSE Connection Manager with Stability Patches
 import authService from '../store/authService';
 import { useRef, useState, useEffect } from 'react';
 
 /**
  * Enhanced SSE Manager for reliable real-time connections
  * Handles connection management, reconnection logic, heartbeat monitoring, and error recovery
+ * PATCHED: Fixed immediate disconnection issues and improved stability
  */
 class SSEManager {
     constructor(endpoint, options = {}) {
         this.endpoint = endpoint;
+        // PATCH: Updated default options for better stability
         this.options = {
             maxRetries: 5,
-            retryDelay: 2000,
-            heartbeatTimeout: 30000,
-            reconnectMultiplier: 1.5,
-            maxReconnectDelay: 30000,
+            retryDelay: 3000, // Increased from 2000
+            heartbeatTimeout: 60000, // Increased from 30000
+            reconnectMultiplier: 1.3, // Reduced from 1.5
+            maxReconnectDelay: 45000, // Increased from 30000
             enableLogging: true,
             autoReconnect: true,
+            connectionTimeout: 15000, // NEW: connection timeout
             ...options
         };
         
@@ -39,6 +42,7 @@ class SSEManager {
         this.reconnectTimer = null;
         this.heartbeatTimer = null;
         this.healthCheckTimer = null;
+        this.connectionTimeoutTimer = null; // NEW: connection timeout timer
         
         // Bind methods to preserve context
         this.connect = this.connect.bind(this);
@@ -53,7 +57,7 @@ class SSEManager {
     }
     
     /**
-     * Establish SSE connection with enhanced error handling
+     * PATCH: Enhanced connection method with timeout handling
      */
     connect() {
         if (this.isDestroyed) {
@@ -96,6 +100,14 @@ class SSEManager {
             this.eventSource.onmessage = this.handleMessage;
             this.eventSource.onerror = this.handleError;
             
+            // NEW: Add connection timeout
+            this.connectionTimeoutTimer = setTimeout(() => {
+                if (this.isReconnecting && !this.isConnected) {
+                    this.log('Connection timeout reached', 'warn');
+                    this.handleConnectionFailure(new Error('Connection timeout'));
+                }
+            }, this.options.connectionTimeout);
+            
             // Start health monitoring
             this.startHealthMonitoring();
             
@@ -106,7 +118,7 @@ class SSEManager {
     }
     
     /**
-     * Handle successful connection
+     * PATCH: More robust handleOpen method
      */
     handleOpen(event) {
         const connectionTime = Date.now() - this.connectionStartTime;
@@ -119,7 +131,13 @@ class SSEManager {
         this.lastHeartbeat = Date.now();
         
         this.clearReconnectTimer();
-        this.startHeartbeatMonitor();
+        
+        // Wait a moment before starting heartbeat monitoring
+        setTimeout(() => {
+            if (this.isConnected) {
+                this.startHeartbeatMonitor();
+            }
+        }, 2000);
         
         this.emit('connected', { 
             connectionId: this.connectionId,
@@ -185,10 +203,19 @@ class SSEManager {
     }
     
     /**
-     * Handle connection errors
+     * PATCH: Less aggressive error handling to fix immediate disconnections
      */
     handleError(error) {
         this.log('SSE connection error', 'error', error);
+        
+        // Check if this is just a temporary network blip
+        const timeSinceConnection = Date.now() - (this.connectionStartTime || 0);
+        
+        // Don't immediately disconnect if we just connected (might be browser quirk)
+        if (timeSinceConnection < 1000) {
+            this.log('Ignoring error within 1s of connection (possible browser quirk)', 'warn');
+            return;
+        }
         
         this.isConnected = false;
         this.isReconnecting = false;
@@ -197,17 +224,19 @@ class SSEManager {
         this.emit('disconnected', {
             reason: 'connection_error',
             retryCount: this.retryCount,
-            connectionId: this.connectionId
+            connectionId: this.connectionId,
+            timeSinceConnection
         });
         
         this.emit('error', { 
             error,
             retryCount: this.retryCount,
-            willRetry: this.retryCount < this.options.maxRetries
+            willRetry: this.retryCount < this.options.maxRetries,
+            timeSinceConnection
         });
         
-        // Close the connection
-        if (this.eventSource) {
+        // Only close if the connection is actually broken
+        if (this.eventSource && this.eventSource.readyState === EventSource.CLOSED) {
             this.eventSource.close();
             this.eventSource = null;
         }
@@ -320,22 +349,29 @@ class SSEManager {
     }
     
     /**
-     * Check if heartbeat is still active
+     * PATCH: More lenient heartbeat checking
      */
     checkHeartbeat() {
         if (!this.isConnected || !this.lastHeartbeat) return;
         
         const timeSinceHeartbeat = Date.now() - this.lastHeartbeat;
         
-        if (timeSinceHeartbeat > this.options.heartbeatTimeout) {
+        // Increased timeout and added warning threshold
+        const warningThreshold = this.options.heartbeatTimeout * 0.8;
+        
+        if (timeSinceHeartbeat > warningThreshold && timeSinceHeartbeat <= this.options.heartbeatTimeout) {
+            this.log(`Heartbeat warning (${timeSinceHeartbeat}ms since last heartbeat)`, 'warn');
+        } else if (timeSinceHeartbeat > this.options.heartbeatTimeout) {
             this.log(`Heartbeat timeout (${timeSinceHeartbeat}ms since last heartbeat)`, 'warn');
             this.emit('heartbeatTimeout', { 
                 timeSinceHeartbeat,
                 timeout: this.options.heartbeatTimeout 
             });
             
-            // Force reconnection
-            this.handleHeartbeatTimeout();
+            // Force reconnection only after extended timeout
+            if (timeSinceHeartbeat > this.options.heartbeatTimeout * 1.5) {
+                this.handleHeartbeatTimeout();
+            }
         }
     }
     
@@ -380,12 +416,18 @@ class SSEManager {
     }
     
     /**
-     * Clear all active timers
+     * PATCH: Updated clearTimers to include connection timeout
      */
     clearTimers() {
         this.clearReconnectTimer();
         this.stopHeartbeatMonitor();
         this.stopHealthMonitoring();
+        
+        // NEW: Clear connection timeout
+        if (this.connectionTimeoutTimer) {
+            clearTimeout(this.connectionTimeoutTimer);
+            this.connectionTimeoutTimer = null;
+        }
     }
     
     /**
