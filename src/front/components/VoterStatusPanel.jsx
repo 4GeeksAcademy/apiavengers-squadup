@@ -1,8 +1,9 @@
-// src/front/components/VoterStatusPanel.jsx - Enhanced Version
+// src/front/components/VoterStatusPanel.jsx - Enhanced with SSE Manager
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import authService from '../store/authService';
 import Avatar from './Avatar';
 import toast from 'react-hot-toast';
+import SSEManager from '../services/sseManager';
 
 const VoterStatusPanel = ({ 
     sessionId, 
@@ -16,19 +17,20 @@ const VoterStatusPanel = ({
     const [voterData, setVoterData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [isLiveConnected, setIsLiveConnected] = useState(false);
-    const [connectionRetries, setConnectionRetries] = useState(0);
-    const [lastUpdate, setLastUpdate] = useState(null);
-
-    // Refs for cleanup
-    const eventSourceRef = useRef(null);
-    const pollIntervalRef = useRef(null);
-    const reconnectTimeoutRef = useRef(null);
     
-    // Constants
-    const maxRetries = 3;
-    const pollInterval = 15000; // 15 seconds
-    const reconnectDelay = 5000; // 5 seconds
+    // Enhanced connection state
+    const [connectionState, setConnectionState] = useState({
+        isConnected: false,
+        isReconnecting: false,
+        retryCount: 0,
+        error: null,
+        lastUpdate: null,
+        updateCount: 0
+    });
+    
+    // SSE Manager ref
+    const sseManagerRef = useRef(null);
+    const pollIntervalRef = useRef(null);
 
     // Initialize component
     useEffect(() => {
@@ -36,7 +38,7 @@ const VoterStatusPanel = ({
 
         initializeVoterStatuses();
         fetchVoterStatus();
-        setupLiveConnection();
+        setupEnhancedLiveConnection();
         setupFallbackPolling();
 
         return cleanup;
@@ -45,7 +47,7 @@ const VoterStatusPanel = ({
     const initializeVoterStatuses = useCallback(() => {
         if (!groupMembers.length) return;
 
-        console.log('🔄 Initializing voter statuses for', groupMembers.length, 'members');
+        console.log('🔄 Initializing enhanced voter statuses for', groupMembers.length, 'members');
         
         const initialStatuses = {};
         groupMembers.forEach(member => {
@@ -62,8 +64,10 @@ const VoterStatusPanel = ({
         setVoterStatuses(initialStatuses);
     }, [groupMembers]);
 
-    const fetchVoterStatus = async () => {
+    const fetchVoterStatus = async (silent = false) => {
         try {
+            if (!silent) setLoading(true);
+            
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
             const response = await authService.authenticatedFetch(
                 `${backendUrl}/api/gaming/sessions/${sessionId}/voters`
@@ -74,138 +78,158 @@ const VoterStatusPanel = ({
                 setVoterData(data);
                 updateVoterStatusesFromData(data);
                 setError(null);
+                
+                console.log('📊 Voter status loaded:', data);
             } else {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Failed to load voter status');
             }
         } catch (error) {
-            console.error('Error fetching voter status:', error);
+            console.error('❌ Error fetching voter status:', error);
             setError(error.message || 'Network error loading voter status');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
-    const setupLiveConnection = () => {
+    const setupEnhancedLiveConnection = () => {
         if (!sessionId) return;
         
-        // Close existing connection
-        if (eventSourceRef.current) {
-            eventSourceRef.current.close();
-        }
-
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const token = authService.getAccessToken();
-            
-            if (!token) {
-                console.warn('No auth token for SSE connection');
-                setIsLiveConnected(false);
-                return;
-            }
-
-            // Use token-based authentication for SSE
-            const sseUrl = `${backendUrl}/api/gaming/sessions/${sessionId}/voter-status-stream?token=${encodeURIComponent(token)}`;
-            const eventSource = new EventSource(sseUrl);
-            eventSourceRef.current = eventSource;
-
-            eventSource.onopen = () => {
-                console.log('✅ Voter status SSE connected');
-                setIsLiveConnected(true);
-                setConnectionRetries(0);
-                setError(null);
-            };
-
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('📡 Voter status update:', data);
-                    
-                    // Handle heartbeat messages
-                    if (data.heartbeat) {
-                        console.log('💓 SSE heartbeat received');
-                        return;
-                    }
-                    
-                    if (data.error) {
-                        console.error('❌ SSE error from server:', data.error);
-                        setError(data.error);
-                        return;
-                    }
-
-                    // Update data and notify parent
-                    updateVoterData(data);
-                    setLastUpdate(new Date().toISOString());
-                    
-                    if (onVoterUpdate) {
-                        onVoterUpdate(data);
-                    }
-
-                } catch (parseError) {
-                    console.error('❌ Error parsing voter status data:', parseError);
-                }
-            };
-
-            eventSource.onerror = (error) => {
-                console.error('❌ Voter status SSE error:', error);
-                setIsLiveConnected(false);
-                eventSource.close();
-                
-                // Retry with exponential backoff
-                if (connectionRetries < maxRetries) {
-                    const delay = Math.pow(2, connectionRetries) * 2000;
-                    console.log(`🔄 Retrying SSE connection in ${delay}ms (attempt ${connectionRetries + 1}/${maxRetries})`);
-                    
-                    reconnectTimeoutRef.current = setTimeout(() => {
-                        setConnectionRetries(prev => prev + 1);
-                        setupLiveConnection();
-                    }, delay);
-                } else {
-                    console.log('❌ Max retries reached, relying on polling fallback');
-                }
-            };
-
-        } catch (error) {
-            console.error('❌ Failed to setup SSE connection:', error);
-            setIsLiveConnected(false);
-        }
-    };
-
-    const setupFallbackPolling = () => {
-        // Clear existing interval
-        if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current);
-        }
-
-        // Setup polling fallback
-        const interval = setInterval(() => {
-            if (!isLiveConnected) {
-                console.log('📊 Polling fallback - fetching voter status');
-                fetchVoterStatus();
-            }
-        }, pollInterval);
+        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        const endpoint = `${backendUrl}/api/gaming/sessions/${sessionId}/voter-status-stream`;
         
-        pollIntervalRef.current = interval;
+        console.log('🔌 Setting up enhanced voter status live connection...');
+        
+        // Create SSE Manager for voter status
+        const sseManager = new SSEManager(endpoint, {
+            maxRetries: 5,
+            retryDelay: 3000,
+            heartbeatTimeout: 45000,
+            reconnectMultiplier: 1.4,
+            maxReconnectDelay: 25000
+        });
+        
+        sseManagerRef.current = sseManager;
+        
+        // Connection established
+        sseManager.on('connected', (data) => {
+            console.log('✅ Enhanced voter status live updates connected');
+            setConnectionState(prev => ({
+                ...prev,
+                isConnected: true,
+                isReconnecting: false,
+                error: null,
+                retryCount: 0
+            }));
+            
+            if (connectionState.retryCount > 0) {
+                toast.success('📊 Voter status live updates restored!', { duration: 2000 });
+            }
+        });
+        
+        // Connection lost
+        sseManager.on('disconnected', () => {
+            console.log('📡 Voter status live updates disconnected');
+            setConnectionState(prev => ({
+                ...prev,
+                isConnected: false,
+                isReconnecting: false
+            }));
+        });
+        
+        // Reconnection scheduled
+        sseManager.on('reconnectScheduled', (data) => {
+            console.log(`🔄 Reconnecting voter status in ${data.delay}ms (attempt ${data.retryCount})`);
+            setConnectionState(prev => ({
+                ...prev,
+                isReconnecting: true,
+                retryCount: data.retryCount
+            }));
+        });
+        
+        // Data message received
+        sseManager.on('message', handleEnhancedVoterUpdate);
+        
+        // Heartbeat received
+        sseManager.on('heartbeat', (data) => {
+            setConnectionState(prev => ({
+                ...prev,
+                lastUpdate: new Date(data.timestamp).toISOString()
+            }));
+        });
+        
+        // Connection error
+        sseManager.on('error', (data) => {
+            console.error('❌ Voter status connection error:', data);
+            setConnectionState(prev => ({
+                ...prev,
+                error: 'Connection error',
+                retryCount: data.retryCount
+            }));
+        });
+        
+        // Max retries reached
+        sseManager.on('maxRetriesReached', (data) => {
+            console.log('❌ Max reconnection attempts reached for voter status');
+            setConnectionState(prev => ({
+                ...prev,
+                isReconnecting: false,
+                error: 'Live updates unavailable'
+            }));
+            
+            toast.error('Voter status live updates unavailable. Using polling.', {
+                duration: 4000,
+                icon: '⚠️'
+            });
+        });
+        
+        // Start the connection
+        sseManager.connect();
     };
 
-    const updateVoterData = (data) => {
+    const handleEnhancedVoterUpdate = useCallback((data) => {
+        console.log('👥 Enhanced voter status update:', data);
+        
+        setConnectionState(prev => ({
+            ...prev,
+            lastUpdate: new Date().toISOString(),
+            updateCount: prev.updateCount + 1
+        }));
+        
         // Update aggregate voter data
         setVoterData(prevData => {
             const newData = {
                 ...prevData,
-                progress: data.progress,
-                pending_voters: data.pending_voters || [],
-                recent_voters: data.recent_voters || [],
-                voting_complete: data.voting_complete,
-                total_voters: data.total_voters
+                progress: data.progress || prevData?.progress,
+                pending_voters: data.pending_voters || prevData?.pending_voters || [],
+                recent_voters: data.recent_voters || prevData?.recent_voters || [],
+                voting_complete: data.voting_complete !== undefined ? data.voting_complete : prevData?.voting_complete,
+                total_voters: data.total_voters !== undefined ? data.total_voters : prevData?.total_voters
             };
 
-            // Show notification for new votes
+            // Show notification for new votes with enhanced details
             if (prevData?.progress && data.progress?.voted > prevData.progress.voted) {
                 const newVotes = data.progress.voted - prevData.progress.voted;
-                toast.success(`🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}!`, { 
-                    duration: 2000,
-                    position: 'top-right'
+                
+                // Try to identify who voted if we have recent voter data
+                if (data.recent_voters && data.recent_voters.length > 0) {
+                    const latestVoter = data.recent_voters[data.recent_voters.length - 1];
+                    toast.success(`✅ ${latestVoter.username} just voted! (${data.progress.voted}/${data.progress.total})`, { 
+                        duration: 3000,
+                        icon: '🗳️'
+                    });
+                } else {
+                    toast.success(`🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}! (${data.progress.voted}/${data.progress.total})`, { 
+                        duration: 2000
+                    });
+                }
+            }
+
+            // Check for voting completion
+            if (!prevData?.voting_complete && data.voting_complete) {
+                toast.success('🎉 All members have voted!', { 
+                    duration: 4000,
+                    icon: '🏁'
                 });
             }
 
@@ -213,9 +237,70 @@ const VoterStatusPanel = ({
         });
 
         // Update individual voter statuses if we have detailed results
-        if (data.results || data.voters) {
+        if (data.voter_details || data.results || data.voters) {
             updateVoterStatusesFromData(data);
         }
+        
+        // Handle specific voter events
+        if (data.event_type) {
+            handleVoterEvent(data);
+        }
+        
+        // Notify parent component
+        if (onVoterUpdate) {
+            onVoterUpdate(data);
+        }
+    }, [onVoterUpdate]);
+
+    const handleVoterEvent = (eventData) => {
+        switch (eventData.event_type) {
+            case 'voter_joined':
+                toast(`👋 ${eventData.voter.username} joined the session`, {
+                    duration: 2000,
+                    icon: '🔵'
+                });
+                break;
+            
+            case 'voter_left':
+                toast(`👋 ${eventData.voter.username} left the session`, {
+                    duration: 2000,
+                    icon: '🔴'
+                });
+                break;
+            
+            case 'vote_submitted':
+                // This is handled in the general update logic
+                break;
+            
+            case 'vote_changed':
+                toast(`🔄 ${eventData.voter.username} updated their vote`, {
+                    duration: 2000,
+                    icon: '✏️'
+                });
+                break;
+                
+            default:
+                console.log('Unknown voter event:', eventData.event_type);
+        }
+    };
+
+    const setupFallbackPolling = () => {
+        // Clear any existing interval
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+        }
+
+        // Setup polling as fallback
+        const interval = setInterval(() => {
+            if (connectionState.isConnected || voterData?.voting_complete) {
+                return; // Don't poll if connected or voting is complete
+            }
+            
+            console.log('📊 Polling fallback - fetching voter status');
+            fetchVoterStatus(true);
+        }, 15000); // Poll every 15 seconds
+        
+        pollIntervalRef.current = interval;
     };
 
     const updateVoterStatusesFromData = (data) => {
@@ -249,9 +334,21 @@ const VoterStatusPanel = ({
                 if (!voteDetails[voter.id]) {
                     voteDetails[voter.id] = {
                         totalVotes: 1,
-                        lastVotedAt: new Date().toISOString()
+                        lastVotedAt: voter.voted_at || new Date().toISOString()
                     };
                 }
+            });
+        }
+        
+        // Process voter details if available
+        if (data.voter_details) {
+            Object.keys(data.voter_details).forEach(userId => {
+                const details = data.voter_details[userId];
+                votedUserIds.add(parseInt(userId));
+                voteDetails[userId] = {
+                    totalVotes: details.vote_count || 1,
+                    lastVotedAt: details.voted_at || new Date().toISOString()
+                };
             });
         }
         
@@ -270,7 +367,7 @@ const VoterStatusPanel = ({
                     voteCount: voteInfo?.totalVotes || 0,
                     votedAt: hasVoted ? (voteInfo?.lastVotedAt || new Date().toISOString()) : null,
                     lastSeen: new Date().toISOString(),
-                    isOnline: true
+                    isOnline: true // Assume online if we're getting updates
                 };
             });
             
@@ -279,23 +376,34 @@ const VoterStatusPanel = ({
     };
 
     const cleanup = () => {
-        if (eventSourceRef.current) {
-            eventSourceRef.current.close();
+        if (sseManagerRef.current) {
+            console.log('🧹 Cleaning up enhanced voter status SSE Manager...');
+            sseManagerRef.current.destroy();
+            sseManagerRef.current = null;
         }
         if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
-        }
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
+            pollIntervalRef.current = null;
         }
     };
 
     const handleRetry = () => {
         setError(null);
         setLoading(true);
-        setConnectionRetries(0);
         fetchVoterStatus();
-        setupLiveConnection();
+        
+        if (sseManagerRef.current) {
+            sseManagerRef.current.forceReconnect();
+        } else {
+            setupEnhancedLiveConnection();
+        }
+    };
+
+    const forceReconnect = () => {
+        if (sseManagerRef.current) {
+            sseManagerRef.current.forceReconnect();
+            toast.loading('Reconnecting voter status...', { duration: 2000 });
+        }
     };
 
     const getVotingProgress = () => {
@@ -354,16 +462,16 @@ const VoterStatusPanel = ({
             <div className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 ${className}`}>
                 <div className="flex items-center justify-center">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                    <span className="text-white/70 text-sm">Loading voter status...</span>
+                    <span className="text-white/70 text-sm">Loading enhanced voter status...</span>
                 </div>
             </div>
         );
     }
 
-    if (error) {
+    if (error && !voterData) {
         return (
             <div className={`backdrop-blur-xl bg-white/10 border border-red-500/30 rounded-2xl p-6 ${className}`}>
-                <h3 className="text-lg font-bold text-white mb-2">Voter Status</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Enhanced Voter Status</h3>
                 <div className="text-red-300 text-sm mb-3">{error}</div>
                 <button
                     onClick={handleRetry}
@@ -385,18 +493,26 @@ const VoterStatusPanel = ({
 
     return (
         <div className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 ${className}`}>
-            {/* Header */}
+            {/* Enhanced Header */}
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-semibold flex items-center">
                     <span className="text-xl mr-2">👥</span>
-                    Voter Status
+                    Enhanced Voter Status
                 </h3>
                 <div className="flex items-center space-x-2">
                     <div className={`w-2 h-2 rounded-full ${
-                        isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
-                    }`} title={isLiveConnected ? 'Live updates' : 'Polling mode'}></div>
+                        connectionState.isConnected ? 'bg-green-400 animate-pulse' : 
+                        connectionState.isReconnecting ? 'bg-yellow-400 animate-pulse' :
+                        'bg-gray-400'
+                    }`} title={
+                        connectionState.isConnected ? 'Live updates' : 
+                        connectionState.isReconnecting ? 'Reconnecting' :
+                        'Polling mode'
+                    }></div>
                     <span className="text-white/60 text-xs">
-                        {isLiveConnected ? 'Live' : 'Polling'}
+                        {connectionState.isConnected ? 'Live' : 
+                         connectionState.isReconnecting ? 'Reconnecting' :
+                         'Polling'}
                     </span>
                     {voting_complete && (
                         <span className="px-2 py-1 bg-green-500/20 text-green-300 border border-green-500/30 rounded-full text-xs">
@@ -406,13 +522,18 @@ const VoterStatusPanel = ({
                 </div>
             </div>
 
-            {/* Progress Overview */}
+            {/* Enhanced Progress Overview */}
             <div className="mb-6">
                 <div className="text-center mb-4">
                     <div className="text-3xl font-bold text-coral-400 mb-1">
                         {progress.voted || 0}/{progress.total || 0}
                     </div>
                     <div className="text-white/60 text-sm">Votes Collected</div>
+                    {connectionState.updateCount > 0 && (
+                        <div className="text-white/40 text-xs mt-1">
+                            {connectionState.updateCount} live updates
+                        </div>
+                    )}
                 </div>
                 
                 <div className="w-full bg-white/10 rounded-full h-3 mb-2">
@@ -447,7 +568,7 @@ const VoterStatusPanel = ({
 
             {/* Conditional detailed view */}
             {showDetailedView && sortedStatuses.length > 0 ? (
-                /* Detailed Individual Voter View */
+                /* Enhanced Detailed Individual Voter View */
                 <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar">
                     {sortedStatuses.map((status) => (
                         <div 
@@ -508,7 +629,7 @@ const VoterStatusPanel = ({
                                 Recent votes:
                             </p>
                             <div className="flex flex-wrap gap-1">
-                                {recent_voters.slice(0, 3).map(voter => (
+                                {recent_voters.slice(0, 4).map(voter => (
                                     <div key={voter.id} className="flex items-center space-x-1">
                                         <Avatar name={voter.username} size={20} />
                                         <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
@@ -516,9 +637,9 @@ const VoterStatusPanel = ({
                                         </span>
                                     </div>
                                 ))}
-                                {recent_voters.length > 3 && (
+                                {recent_voters.length > 4 && (
                                     <span className="px-2 py-1 bg-white/10 text-white/60 rounded text-xs">
-                                        +{recent_voters.length - 3} more
+                                        +{recent_voters.length - 4} more
                                     </span>
                                 )}
                             </div>
@@ -532,7 +653,7 @@ const VoterStatusPanel = ({
                                 Waiting for:
                             </p>
                             <div className="flex flex-wrap gap-1">
-                                {pending_voters.slice(0, 4).map(voter => (
+                                {pending_voters.slice(0, 5).map(voter => (
                                     <div key={voter.id} className="flex items-center space-x-1">
                                         <Avatar name={voter.username} size={20} />
                                         <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs">
@@ -540,14 +661,29 @@ const VoterStatusPanel = ({
                                         </span>
                                     </div>
                                 ))}
-                                {pending_voters.length > 4 && (
+                                {pending_voters.length > 5 && (
                                     <span className="px-2 py-1 bg-white/10 text-white/60 rounded text-xs">
-                                        +{pending_voters.length - 4} more
+                                        +{pending_voters.length - 5} more
                                     </span>
                                 )}
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Enhanced Connection Status & Actions */}
+            {connectionState.error && !connectionState.isConnected && (
+                <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                    <div className="text-yellow-300 text-sm mb-2">
+                        ⚠️ {connectionState.error}
+                    </div>
+                    <button
+                        onClick={forceReconnect}
+                        className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30 rounded text-xs transition-colors"
+                    >
+                        🔄 Reconnect
+                    </button>
                 </div>
             )}
 
@@ -563,16 +699,23 @@ const VoterStatusPanel = ({
                 </div>
             )}
 
-            {/* Footer Info */}
-            {(lastUpdate || connectionRetries > 0) && (
+            {/* Enhanced Footer Info */}
+            {(connectionState.lastUpdate || connectionState.retryCount > 0 || connectionState.updateCount > 0) && (
                 <div className="mt-4 pt-3 border-t border-white/10">
                     <div className="flex items-center justify-between text-xs text-white/50">
-                        {lastUpdate && (
-                            <span>Last update: {formatTimeAgo(lastUpdate)}</span>
-                        )}
-                        {connectionRetries > 0 && (
+                        <div className="flex items-center space-x-2">
+                            {connectionState.lastUpdate && (
+                                <span>Updated: {formatTimeAgo(connectionState.lastUpdate)}</span>
+                            )}
+                            {connectionState.updateCount > 0 && (
+                                <span className="text-green-400">
+                                    {connectionState.updateCount} updates
+                                </span>
+                            )}
+                        </div>
+                        {connectionState.retryCount > 0 && (
                             <span className="text-yellow-400">
-                                Retried {connectionRetries}x
+                                Retried {connectionState.retryCount}x
                             </span>
                         )}
                     </div>

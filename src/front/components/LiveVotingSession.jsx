@@ -1,41 +1,47 @@
-// src/front/components/LiveVotingSession.jsx
-import React, { useState, useEffect, useRef } from 'react';
+// src/front/components/LiveVotingSession.jsx - Enhanced with SSE Manager
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import GameImage from './GameImage';
+import SSEManager from '../services/sseManager';
 
 const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
     const navigate = useNavigate();
+    
+    // Core state
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [commonGames, setCommonGames] = useState([]);
     const [selectedGames, setSelectedGames] = useState([]);
-    const [liveResults, setLiveResults] = useState([]);
-    const [voterStats, setVoterStats] = useState({ voted: 0, total: 0, percentage: 0 });
     const [hasVoted, setHasVoted] = useState(false);
     const [myVotes, setMyVotes] = useState([]);
     const [votingComplete, setVotingComplete] = useState(false);
     
-    // SSE connection refs
-    const sseRef = useRef(null);
-    const reconnectTimeoutRef = useRef(null);
-    const [connectionStatus, setConnectionStatus] = useState('connecting');
+    // Live voting state
+    const [liveResults, setLiveResults] = useState([]);
+    const [voterStats, setVoterStats] = useState({ voted: 0, total: 0, percentage: 0 });
+    
+    // Enhanced connection state
+    const [connectionState, setConnectionState] = useState({
+        isConnected: false,
+        isReconnecting: false,
+        retryCount: 0,
+        lastUpdate: null,
+        error: null,
+        connectionId: null
+    });
+    
+    // SSE Manager ref
+    const sseManagerRef = useRef(null);
 
     useEffect(() => {
         if (session?.id) {
             initializeSession();
-            setupLiveUpdates();
+            setupEnhancedLiveUpdates();
         }
         
-        return () => {
-            if (sseRef.current) {
-                sseRef.current.close();
-            }
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current);
-            }
-        };
+        return cleanup;
     }, [session?.id]);
 
     const initializeSession = async () => {
@@ -70,86 +76,275 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
             }
 
         } catch (error) {
-            console.error('Error initializing session:', error);
+            console.error('❌ Error initializing session:', error);
             toast.error('Failed to load voting session');
+            setConnectionState(prev => ({ ...prev, error: error.message }));
         } finally {
             setLoading(false);
         }
     };
 
-    const setupLiveUpdates = () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            console.log('🔴 Setting up live voting updates...');
+    const setupEnhancedLiveUpdates = () => {
+        if (!session?.id) return;
+        
+        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        const endpoint = `${backendUrl}/api/gaming/sessions/${session.id}/live-results`;
+        
+        console.log('🚀 Setting up enhanced live voting updates...');
+        
+        // Create SSE Manager with enhanced options
+        const sseManager = new SSEManager(endpoint, {
+            maxRetries: 8,
+            retryDelay: 3000,
+            heartbeatTimeout: 45000,
+            reconnectMultiplier: 1.3,
+            maxReconnectDelay: 30000
+        });
+        
+        sseManagerRef.current = sseManager;
+        
+        // Connection established
+        sseManager.on('connected', (data) => {
+            console.log('✅ Enhanced live voting updates connected');
+            setConnectionState(prev => ({
+                ...prev,
+                isConnected: true,
+                isReconnecting: false,
+                error: null,
+                connectionId: data.connectionId,
+                retryCount: 0
+            }));
             
-            const sseUrl = `${backendUrl}/api/gaming/sessions/${session.id}/live-results`;
-            const eventSource = new EventSource(sseUrl);
-            sseRef.current = eventSource;
-
-            eventSource.onopen = () => {
-                console.log('✅ Live voting updates connected');
-                setConnectionStatus('connected');
-                toast.success('🔴 Live updates active!', { duration: 2000 });
-            };
-
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('📡 Live voting update:', data);
-                    
-                    if (data.heartbeat) {
-                        console.log('💓 Heartbeat received');
-                        return;
-                    }
-                    
-                    handleLiveUpdate(data);
-                    
-                } catch (parseError) {
-                    console.error('Error parsing live update:', parseError);
-                }
-            };
-
-            eventSource.onerror = (error) => {
-                console.error('SSE connection error:', error);
-                setConnectionStatus('disconnected');
-                
-                // Attempt to reconnect
-                reconnectTimeoutRef.current = setTimeout(() => {
-                    console.log('🔄 Attempting to reconnect...');
-                    setupLiveUpdates();
-                }, 5000);
-            };
-
-        } catch (error) {
-            console.error('Failed to setup live updates:', error);
-        }
+            toast.success('🔴 Live updates active!', { 
+                duration: 2000,
+                icon: '📡'
+            });
+        });
+        
+        // Connection lost
+        sseManager.on('disconnected', () => {
+            console.log('📡 Live voting updates disconnected');
+            setConnectionState(prev => ({
+                ...prev,
+                isConnected: false,
+                isReconnecting: false
+            }));
+        });
+        
+        // Reconnection scheduled
+        sseManager.on('reconnectScheduled', (data) => {
+            console.log(`🔄 Reconnecting in ${data.delay}ms (attempt ${data.retryCount})`);
+            setConnectionState(prev => ({
+                ...prev,
+                isReconnecting: true,
+                retryCount: data.retryCount
+            }));
+            
+            if (data.retryCount <= 3) {
+                toast.loading(`Reconnecting... (${data.retryCount}/${data.maxRetries})`, {
+                    duration: data.delay - 500
+                });
+            }
+        });
+        
+        // Data message received
+        sseManager.on('message', handleEnhancedLiveUpdate);
+        
+        // Heartbeat received
+        sseManager.on('heartbeat', (data) => {
+            setConnectionState(prev => ({
+                ...prev,
+                lastUpdate: new Date(data.timestamp).toISOString()
+            }));
+        });
+        
+        // Connection error
+        sseManager.on('error', (data) => {
+            console.error('❌ Live voting connection error:', data);
+            setConnectionState(prev => ({
+                ...prev,
+                error: 'Connection error',
+                retryCount: data.retryCount
+            }));
+        });
+        
+        // Max retries reached
+        sseManager.on('maxRetriesReached', (data) => {
+            console.log('❌ Max reconnection attempts reached');
+            setConnectionState(prev => ({
+                ...prev,
+                isReconnecting: false,
+                error: 'Unable to maintain live connection'
+            }));
+            
+            toast.error('Lost live connection. Results may be delayed.', {
+                duration: 5000,
+                icon: '⚠️'
+            });
+            
+            // Fallback to polling
+            setupPollingFallback();
+        });
+        
+        // Authentication error
+        sseManager.on('authError', () => {
+            console.error('🔐 Authentication error for live updates');
+            toast.error('Authentication expired. Please refresh the page.');
+            setConnectionState(prev => ({
+                ...prev,
+                error: 'Authentication required'
+            }));
+        });
+        
+        // Server error
+        sseManager.on('serverError', (data) => {
+            console.error('🔥 Server error:', data.message);
+            setConnectionState(prev => ({
+                ...prev,
+                error: `Server error: ${data.message}`
+            }));
+        });
+        
+        // Start the connection
+        sseManager.connect();
     };
 
-    const handleLiveUpdate = (data) => {
-        if (data.results) {
-            setLiveResults(data.results);
-        }
+    const handleEnhancedLiveUpdate = useCallback((data) => {
+        console.log('📡 Enhanced live voting update:', data);
         
-        if (data.total_voters !== undefined) {
-            setVoterStats({
-                voted: data.total_voters,
-                total: data.total_members || voterStats.total,
-                percentage: data.total_members > 0 ? (data.total_voters / data.total_members * 100) : 0
+        setConnectionState(prev => ({
+            ...prev,
+            lastUpdate: new Date().toISOString()
+        }));
+        
+        // Update live results
+        if (data.results) {
+            setLiveResults(prevResults => {
+                // Show notification for significant changes
+                if (prevResults.length > 0 && data.results.length > 0) {
+                    const oldLeader = prevResults[0];
+                    const newLeader = data.results[0];
+                    
+                    if (oldLeader && newLeader && oldLeader.game.id !== newLeader.game.id) {
+                        toast.success(`🏆 New leader: ${newLeader.game.name}!`, {
+                            duration: 4000,
+                            icon: '👑'
+                        });
+                    }
+                }
+                
+                return data.results;
             });
         }
         
-        if (data.voting_complete) {
+        // Update voter statistics
+        if (data.total_voters !== undefined) {
+            setVoterStats(prevStats => {
+                const newStats = {
+                    voted: data.total_voters,
+                    total: data.total_members || prevStats.total,
+                    percentage: data.total_members > 0 ? (data.total_voters / data.total_members * 100) : 0
+                };
+                
+                // Show notification for new votes
+                if (prevStats.voted > 0 && newStats.voted > prevStats.voted) {
+                    const newVotes = newStats.voted - prevStats.voted;
+                    toast.success(
+                        `🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}! (${newStats.voted}/${newStats.total})`,
+                        { 
+                            duration: 3000,
+                            icon: '📊'
+                        }
+                    );
+                }
+                
+                return newStats;
+            });
+        }
+        
+        // Handle voting completion
+        if (data.voting_complete && !votingComplete) {
             setVotingComplete(true);
-            toast.success('🏁 Voting complete!', { duration: 4000 });
             
+            toast.success('🏁 Voting complete! Final results ready.', { 
+                duration: 5000,
+                icon: '🎉'
+            });
+            
+            // Show winner if available
+            if (data.winner) {
+                setTimeout(() => {
+                    toast.success(`🏆 Winner: ${data.winner.game.name}!`, {
+                        duration: 6000,
+                        icon: '👑'
+                    });
+                }, 1000);
+            }
+            
+            // Notify parent component
             if (onSessionUpdate) {
                 onSessionUpdate();
             }
+            
+            // Disconnect SSE since voting is complete
+            setTimeout(() => {
+                cleanup();
+            }, 10000); // Keep connection for 10 more seconds for final updates
         }
         
-        if (data.winner) {
-            toast.success(`🏆 Winner: ${data.winner.game.name}!`, { duration: 5000 });
+        // Handle new voter data
+        if (data.new_voter) {
+            toast.success(`${data.new_voter.username} just voted!`, {
+                duration: 3000,
+                icon: '✅'
+            });
         }
+        
+        // Handle voter left
+        if (data.voter_left) {
+            toast(`${data.voter_left.username} left the session`, {
+                duration: 2000,
+                icon: '👋'
+            });
+        }
+    }, [votingComplete, onSessionUpdate]);
+
+    const setupPollingFallback = () => {
+        console.log('📊 Setting up polling fallback...');
+        
+        const pollInterval = setInterval(async () => {
+            if (connectionState.isConnected || votingComplete) {
+                clearInterval(pollInterval);
+                return;
+            }
+            
+            try {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                const response = await authService.authenticatedFetch(
+                    `${backendUrl}/api/gaming/sessions/${session.id}/results`
+                );
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Update with polling data
+                    if (data.results) setLiveResults(data.results);
+                    if (data.total_voters !== undefined) {
+                        setVoterStats({
+                            voted: data.total_voters,
+                            total: data.total_members || 0,
+                            percentage: data.total_members > 0 ? (data.total_voters / data.total_members * 100) : 0
+                        });
+                    }
+                    if (data.voting_complete) setVotingComplete(true);
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        }, 8000); // Poll every 8 seconds
+        
+        // Store interval for cleanup
+        setTimeout(() => clearInterval(pollInterval), 300000); // Stop after 5 minutes
     };
 
     const toggleGameSelection = (gameId) => {
@@ -197,7 +392,24 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
 
             if (response.ok && data.success) {
                 setHasVoted(true);
-                toast.success('🎉 Vote submitted successfully!');
+                setMyVotes(gameVotes);
+                
+                toast.success('🎉 Vote submitted successfully!', {
+                    duration: 4000,
+                    icon: '✅'
+                });
+                
+                // Show vote summary
+                setTimeout(() => {
+                    const summary = selectedGames.map((gameId, index) => {
+                        const game = commonGames.find(g => g.id === gameId);
+                        return `${index + 1}. ${game?.name || 'Unknown'}`;
+                    }).slice(0, 2).join(', ');
+                    
+                    toast.success(`Your votes: ${summary}${selectedGames.length > 2 ? '...' : ''}`, {
+                        duration: 5000
+                    });
+                }, 1000);
                 
                 if (onSessionUpdate) {
                     onSessionUpdate();
@@ -214,28 +426,73 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
         }
     };
 
+    const forceReconnect = () => {
+        if (sseManagerRef.current) {
+            sseManagerRef.current.forceReconnect();
+            toast.loading('Reconnecting...', { duration: 2000 });
+        }
+    };
+
+    const cleanup = () => {
+        if (sseManagerRef.current) {
+            console.log('🧹 Cleaning up SSE Manager...');
+            sseManagerRef.current.destroy();
+            sseManagerRef.current = null;
+        }
+    };
+
+    // Format time ago
+    const formatTimeAgo = (dateString) => {
+        if (!dateString) return '';
+        try {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSecs = Math.floor(diffMs / 1000);
+            
+            if (diffSecs < 60) return 'just now';
+            const diffMins = Math.floor(diffSecs / 60);
+            if (diffMins < 60) return `${diffMins}m ago`;
+            const diffHours = Math.floor(diffMins / 60);
+            return `${diffHours}h ago`;
+        } catch {
+            return '';
+        }
+    };
+
     if (loading) {
         return (
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
                 <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-white">Loading voting session...</p>
+                <p className="text-white">Loading enhanced voting session...</p>
+                <p className="text-white/60 text-sm mt-2">Setting up real-time connections...</p>
             </div>
         );
     }
 
     return (
         <div className="space-y-6">
-            {/* Live Status Header */}
+            {/* Enhanced Live Status Header */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-2xl font-bold text-white flex items-center">
-                        🗳️ Live Voting Session
-                        {connectionStatus === 'connected' && (
-                            <span className="ml-3 flex items-center">
-                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2"></div>
-                                <span className="text-green-300 text-sm">Live</span>
+                        🗳️ Enhanced Live Voting
+                        <div className="ml-3 flex items-center space-x-2">
+                            <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                                connectionState.isConnected ? 'bg-green-400 animate-pulse' : 
+                                connectionState.isReconnecting ? 'bg-yellow-400 animate-pulse' :
+                                'bg-red-400'
+                            }`}></div>
+                            <span className={`text-sm font-medium ${
+                                connectionState.isConnected ? 'text-green-300' :
+                                connectionState.isReconnecting ? 'text-yellow-300' :
+                                'text-red-300'
+                            }`}>
+                                {connectionState.isConnected ? 'Live' :
+                                 connectionState.isReconnecting ? `Reconnecting (${connectionState.retryCount})` :
+                                 'Offline'}
                             </span>
-                        )}
+                        </div>
                     </h2>
                     
                     <div className="text-right">
@@ -243,6 +500,11 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
                             {voterStats.voted}/{voterStats.total}
                         </div>
                         <div className="text-white/60 text-sm">votes collected</div>
+                        {connectionState.lastUpdate && (
+                            <div className="text-white/40 text-xs mt-1">
+                                Updated {formatTimeAgo(connectionState.lastUpdate)}
+                            </div>
+                        )}
                     </div>
                 </div>
                 
@@ -251,19 +513,52 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
                     <p className="text-white/70">{session.description}</p>
                 </div>
                 
-                {/* Progress Bar */}
+                {/* Enhanced Progress Bar */}
                 <div className="w-full bg-white/10 rounded-full h-3 mb-4">
                     <div 
                         className="bg-gradient-to-r from-coral-500 to-marine-500 h-3 rounded-full transition-all duration-500 flex items-center justify-center"
                         style={{ width: `${voterStats.percentage || 0}%` }}
                     >
-                        {voterStats.percentage > 0 && (
+                        {voterStats.percentage > 15 && (
                             <span className="text-white text-xs font-bold">
                                 {Math.round(voterStats.percentage)}%
                             </span>
                         )}
                     </div>
                 </div>
+                
+                {/* Connection Status & Actions */}
+                <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center space-x-4">
+                        <span className="text-white/60">
+                            Status: {connectionState.isConnected ? '✅ Real-time' : 
+                                    connectionState.isReconnecting ? '🔄 Reconnecting...' : 
+                                    '📊 Polling mode'}
+                        </span>
+                        
+                        {connectionState.connectionId && (
+                            <span className="text-white/40 text-xs font-mono">
+                                {connectionState.connectionId.slice(0, 6)}
+                            </span>
+                        )}
+                    </div>
+                    
+                    {connectionState.error && !connectionState.isConnected && (
+                        <button
+                            onClick={forceReconnect}
+                            className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg transition-colors text-xs"
+                        >
+                            🔄 Reconnect
+                        </button>
+                    )}
+                </div>
+                
+                {/* Error Display */}
+                {connectionState.error && (
+                    <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-300 text-sm">
+                        ⚠️ {connectionState.error}
+                    </div>
+                )}
             </div>
 
             {/* Voting Interface */}
@@ -284,7 +579,7 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
                                     onClick={() => toggleGameSelection(game.id)}
                                     className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:scale-105 ${
                                         isSelected 
-                                            ? 'bg-coral-500/20 border-coral-500 shadow-lg' 
+                                            ? 'bg-coral-500/20 border-coral-500 shadow-lg shadow-coral-500/25' 
                                             : 'bg-white/5 border-white/20 hover:border-white/40'
                                     }`}
                                 >
@@ -346,8 +641,8 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
                         <div className="mb-6 p-4 bg-white/5 rounded-lg">
                             <p className="text-white/60 text-sm mb-2">Your votes:</p>
                             {myVotes.map((vote, index) => (
-                                <div key={vote.id} className="text-white/80 text-sm">
-                                    {index + 1}. {vote.game?.name || 'Unknown'} ({vote.priority} points)
+                                <div key={vote.game_id || index} className="text-white/80 text-sm">
+                                    {index + 1}. {vote.game?.name || commonGames.find(g => g.id === vote.game_id)?.name || 'Unknown'} ({vote.priority || (selectedGames.length - index)} points)
                                 </div>
                             ))}
                         </div>
@@ -373,10 +668,21 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
                 </div>
             )}
 
-            {/* Live Results Preview */}
+            {/* Enhanced Live Results Preview */}
             {liveResults.length > 0 && (
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-                    <h3 className="text-lg font-bold text-white mb-4">🏆 Live Results Preview</h3>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold text-white">🏆 Live Results Preview</h3>
+                        <div className={`flex items-center space-x-2 px-2 py-1 rounded-full text-xs ${
+                            connectionState.isConnected ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'
+                        }`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${
+                                connectionState.isConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
+                            }`}></div>
+                            <span>Real-time</span>
+                        </div>
+                    </div>
+                    
                     <div className="space-y-2">
                         {liveResults.slice(0, 3).map((result, index) => (
                             <div key={result.game.id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
