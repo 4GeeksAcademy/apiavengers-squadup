@@ -1,4 +1,4 @@
-// src/front/pages/ResultsPage.jsx - ENHANCED WITH VOTER STATUS
+// src/front/pages/ResultsPage.jsx - FIXED JSON parsing and SSE authentication
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
@@ -14,7 +14,7 @@ const ResultsPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
-    const [groupMembers, setGroupMembers] = useState([]); // NEW: Store group members
+    const [groupMembers, setGroupMembers] = useState([]);
     
     // Real-time connection state
     const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -22,35 +22,28 @@ const ResultsPage = () => {
     const eventSourceRef = useRef(null);
     const pollIntervalRef = useRef(null);
 
-    // Add debugging on component mount
     useEffect(() => {
         console.log('🏆 ResultsPage: Component mounted for session:', sessionId);
         console.log('🏆 ResultsPage: Current user:', authService.getCurrentUser()?.username);
         console.log('🏆 ResultsPage: Auth status:', authService.isAuthenticated());
     }, [sessionId]);
 
-    // Initialize both SSE and fallback polling
     useEffect(() => {
         if (!sessionId) return;
 
-        // Initial fetch
         fetchResults();
-        
-        // Try to establish SSE connection first
         setupServerSentEvents();
         
-        // Setup fallback polling (only if SSE fails)
         const pollInterval = setInterval(() => {
             if (!isLiveConnected) {
                 console.log('📡 SSE not connected, falling back to polling...');
-                fetchResults(true); // Silent refresh
+                fetchResults(true);
             }
-        }, 8000); // Poll every 8 seconds as fallback
+        }, 8000);
         
         pollIntervalRef.current = pollInterval;
         
         return () => {
-            // Cleanup
             if (eventSourceRef.current) {
                 console.log('🔌 Closing SSE connection...');
                 eventSourceRef.current.close();
@@ -61,7 +54,7 @@ const ResultsPage = () => {
         };
     }, [sessionId]);
 
-    // NEW: Enhanced SSE with voter notifications
+    // 🔧 FIXED: SSE with token-based authentication
     const setupServerSentEvents = () => {
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
@@ -74,7 +67,8 @@ const ResultsPage = () => {
 
             console.log('🔌 Setting up SSE connection for session:', sessionId);
             
-            const sseUrl = `${backendUrl}/api/gaming/sessions/${sessionId}/live-results`;
+            // 🔧 FIX: Use token-based authentication for SSE
+            const sseUrl = `${backendUrl}/api/gaming/sessions/${sessionId}/live-results?token=${encodeURIComponent(token)}`;
             const eventSource = new EventSource(sseUrl);
             eventSourceRef.current = eventSource;
 
@@ -93,13 +87,18 @@ const ResultsPage = () => {
                     const data = JSON.parse(event.data);
                     console.log('📡 SSE update received:', data);
                     
+                    // 🔧 FIX: Handle heartbeat messages
+                    if (data.heartbeat) {
+                        console.log('💓 Heartbeat received');
+                        return;
+                    }
+                    
                     if (data.error) {
                         console.error('❌ SSE Error:', data.error);
                         setError(data.error);
                         return;
                     }
 
-                    // Update results in real-time
                     setResults(prevResults => {
                         const newResults = {
                             ...prevResults,
@@ -109,38 +108,11 @@ const ResultsPage = () => {
                             voting_complete: data.voting_complete
                         };
 
-                        // NEW: Enhanced vote notifications with voter name
                         if (prevResults && data.total_voters > (prevResults.total_voters || 0)) {
                             const newVotes = data.total_voters - (prevResults.total_voters || 0);
-                            
-                            // Try to get the voter name from the session data
-                            let voterName = 'Someone';
-                            try {
-                                const sessionData = prevResults.session;
-                                if (sessionData && sessionData.vote_results) {
-                                    const voteResults = JSON.parse(sessionData.vote_results);
-                                    const voters = Object.values(voteResults.voters || {});
-                                    if (voters.length > 0) {
-                                        const latestVoter = voters[voters.length - 1];
-                                        voterName = latestVoter.username || 'Someone';
-                                    }
-                                }
-                            } catch (e) {
-                                console.log('Could not determine voter name:', e);
-                            }
-
-                            // Show enhanced notification
-                            toast.success(
-                                <div className="vote-notification">
-                                    <strong>{voterName}</strong> just voted! 
-                                    <br />
-                                    <small>{data.total_voters}/{data.total_members} votes cast</small>
-                                </div>,
-                                { duration: 4000 }
-                            );
+                            toast.success(`🗳️ ${newVotes} new vote${newVotes !== 1 ? 's' : ''}! (${data.total_voters}/${data.total_members})`, { duration: 3000 });
                         }
 
-                        // Notify when voting completes
                         if (!prevResults?.voting_complete && data.voting_complete) {
                             toast.success('🏁 Voting completed! Final results ready.', { duration: 5000 });
                         }
@@ -151,7 +123,6 @@ const ResultsPage = () => {
                     setLiveUpdateCount(prev => prev + 1);
                     setLoading(false);
 
-                    // Close SSE connection if voting is complete
                     if (data.voting_complete) {
                         console.log('🏁 Voting complete, closing SSE connection');
                         eventSource.close();
@@ -183,7 +154,6 @@ const ResultsPage = () => {
         }
     };
 
-    // NEW: Enhanced fetchResults with group members
     const fetchResults = async (silent = false) => {
         if (!silent) setLoading(true);
         if (silent) setRefreshing(true);
@@ -198,7 +168,6 @@ const ResultsPage = () => {
                 setResults(data);
                 setError(null);
                 
-                // NEW: Fetch group members for voter status
                 if (data.session?.group_id) {
                     fetchGroupMembers(data.session.group_id);
                 }
@@ -231,7 +200,6 @@ const ResultsPage = () => {
         }
     };
 
-    // NEW: Fetch group members
     const fetchGroupMembers = async (groupId) => {
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
@@ -246,14 +214,9 @@ const ResultsPage = () => {
         }
     };
 
-    // NEW: Send reminder function (placeholder)
     const handleSendReminder = async (voterId) => {
-        // This would integrate with your notification system
         console.log('Sending reminder to voter:', voterId);
         toast.success('Reminder sent!', { duration: 2000 });
-        
-        // In a real implementation, you might call an API like:
-        // await authService.authenticatedFetch(`/api/gaming/sessions/${sessionId}/remind/${voterId}`, { method: 'POST' });
     };
 
     const handleBackToGroup = () => {
@@ -319,14 +282,34 @@ const ResultsPage = () => {
         }
     };
 
-    // NEW: Calculate pending voters
+    // 🔧 FIXED: Safe JSON parsing for pending voters
     const getPendingVoters = () => {
         if (!results || !groupMembers.length) return [];
         
-        const voteResults = JSON.parse(results.session?.vote_results || '{}');
-        const voters = voteResults.voters || {};
-        
-        return groupMembers.filter(member => !voters[member.id.toString()]);
+        try {
+            // Handle both string and object formats safely
+            let voteResults = {};
+            
+            if (results.session?.vote_results) {
+                if (typeof results.session.vote_results === 'string') {
+                    try {
+                        voteResults = JSON.parse(results.session.vote_results);
+                    } catch (parseError) {
+                        console.warn('Could not parse vote_results JSON:', parseError);
+                        voteResults = {};
+                    }
+                } else if (typeof results.session.vote_results === 'object') {
+                    voteResults = results.session.vote_results;
+                }
+            }
+            
+            const voters = voteResults.voters || {};
+            return groupMembers.filter(member => !voters[member.id.toString()]);
+            
+        } catch (error) {
+            console.error('Error calculating pending voters:', error);
+            return [];
+        }
     };
 
     if (loading) {
@@ -388,7 +371,6 @@ const ResultsPage = () => {
                                     {results?.total_voters || 0} of {results?.total_members || 0} members have voted
                                 </div>
                                 
-                                {/* Live connection status */}
                                 <div className="mb-4 flex items-center justify-center space-x-2">
                                     <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
                                     <span className="text-white/60 text-xs">
@@ -396,7 +378,6 @@ const ResultsPage = () => {
                                     </span>
                                 </div>
                                 
-                                {/* Progress bar */}
                                 {results && results.total_members > 0 && (
                                     <div className="w-full bg-white/10 rounded-full h-2 mb-4">
                                         <div 
@@ -425,19 +406,12 @@ const ResultsPage = () => {
                             </div>
                         </div>
 
-                        {/* NEW: Sidebar with voter status and reminders */}
+                        {/* Sidebar with voter status */}
                         <div className="space-y-6">
-                            {groupMembers.length > 0 && (
+                            {sessionId && (
                                 <VoterStatusPanel 
-                                    session={results?.session} 
-                                    groupMembers={groupMembers} 
-                                />
-                            )}
-                            
-                            {pendingVoters.length > 0 && !results?.voting_complete && (
-                                <VotingReminders 
-                                    pendingVoters={pendingVoters}
-                                    onSendReminder={handleSendReminder}
+                                    sessionId={sessionId}
+                                    groupId={results?.session?.group_id}
                                 />
                             )}
                         </div>
@@ -448,7 +422,6 @@ const ResultsPage = () => {
     }
 
     const { session, results: gameResults, winner, total_voters, total_members, voting_complete } = results;
-    const pendingVoters = getPendingVoters();
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
@@ -469,7 +442,6 @@ const ResultsPage = () => {
                         {total_voters} of {total_members} squad members voted
                     </div>
                     
-                    {/* Session status */}
                     <div className="mt-3 flex items-center justify-center space-x-4 flex-wrap">
                         {voting_complete ? (
                             <div className="px-4 py-2 bg-green-500/20 text-green-300 border border-green-500/30 rounded-full text-sm">
@@ -481,7 +453,6 @@ const ResultsPage = () => {
                             </div>
                         )}
                         
-                        {/* Live connection indicator */}
                         <div className={`px-3 py-1 rounded-full text-xs flex items-center space-x-2 ${
                             isLiveConnected 
                                 ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
@@ -498,7 +469,6 @@ const ResultsPage = () => {
                         )}
                     </div>
                     
-                    {/* Progress bar */}
                     <div className="mt-4 max-w-md mx-auto">
                         <div className="w-full bg-white/10 rounded-full h-3">
                             <div 
@@ -536,50 +506,6 @@ const ResultsPage = () => {
                                     fallbackText={winner.game.name}
                                     className="w-full max-w-md mx-auto h-48 object-cover rounded-xl shadow-2xl"
                                 />
-                                
-                                {/* Winner details */}
-                                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 max-w-lg mx-auto">
-                                    <div className="bg-white/10 rounded-lg p-3">
-                                        <div className="text-yellow-400 font-bold text-lg">{winner.total_points}</div>
-                                        <div className="text-white/70 text-sm">Total Points</div>
-                                    </div>
-                                    <div className="bg-white/10 rounded-lg p-3">
-                                        <div className="text-yellow-400 font-bold text-lg">{winner.vote_count}</div>
-                                        <div className="text-white/70 text-sm">Votes Cast</div>
-                                    </div>
-                                    <div className="bg-white/10 rounded-lg p-3">
-                                        <div className="text-yellow-400 font-bold text-lg">{winner.average_score.toFixed(1)}</div>
-                                        <div className="text-white/70 text-sm">Avg Score</div>
-                                    </div>
-                                </div>
-                                
-                                <div className="mt-6">
-                                    <button 
-                                        onClick={() => toast.success('Game session feature coming soon!')}
-                                        className="px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-xl shadow-lg transition-all duration-300 transform hover:-translate-y-1"
-                                    >
-                                        🚀 Launch Game Session
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Current leader (if voting not complete) */}
-                        {!voting_complete && gameResults.length > 0 && (
-                            <div className="backdrop-blur-xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-3xl p-6 mb-8 text-center">
-                                <h3 className="text-xl font-bold text-white mb-2">Current Leader</h3>
-                                <div className="flex items-center justify-center space-x-4">
-                                    <GameImage 
-                                        src={gameResults[0].game.header_image} 
-                                        alt={gameResults[0].game.name}
-                                        fallbackText={gameResults[0].game.name}
-                                        className="w-16 h-10 object-cover rounded-lg"
-                                    />
-                                    <div>
-                                        <div className="text-white font-bold">{gameResults[0].game.name}</div>
-                                        <div className="text-white/70 text-sm">{gameResults[0].total_points} points</div>
-                                    </div>
-                                </div>
                             </div>
                         )}
 
@@ -597,7 +523,6 @@ const ResultsPage = () => {
                                         </div>
                                     )}
                                     
-                                    {/* Enhanced action buttons */}
                                     <div className="flex space-x-2">
                                         <button
                                             onClick={handleManualRefresh}
@@ -638,12 +563,10 @@ const ResultsPage = () => {
                                             }`}
                                         >
                                             <div className="flex items-center space-x-4">
-                                                {/* Rank */}
                                                 <div className={`flex-shrink-0 w-16 h-16 rounded-full bg-gradient-to-r ${getPlaceColor(index)} flex items-center justify-center text-white font-bold text-xl shadow-lg`}>
                                                     {getPlaceEmoji(index)}
                                                 </div>
                                                 
-                                                {/* Game Image */}
                                                 <GameImage 
                                                     src={result.game.header_image} 
                                                     alt={result.game.name}
@@ -651,7 +574,6 @@ const ResultsPage = () => {
                                                     className="w-24 h-14 object-cover rounded-lg flex-shrink-0"
                                                 />
                                                 
-                                                {/* Game Info */}
                                                 <div className="flex-1 min-w-0">
                                                     <h4 className="text-white font-bold text-lg truncate flex items-center">
                                                         {result.game.name}
@@ -661,23 +583,8 @@ const ResultsPage = () => {
                                                     <p className="text-white/60 text-sm line-clamp-2">
                                                         {result.game.short_description || 'No description available'}
                                                     </p>
-                                                    {result.game.genres && result.game.genres.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1 mt-2">
-                                                            {result.game.genres.slice(0, 3).map(genre => (
-                                                                <span key={genre} className="px-2 py-1 bg-white/20 rounded text-xs text-white/80">
-                                                                    {genre}
-                                                                </span>
-                                                            ))}
-                                                            {result.game.genres.length > 3 && (
-                                                                <span className="px-2 py-1 bg-white/20 rounded text-xs text-white/60">
-                                                                    +{result.game.genres.length - 3}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </div>
                                                 
-                                                {/* Stats */}
                                                 <div className="flex-shrink-0 text-right">
                                                     <div className="text-2xl font-bold text-white mb-1">
                                                         {result.total_points} pts
@@ -688,13 +595,6 @@ const ResultsPage = () => {
                                                     <div className="text-white/50 text-xs mt-1">
                                                         Avg: {result.average_score.toFixed(1)}
                                                     </div>
-                                                    {result.game.multiplayer && (
-                                                        <div className="mt-1">
-                                                            <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
-                                                                Multiplayer
-                                                            </span>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -704,21 +604,12 @@ const ResultsPage = () => {
                         </div>
                     </div>
 
-                    {/* NEW: Enhanced Sidebar */}
+                    {/* Sidebar */}
                     <div className="space-y-6">
-                        {/* Voter Status Panel */}
-                        {groupMembers.length > 0 && (
+                        {sessionId && (
                             <VoterStatusPanel 
-                                session={session} 
-                                groupMembers={groupMembers} 
-                            />
-                        )}
-                        
-                        {/* Voting Reminders (only if voting not complete) */}
-                        {pendingVoters.length > 0 && !voting_complete && (
-                            <VotingReminders 
-                                pendingVoters={pendingVoters}
-                                onSendReminder={handleSendReminder}
+                                sessionId={sessionId}
+                                groupId={session?.group_id}
                             />
                         )}
                     </div>
@@ -749,41 +640,6 @@ const ResultsPage = () => {
                             {refreshing ? '⏳ Refreshing...' : '🔄 Refresh Results'}
                         </button>
                     )}
-                </div>
-
-                {/* Voting Info */}
-                <div className="mt-8 backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6">
-                    <h4 className="text-white font-semibold mb-4 text-center">How Voting Works</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-white/70 mb-4">
-                        <div className="text-center">
-                            <div className="text-2xl mb-2">🥇</div>
-                            <div className="font-semibold text-white mb-1">1st Choice</div>
-                            <div>3 points each</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-2xl mb-2">🥈</div>
-                            <div className="font-semibold text-white mb-1">2nd Choice</div>
-                            <div>2 points each</div>
-                        </div>
-                        <div className="text-center">
-                            <div className="text-2xl mb-2">🥉</div>
-                            <div className="font-semibold text-white mb-1">3rd Choice</div>
-                            <div>1 point each</div>
-                        </div>
-                    </div>
-                    <div className="text-center">
-                        <p className="text-white/60 text-sm">
-                            🏆 The game with the most total points wins! In case of a tie, the game with more votes takes priority.
-                        </p>
-                        {session && (
-                            <p className="text-white/50 text-xs mt-2">
-                                Session ID: {session.id} • Created: {formatTimeAgo(session.created_at)}
-                                {liveUpdateCount > 0 && (
-                                    <span> • {liveUpdateCount} live updates received</span>
-                                )}
-                            </p>
-                        )}
-                    </div>
                 </div>
             </div>
         </div>

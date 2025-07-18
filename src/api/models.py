@@ -1,7 +1,7 @@
-# src/api/models.py - ENHANCED with Vote model for production-ready voting
+# src/api/models.py - COMPLETE ENHANCED VERSION with Vote model and live voting support
 
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey, UniqueConstraint, CheckConstraint
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey, UniqueConstraint, CheckConstraint, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 import json
@@ -39,23 +39,32 @@ class User(db.Model):
     last_login: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
 
+    # Steam integration fields
     steam_id: Mapped[str] = mapped_column(String(17), nullable=True, unique=True)
     steam_username: Mapped[str] = mapped_column(String(100), nullable=True)
     steam_avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
     steam_profile_url: Mapped[str] = mapped_column(String(300), nullable=True)
-    is_steam_connected: Mapped[bool] = mapped_column(Boolean(), default=False)
+    steam_connected: Mapped[bool] = mapped_column(Boolean(), default=False)
+    is_steam_connected: Mapped[bool] = mapped_column(Boolean(), default=False)  # Alias for compatibility
     steam_library_synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    
+    # Gaming preferences
     gaming_preferences: Mapped[str] = mapped_column(Text, nullable=True)
     favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
+    
+    # 🚀 Enhanced gaming statistics
+    total_games: Mapped[int] = mapped_column(Integer, default=0)
+    total_votes_cast: Mapped[int] = mapped_column(Integer, default=0)
+    favorite_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
+    gaming_activity_level: Mapped[str] = mapped_column(String(20), default='moderate')  # casual, moderate, hardcore
 
     # Relationships
     owned_games = relationship('SteamGame', secondary=user_games, back_populates='owners')
     member_of_groups = relationship('GamingGroup', secondary=group_members, back_populates='members')
     created_groups = relationship('GamingGroup', back_populates='creator', foreign_keys='GamingGroup.creator_id')
-    
-    # 🚀 NEW: Vote relationship
     votes = relationship('Vote', back_populates='user', cascade='all, delete-orphan')
+    favorite_game = relationship('SteamGame', foreign_keys=[favorite_game_id])
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -73,12 +82,26 @@ class User(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "is_active": self.is_active,
-            "steam_connected": self.is_steam_connected,
+            "steam_connected": self.steam_connected or self.is_steam_connected,
             "steam_username": self.steam_username,
             "steam_avatar": self.steam_avatar_url,
             "gaming_style": self.gaming_style,
             "favorite_genres": json.loads(self.favorite_genres) if self.favorite_genres else [],
-            "total_games": len(self.owned_games) if self.owned_games else 0
+            "total_games": self.total_games or len(self.owned_games) if self.owned_games else 0,
+            "total_votes_cast": self.total_votes_cast,
+            "gaming_activity_level": self.gaming_activity_level
+        }
+
+    def get_voting_stats(self):
+        """Get user's voting statistics"""
+        total_votes = len(self.votes)
+        unique_sessions = len(set(vote.session_id for vote in self.votes))
+        
+        return {
+            "total_votes_cast": total_votes,
+            "sessions_participated": unique_sessions,
+            "average_votes_per_session": round(total_votes / unique_sessions, 1) if unique_sessions > 0 else 0,
+            "favorite_game": self.favorite_game.serialize() if self.favorite_game else None
         }
 
 class SteamGame(db.Model):
@@ -103,9 +126,8 @@ class SteamGame(db.Model):
     
     # Relationships
     owners = relationship('User', secondary=user_games, back_populates='owned_games')
-    
-    # 🚀 NEW: Vote relationship
     votes = relationship('Vote', back_populates='game', cascade='all, delete-orphan')
+    won_sessions = relationship('GameSession', back_populates='winner_game', foreign_keys='GameSession.winner_game_id')
 
     def serialize(self):
         return {
@@ -142,6 +164,12 @@ class GamingGroup(db.Model):
     preferred_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
     
+    # 🚀 Enhanced group statistics and settings
+    total_sessions: Mapped[int] = mapped_column(Integer, default=0)
+    active_sessions: Mapped[int] = mapped_column(Integer, default=0)
+    default_auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)
+    allow_member_create_sessions: Mapped[bool] = mapped_column(Boolean(), default=True)
+    
     # Relationships
     creator = relationship('User', back_populates='created_groups', foreign_keys=[creator_id])
     members = relationship('User', secondary=group_members, back_populates='member_of_groups')
@@ -160,8 +188,68 @@ class GamingGroup(db.Model):
             "creator": self.creator.serialize() if self.creator else {"username": "Deleted User", "id": None},
             "members": [member.serialize() for member in self.members] if self.members else [],
             "preferred_genres": json.loads(self.preferred_genres) if self.preferred_genres else [],
-            "gaming_style": self.gaming_style
+            "gaming_style": self.gaming_style,
+            "total_sessions": self.total_sessions,
+            "active_sessions": self.active_sessions,
+            "default_auto_complete_threshold": self.default_auto_complete_threshold,
+            "allow_member_create_sessions": self.allow_member_create_sessions
         }
+
+    def get_group_stats(self):
+        """Get comprehensive group statistics"""
+        completed_sessions = len([s for s in self.sessions if s.status == 'completed'])
+        total_votes = sum(len(s.votes) for s in self.sessions)
+        
+        return {
+            "total_sessions": len(self.sessions),
+            "completed_sessions": completed_sessions,
+            "active_sessions": len([s for s in self.sessions if s.status == 'voting']),
+            "total_votes_cast": total_votes,
+            "average_participation": self.get_average_participation(),
+            "most_popular_games": self.get_most_voted_games()
+        }
+    
+    def get_average_participation(self):
+        """Calculate average member participation across sessions"""
+        if not self.sessions:
+            return 0
+        
+        participation_rates = []
+        for session in self.sessions:
+            if session.status == 'completed':
+                voter_count = Vote.get_voter_count(session.id)
+                member_count = len(self.members)
+                if member_count > 0:
+                    participation_rates.append(voter_count / member_count * 100)
+        
+        return round(sum(participation_rates) / len(participation_rates), 1) if participation_rates else 0
+    
+    def get_most_voted_games(self, limit=5):
+        """Get most popular games based on votes in this group"""
+        from sqlalchemy import func
+        
+        game_votes = db.session.query(
+            SteamGame.id,
+            SteamGame.name,
+            func.count(Vote.id).label('vote_count'),
+            func.sum(Vote.priority).label('total_points')
+        ).join(Vote).join(GameSession).filter(
+            GameSession.group_id == self.id
+        ).group_by(
+            SteamGame.id
+        ).order_by(
+            func.sum(Vote.priority).desc()
+        ).limit(limit).all()
+        
+        return [
+            {
+                "game_id": game_id,
+                "name": name,
+                "vote_count": vote_count,
+                "total_points": total_points
+            }
+            for game_id, name, vote_count, total_points in game_votes
+        ]
 
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -173,16 +261,24 @@ class GameSession(db.Model):
     description: Mapped[str] = mapped_column(Text, nullable=True)
     scheduled_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default='planning')
+    status: Mapped[str] = mapped_column(String(20), default='planning')  # planning, voting, completed, cancelled
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    vote_results: Mapped[str] = mapped_column(Text, nullable=True)
+    vote_results: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string for backwards compatibility
+    
+    # 🚀 ENHANCED LIVE VOTING FIELDS:
+    auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)  # Auto-complete at 80%
+    max_choices: Mapped[int] = mapped_column(Integer, default=3)  # Max games per vote
+    winner_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
+    winner_votes: Mapped[int] = mapped_column(Integer, default=0)
+    winner_points: Mapped[int] = mapped_column(Integer, default=0)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    votable_games: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string of available games
     
     # Relationships
     group = relationship('GamingGroup', back_populates='sessions')
-    game = relationship('SteamGame')
-    
-    # 🚀 NEW: Vote relationship
+    game = relationship('SteamGame', foreign_keys=[game_id])
+    winner_game = relationship('SteamGame', foreign_keys=[winner_game_id])
     votes = relationship('Vote', back_populates='session', cascade='all, delete-orphan')
 
     def serialize(self):
@@ -196,12 +292,20 @@ class GameSession(db.Model):
             "duration_minutes": self.duration_minutes,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "vote_results": json.loads(self.vote_results) if self.vote_results else {},
-            # 🚀 NEW: Include vote count
-            "vote_count": len(self.votes) if self.votes else 0
+            "vote_count": len(self.votes) if self.votes else 0,
+            # 🚀 ENHANCED FIELDS:
+            "auto_complete_threshold": self.auto_complete_threshold,
+            "max_choices": self.max_choices,
+            "winner_game": self.winner_game.serialize() if self.winner_game else None,
+            "winner_votes": self.winner_votes,
+            "winner_points": self.winner_points,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "votable_games": json.loads(self.votable_games) if self.votable_games else []
         }
 
-# 🚀 NEW: Vote Model for Atomic Vote Storage
+# 🚀 ENHANCED VOTE MODEL for Atomic Vote Storage
 class Vote(db.Model):
     """
     Individual vote records for atomic, race-condition-free vote storage.
@@ -377,3 +481,81 @@ def get_session_summary(session_id):
         "voting_complete": voting_complete,
         "voter_participation": (total_voters / total_members * 100) if total_members > 0 else 0
     }
+
+def get_live_session_stats(session_id):
+    """
+    Get real-time session statistics for SSE broadcasting
+    
+    Returns:
+        Dict with comprehensive session stats for live updates
+    """
+    session = GameSession.query.get(session_id)
+    if not session:
+        return None
+    
+    # Get vote statistics
+    total_voters = Vote.get_voter_count(session_id)
+    total_members = len(session.group.members) if session.group else 0
+    
+    # Calculate completion percentage
+    completion_percentage = (total_voters / total_members * 100) if total_members > 0 else 0
+    
+    # Check if should auto-complete
+    should_auto_complete = (
+        session.status == 'voting' and
+        completion_percentage >= (session.auto_complete_threshold * 100) and
+        total_voters >= 2
+    )
+    
+    # Get current results
+    results = Vote.get_session_results(session_id)
+    
+    return {
+        "session_id": session_id,
+        "status": session.status,
+        "total_voters": total_voters,
+        "total_members": total_members,
+        "completion_percentage": round(completion_percentage, 1),
+        "should_auto_complete": should_auto_complete,
+        "auto_complete_threshold": session.auto_complete_threshold,
+        "max_choices": session.max_choices,
+        "results": results,
+        "winner": results[0] if results and session.status == 'completed' else None,
+        "voting_complete": session.status == 'completed',
+        "last_updated": session.updated_at.isoformat() if session.updated_at else None
+    }
+
+def auto_complete_session_if_ready(session_id):
+    """
+    Check if session should be auto-completed and complete it if ready
+    
+    Returns:
+        Tuple of (was_completed: bool, session_stats: dict)
+    """
+    session = GameSession.query.get(session_id)
+    if not session or session.status != 'voting':
+        return False, None
+    
+    stats = get_live_session_stats(session_id)
+    
+    if stats and stats['should_auto_complete']:
+        # Auto-complete the session
+        session.status = 'completed'
+        session.completed_at = datetime.utcnow()
+        session.updated_at = datetime.utcnow()
+        
+        # Set winner information
+        results = stats['results']
+        if results:
+            winner = results[0]
+            session.winner_game_id = winner['game']['id']
+            session.winner_votes = winner['vote_count']
+            session.winner_points = winner['total_points']
+        
+        db.session.commit()
+        
+        # Return updated stats
+        updated_stats = get_live_session_stats(session_id)
+        return True, updated_stats
+    
+    return False, stats

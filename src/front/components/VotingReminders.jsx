@@ -1,196 +1,300 @@
-// src/front/components/VotingReminders.jsx - NEW COMPONENT
+// src/front/components/VotingReminders.jsx - ENHANCED for Live Voting
 import React, { useState, useEffect } from 'react';
-import Avatar from './Avatar';
+import { useNavigate } from 'react-router-dom';
+import authService from '../store/authService';
+import toast from 'react-hot-toast';
 
-const VotingReminders = ({ 
-    pendingVoters = [], 
-    timeRemaining = null, 
-    onSendReminder = null,
-    className = "" 
-}) => {
-    const [remindersSent, setRemindersSent] = useState(new Set());
-    const [timeLeft, setTimeLeft] = useState(timeRemaining);
+const VotingReminders = ({ groupId }) => {
+    const navigate = useNavigate();
+    const [sessions, setSessions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-    // Update time left every minute
     useEffect(() => {
-        if (!timeRemaining) return;
+        if (groupId) {
+            fetchRecentSessions();
+        }
+    }, [groupId]);
 
-        const interval = setInterval(() => {
-            setTimeLeft(prev => {
-                if (prev && prev > 60000) { // More than 1 minute left
-                    return prev - 60000;
-                } else {
-                    clearInterval(interval);
-                    return 0;
-                }
-            });
-        }, 60000); // Update every minute
-
-        return () => clearInterval(interval);
-    }, [timeRemaining]);
-
-    const formatTimeRemaining = (ms) => {
-        if (!ms || ms <= 0) return null;
-        
-        const minutes = Math.floor(ms / 60000);
-        const hours = Math.floor(minutes / 60);
-        const days = Math.floor(hours / 24);
-
-        if (days > 0) return `${days}d ${hours % 24}h remaining`;
-        if (hours > 0) return `${hours}h ${minutes % 60}m remaining`;
-        if (minutes > 0) return `${minutes}m remaining`;
-        return 'Less than 1m remaining';
-    };
-
-    const handleSendReminder = async (voterId) => {
-        if (onSendReminder) {
-            try {
-                await onSendReminder(voterId);
-                setRemindersSent(prev => new Set([...prev, voterId]));
-            } catch (error) {
-                console.error('Failed to send reminder:', error);
+    const fetchRecentSessions = async () => {
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const response = await authService.authenticatedFetch(
+                `${backendUrl}/api/gaming/groups/${groupId}/sessions?limit=5&include_stats=true`
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                setSessions(data.sessions || []);
+                setError(null);
+            } else {
+                const errorData = await response.json();
+                setError(errorData.error || 'Failed to load sessions');
             }
+        } catch (error) {
+            console.error('Error fetching sessions:', error);
+            setError('Network error loading sessions');
+        } finally {
+            setLoading(false);
         }
     };
 
-    const getUrgencyLevel = () => {
-        if (!timeLeft) return 'normal';
-        
-        const hours = timeLeft / (1000 * 60 * 60);
-        if (hours < 1) return 'urgent';
-        if (hours < 6) return 'warning';
-        return 'normal';
+    const handleViewResults = (sessionId) => {
+        navigate(`/sessions/${sessionId}/results`);
     };
 
-    const urgency = getUrgencyLevel();
-    const formattedTime = formatTimeRemaining(timeLeft);
+    const handleJoinActiveSession = (sessionId) => {
+        // Navigate to group page and highlight the active session
+        navigate(`/groups/${groupId}`, { 
+            state: { 
+                activeSessionId: sessionId,
+                highlightVoting: true 
+            } 
+        });
+        toast.success('Navigate to the voting section to participate!');
+    };
 
-    if (pendingVoters.length === 0) return null;
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'voting': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+            case 'completed': return 'bg-green-500/20 text-green-300 border-green-500/30';
+            case 'cancelled': return 'bg-red-500/20 text-red-300 border-red-500/30';
+            default: return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+        }
+    };
+
+    const getStatusIcon = (status) => {
+        switch (status) {
+            case 'voting': return '🔴';
+            case 'completed': return '✅';
+            case 'cancelled': return '❌';
+            default: return '⏸️';
+        }
+    };
+
+    const formatTimeAgo = (dateString) => {
+        if (!dateString) return 'Unknown';
+        
+        try {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours}h ago`;
+            
+            const diffDays = Math.floor(diffHours / 24);
+            if (diffDays < 7) return `${diffDays}d ago`;
+            
+            return date.toLocaleDateString();
+        } catch (error) {
+            return 'Unknown';
+        }
+    };
+
+    const getWinnerInfo = (session) => {
+        if (!session.winner_game) return null;
+        
+        return {
+            name: session.winner_game.name,
+            votes: session.winner_votes || 0,
+            points: session.winner_points || 0
+        };
+    };
+
+    if (loading) {
+        return (
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                <div className="flex items-center justify-center">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                    <span className="text-white/70 text-sm">Loading session history...</span>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="backdrop-blur-xl bg-white/10 border border-red-500/30 rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-white mb-2">Session History</h3>
+                <div className="text-red-300 text-sm mb-3">{error}</div>
+                <button
+                    onClick={fetchRecentSessions}
+                    className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition-colors"
+                >
+                    🔄 Retry
+                </button>
+            </div>
+        );
+    }
+
+    if (sessions.length === 0) {
+        return (
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-white mb-4 flex items-center">
+                    <span className="text-xl mr-2">📊</span>
+                    Session History
+                </h3>
+                <div className="text-center py-4">
+                    <div className="text-4xl mb-2">🗳️</div>
+                    <p className="text-white/70 text-sm">No voting sessions yet</p>
+                    <p className="text-white/50 text-xs mt-1">Start your first vote to see history here</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 ${className}`}>
+        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
-                <h4 className="text-white font-semibold flex items-center">
-                    <span className="text-xl mr-2">⏰</span>
-                    Waiting for Votes
-                </h4>
-                {formattedTime && (
-                    <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        urgency === 'urgent' 
-                            ? 'bg-red-500/20 text-red-300 border border-red-500/30 animate-pulse' 
-                            : urgency === 'warning'
-                            ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-                            : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                    }`}>
-                        {formattedTime}
-                    </div>
-                )}
+                <h3 className="text-lg font-bold text-white flex items-center">
+                    <span className="text-xl mr-2">📊</span>
+                    Recent Sessions
+                </h3>
+                <button
+                    onClick={fetchRecentSessions}
+                    className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white/70 hover:text-white rounded-lg text-xs transition-colors"
+                    title="Refresh sessions"
+                >
+                    🔄
+                </button>
             </div>
-
-            {/* Time Warning */}
-            {urgency === 'urgent' && (
-                <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
-                    <div className="flex items-center space-x-2">
-                        <span className="text-red-400 text-lg animate-pulse">🚨</span>
-                        <div>
-                            <p className="text-red-300 font-semibold text-sm">Voting closes soon!</p>
-                            <p className="text-red-200 text-xs">Encourage your squad to vote now.</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Pending Voters List */}
+            
             <div className="space-y-3">
-                <p className="text-white/70 text-sm mb-3">
-                    Still waiting for {pendingVoters.length} member{pendingVoters.length !== 1 ? 's' : ''}:
-                </p>
-                
-                <div className="grid grid-cols-1 gap-2">
-                    {pendingVoters.map(voter => {
-                        const reminderSent = remindersSent.has(voter.id);
-                        
-                        return (
-                            <div 
-                                key={voter.id} 
-                                className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-all duration-200"
-                            >
-                                <div className="flex items-center space-x-3">
-                                    <Avatar name={voter.username} size={28} />
-                                    <div>
-                                        <span className="text-white font-medium">{voter.username}</span>
-                                        <div className="text-white/60 text-xs">
-                                            {voter.steam_connected ? '🎮 Steam connected' : '❌ No Steam'}
-                                        </div>
+                {sessions.map(session => {
+                    const winner = getWinnerInfo(session);
+                    const isActive = session.status === 'voting';
+                    
+                    return (
+                        <div 
+                            key={session.id} 
+                            className={`p-4 rounded-xl border transition-all duration-300 ${
+                                isActive 
+                                    ? 'bg-blue-500/10 border-blue-500/30 shadow-lg shadow-blue-500/20' 
+                                    : 'bg-white/5 border-white/10 hover:bg-white/10'
+                            }`}
+                        >
+                            <div className="flex items-start justify-between mb-3">
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-2 mb-1">
+                                        <h4 className="text-white font-medium truncate">
+                                            {session.session_name}
+                                        </h4>
+                                        {isActive && (
+                                            <span className="animate-pulse text-red-400 text-sm">●</span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center space-x-2 text-sm">
+                                        <span className={`px-2 py-1 rounded-full text-xs border ${getStatusColor(session.status)}`}>
+                                            {getStatusIcon(session.status)} {session.status}
+                                        </span>
+                                        <span className="text-white/60">{formatTimeAgo(session.created_at)}</span>
                                     </div>
                                 </div>
                                 
-                                <div className="flex items-center space-x-2">
-                                    {reminderSent ? (
-                                        <span className="text-green-400 text-xs flex items-center space-x-1">
-                                            <span>✅</span>
-                                            <span>Reminded</span>
-                                        </span>
-                                    ) : onSendReminder ? (
+                                {/* Action Button */}
+                                <div className="ml-3">
+                                    {isActive ? (
                                         <button
-                                            onClick={() => handleSendReminder(voter.id)}
-                                            className="px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 rounded text-xs transition-colors duration-200"
-                                            title="Send reminder"
+                                            onClick={() => handleJoinActiveSession(session.id)}
+                                            className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors duration-200 flex items-center space-x-1"
                                         >
-                                            📧 Remind
+                                            <span>🗳️</span>
+                                            <span>Vote</span>
                                         </button>
-                                    ) : null}
-                                    
-                                    <span className="text-yellow-400 animate-pulse">⏳</span>
+                                    ) : session.status === 'completed' ? (
+                                        <button
+                                            onClick={() => handleViewResults(session.id)}
+                                            className="px-3 py-1 bg-coral-500/20 hover:bg-coral-500/30 text-coral-300 text-sm rounded-lg transition-colors duration-200 flex items-center space-x-1"
+                                        >
+                                            <span>📊</span>
+                                            <span>Results</span>
+                                        </button>
+                                    ) : (
+                                        <span className="px-3 py-1 bg-gray-500/20 text-gray-400 text-sm rounded-lg">
+                                            {session.status}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
+
+                            {/* Session Stats */}
+                            <div className="flex items-center justify-between text-xs text-white/60">
+                                <div className="flex space-x-4">
+                                    <span>👥 {session.total_voters || 0} votes</span>
+                                    <span>🎮 {session.games_count || 0} games</span>
+                                    {session.participation_rate && (
+                                        <span>📊 {Math.round(session.participation_rate)}% participated</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Winner Info */}
+                            {winner && (
+                                <div className="mt-3 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-green-300 font-medium">
+                                            🏆 Winner: {winner.name}
+                                        </span>
+                                        <span className="text-green-400 text-xs">
+                                            {winner.points} pts • {winner.votes} votes
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Active Session Info */}
+                            {isActive && (
+                                <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                                    <div className="text-blue-300 text-sm flex items-center space-x-2">
+                                        <span className="animate-pulse">🔴</span>
+                                        <span>Live voting session - Click to participate!</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
 
-            {/* Quick Actions */}
-            <div className="mt-4 pt-4 border-t border-white/10">
-                <div className="flex flex-wrap gap-2 justify-center">
+            {/* View All Sessions Link */}
+            {sessions.length === 5 && (
+                <div className="mt-4 text-center">
                     <button
-                        onClick={() => {
-                            // Copy a reminder message to clipboard
-                            const message = `🗳️ Don't forget to vote in our SquadUp session! ${pendingVoters.length} members still need to vote. ${formattedTime ? `Time remaining: ${formattedTime}` : ''}`;
-                            navigator.clipboard.writeText(message);
-                        }}
-                        className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 rounded-lg text-xs transition-colors duration-200"
+                        onClick={() => navigate(`/groups/${groupId}/sessions`)}
+                        className="text-coral-400 hover:text-coral-300 text-sm transition-colors duration-200 hover:underline"
                     >
-                        📋 Copy Reminder
+                        View all sessions →
                     </button>
-                    
-                    {onSendReminder && (
-                        <button
-                            onClick={() => {
-                                // Send reminder to all pending voters
-                                pendingVoters.forEach(voter => {
-                                    if (!remindersSent.has(voter.id)) {
-                                        handleSendReminder(voter.id);
-                                    }
-                                });
-                            }}
-                            className="px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 rounded-lg text-xs transition-colors duration-200"
-                            disabled={pendingVoters.every(voter => remindersSent.has(voter.id))}
-                        >
-                            📢 Remind All
-                        </button>
-                    )}
                 </div>
-            </div>
+            )}
 
-            {/* Tips */}
-            <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                <p className="text-blue-300 text-xs flex items-start space-x-2">
-                    <span className="text-blue-400 mt-0.5">💡</span>
-                    <span>
-                        Tip: Share the group invite link or remind members in your Discord/chat. 
-                        Voting works best when everyone participates!
-                    </span>
-                </p>
+            {/* Quick Stats */}
+            <div className="mt-4 pt-3 border-t border-white/10">
+                <div className="grid grid-cols-3 gap-4 text-center text-xs text-white/60">
+                    <div>
+                        <div className="text-white font-bold">
+                            {sessions.filter(s => s.status === 'completed').length}
+                        </div>
+                        <div>Completed</div>
+                    </div>
+                    <div>
+                        <div className="text-blue-400 font-bold">
+                            {sessions.filter(s => s.status === 'voting').length}
+                        </div>
+                        <div>Active</div>
+                    </div>
+                    <div>
+                        <div className="text-coral-400 font-bold">
+                            {sessions.reduce((sum, s) => sum + (s.total_voters || 0), 0)}
+                        </div>
+                        <div>Total Votes</div>
+                    </div>
+                </div>
             </div>
         </div>
     );

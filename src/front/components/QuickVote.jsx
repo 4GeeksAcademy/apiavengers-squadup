@@ -1,462 +1,262 @@
-// src/front/components/QuickVote.jsx - Enhanced with new Vote model integration
+// src/front/components/QuickVote.jsx - ENHANCED to work alongside LiveVotingSession
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { submitVotes, fetchMyVotes, fetchSessionResults } from '../store/actions.js';
-import useGlobalReducer from '../hooks/useGlobalReducer'; // Fixed: default import
-import { getGamingSelectors, ACTION_TYPES } from '../store/store.js';
-import GameImage from './GameImage';
+import authService from '../store/authService';
 
-const QuickVote = ({ groupId, sessionId, user }) => {
-    const { store, dispatch } = useGlobalReducer();
-    const selectors = getGamingSelectors(store);
-    
-    // Local state
-    const [votableGames, setVotableGames] = useState([]);
-    const [selectedGames, setSelectedGames] = useState([]);
+const QuickVote = ({ groupId, onSessionCreated }) => {
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
-    const [submitted, setSubmitted] = useState(false);
-    const [userVotes, setUserVotes] = useState([]);
+    const [hasActiveSession, setHasActiveSession] = useState(false);
+    const [activeSession, setActiveSession] = useState(null);
+    const [creating, setCreating] = useState(false);
     const [error, setError] = useState(null);
-    const [retryCount, setRetryCount] = useState(0);
-    const [sessionStarted, setSessionStarted] = useState(false);
-
-    // Global state
-    const activeSession = selectors.getActiveSession();
-    const sessionResults = selectors.getSessionResults();
-    const isVotingLoading = selectors.isVotingLoading();
 
     useEffect(() => {
-        if (sessionId) {
-            checkExistingSession();
-            checkUserVotes();
-        }
-    }, [sessionId, dispatch]);
+        checkForActiveSession();
+    }, [groupId]);
 
-    const checkExistingSession = async () => {
+    const checkForActiveSession = async () => {
         try {
-            // Check if we have session data
-            if (!activeSession || activeSession.id !== sessionId) {
-                // Fetch session details from the active-session endpoint
-                const backendUrl = import.meta.env.VITE_BACKEND_URL;
-                const response = await fetch(`${backendUrl}/api/gaming/groups/${groupId}/active-session`, {
-                    headers: {
-                        'Authorization': `Bearer ${store.token}`
-                    }
-                });
-                
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            const response = await authService.authenticatedFetch(
+                `${backendUrl}/api/gaming/groups/${groupId}/active-session`
+            );
+            
+            if (response.ok) {
                 const data = await response.json();
-                
-                if (response.ok && data.success && data.session) {
-                    dispatch({
-                        type: ACTION_TYPES.SET_ACTIVE_SESSION,
-                        payload: data.session
-                    });
-                    
-                    setVotableGames(data.votable_games || []);
-                    setSessionStarted(true);
+                if (data.session && data.session.status === 'voting') {
+                    setHasActiveSession(true);
+                    setActiveSession(data.session);
                 } else {
-                    setError('No active voting session found');
-                }
-            } else {
-                setSessionStarted(true);
-                // If we have games in global state, use them
-                // Otherwise we'd need to fetch them separately
-            }
-        } catch (error) {
-            console.error('Error checking session:', error);
-            setError('Failed to load voting session');
-        }
-    };
-
-    const checkUserVotes = async () => {
-        if (!sessionId) return;
-
-        try {
-            const result = await fetchMyVotes(dispatch, sessionId);
-            
-            if (result.success) {
-                if (result.hasVoted) {
-                    setSubmitted(true);
-                    setUserVotes(result.votes || []);
-                    
-                    // Convert votes back to selected games format for display
-                    const selectedFromVotes = result.votes.map(vote => ({
-                        id: vote.game_id,
-                        name: vote.game?.name || `Game ${vote.game_id}`,
-                        header_image: vote.game?.header_image,
-                        priority: vote.priority
-                    }));
-                    
-                    // Sort by priority (highest first)
-                    selectedFromVotes.sort((a, b) => b.priority - a.priority);
-                    setSelectedGames(selectedFromVotes);
+                    setHasActiveSession(false);
+                    setActiveSession(null);
                 }
             }
         } catch (error) {
-            console.error('Error checking user votes:', error);
-            // Don't show error to user, just log it
+            console.error('Error checking active session:', error);
         }
     };
 
-    const handleGameSelect = (game) => {
-        if (submitted) {
-            toast.error('You have already submitted your votes');
+    const createVotingSession = async () => {
+        if (hasActiveSession) {
+            toast.error('There is already an active voting session');
             return;
         }
 
-        setSelectedGames(prev => {
-            const isAlreadySelected = prev.find(g => g.id === game.id);
-            
-            if (isAlreadySelected) {
-                // Remove from selection
-                return prev.filter(g => g.id !== game.id);
-            } else if (prev.length >= 3) {
-                // Replace the lowest priority game
-                const newSelection = [...prev.slice(0, 2), game];
-                toast.info('Maximum 3 games can be selected. Replaced your 3rd choice.');
-                return newSelection;
-            } else {
-                // Add to selection
-                return [...prev, game];
-            }
-        });
-    };
-
-    const getGamePriority = (gameId) => {
-        const index = selectedGames.findIndex(g => g.id === gameId);
-        return index === -1 ? 0 : selectedGames.length - index; // 3, 2, 1 for first, second, third
-    };
-
-    const handleVoteSubmission = async () => {
-        if (selectedGames.length === 0) {
-            toast.error('Please select at least one game to vote for');
-            return;
-        }
-
-        setLoading(true);
+        setCreating(true);
         setError(null);
 
-        try {
-            // Format votes for the new Vote model
-            const gameVotes = selectedGames.map((game, index) => ({
-                game_id: game.id,
-                priority: selectedGames.length - index // 3 points for 1st choice, 2 for 2nd, 1 for 3rd
-            }));
-
-            const result = await submitVotes(dispatch, sessionId, gameVotes);
-
-            if (result.success) {
-                setSubmitted(true);
-                
-                // Update local user votes display
-                const newUserVotes = gameVotes.map(vote => ({
-                    ...vote,
-                    game: selectedGames.find(g => g.id === vote.game_id)
-                }));
-                setUserVotes(newUserVotes);
-                
-                // Clear any previous error
-                setError(null);
-                setRetryCount(0);
-                
-                toast.success(`🎉 Votes submitted! ${result.totalVoters}/${result.totalMembers} members have voted.`);
-                
-                // Check if voting is complete
-                if (result.sessionStatus === 'completed') {
-                    toast.success('🏁 Voting session completed!');
-                    // Fetch final results
-                    setTimeout(() => {
-                        fetchSessionResults(dispatch, sessionId);
-                    }, 1000);
-                }
-            } else {
-                throw new Error(result.error || 'Failed to submit votes');
-            }
-        } catch (error) {
-            console.error('Error submitting votes:', error);
-            setError(error.message);
-            
-            // Implement retry logic for network errors
-            if (error.message.includes('Network') && retryCount < 3) {
-                setRetryCount(prev => prev + 1);
-                toast.error(`Network error. Retry ${retryCount + 1}/3 in 3 seconds...`);
-                setTimeout(() => {
-                    handleVoteSubmission();
-                }, 3000);
-            } else {
-                toast.error(error.message || 'Failed to submit votes');
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleRetryVoting = () => {
-        setSubmitted(false);
-        setUserVotes([]);
-        setSelectedGames([]);
-        setError(null);
-        setRetryCount(0);
+        const loadingToast = toast.loading('Creating voting session...');
         
-        // Re-check if user can still vote
-        checkUserVotes();
-    };
+        try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            
+            const response = await authService.authenticatedFetch(
+                `${backendUrl}/api/gaming/groups/${groupId}/start-vote`, 
+                {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        session_name: `Squad Vote - ${new Date().toLocaleDateString()}`,
+                        description: 'Vote for the next game to play together!',
+                        auto_complete_threshold: 0.8 // Auto-complete when 80% have voted
+                    })
+                }
+            );
 
-    // Get priority label
-    const getPriorityLabel = (priority) => {
-        switch (priority) {
-            case 3: return '1st Choice (3 pts)';
-            case 2: return '2nd Choice (2 pts)';
-            case 1: return '3rd Choice (1 pt)';
-            default: return '';
+            toast.dismiss(loadingToast);
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Voting session created:', data);
+                
+                setActiveSession(data.session);
+                setHasActiveSession(true);
+                
+                toast.success('🗳️ Voting session started! Choose your games.');
+                
+                // Notify parent component if callback provided
+                if (onSessionCreated) {
+                    onSessionCreated(data.session);
+                }
+                
+                // Small delay to show success message
+                setTimeout(() => {
+                    // The LiveVotingSession component should now take over
+                    window.location.reload(); // Force refresh to show LiveVotingSession
+                }, 1000);
+                
+            } else {
+                const errorData = await response.json();
+                const errorMessage = errorData.error || 'Failed to create voting session';
+                setError(errorMessage);
+                toast.error(errorMessage);
+            }
+        } catch (error) {
+            toast.dismiss(loadingToast);
+            console.error('Error creating voting session:', error);
+            const errorMessage = 'Network error occurred while creating session';
+            setError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setCreating(false);
         }
     };
 
-    // Show loading state
-    if (!sessionStarted || isVotingLoading) {
+    const joinActiveSession = () => {
+        if (activeSession) {
+            // Refresh to show LiveVotingSession component
+            window.location.reload();
+        }
+    };
+
+    const viewResults = () => {
+        if (activeSession) {
+            navigate(`/sessions/${activeSession.id}/results`);
+        }
+    };
+
+    // If there's an active session, show session management instead of create button
+    if (hasActiveSession && activeSession) {
         return (
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-8">
-                <div className="flex items-center justify-center">
-                    <div className="w-8 h-8 border-3 border-coral-500/30 border-t-coral-500 rounded-full animate-spin mr-3"></div>
-                    <span className="text-white">Loading voting session...</span>
-                </div>
-            </div>
-        );
-    }
-
-    // Show error state
-    if (error && !submitted) {
-        return (
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-8 text-center">
-                <div className="text-6xl mb-4">❌</div>
-                <h3 className="text-xl font-bold text-white mb-4">Voting Error</h3>
-                <p className="text-white/60 mb-6">{error}</p>
-                <button
-                    onClick={() => {
-                        setError(null);
-                        checkExistingSession();
-                    }}
-                    className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-bold rounded-xl transition-colors"
-                >
-                    Try Again
-                </button>
-            </div>
-        );
-    }
-
-    // Show success state
-    if (submitted) {
-        return (
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-8">
-                <div className="text-center mb-6">
-                    <div className="text-6xl mb-4">✅</div>
-                    <h3 className="text-xl font-bold text-white mb-2">Votes Submitted!</h3>
-                    <p className="text-white/60">Thank you for participating in the game vote.</p>
-                </div>
-
-                {/* Show user's votes */}
-                <div className="space-y-4">
-                    <h4 className="text-lg font-bold text-white">Your Votes:</h4>
-                    <div className="space-y-3">
-                        {userVotes
-                            .sort((a, b) => b.priority - a.priority)
-                            .map((vote, index) => (
-                            <div key={vote.game_id} className="flex items-center space-x-4 p-4 bg-white/5 border border-white/20 rounded-xl">
-                                <div className="relative">
-                                    <GameImage
-                                        game={vote.game || selectedGames.find(g => g.id === vote.game_id)}
-                                        size="sm"
-                                        className="w-16 h-16 rounded-lg"
-                                    />
-                                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-coral-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                                        {vote.priority}
-                                    </div>
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-white font-medium">
-                                        {vote.game?.name || selectedGames.find(g => g.id === vote.game_id)?.name || `Game ${vote.game_id}`}
-                                    </div>
-                                    <div className="text-coral-400 text-sm font-medium">
-                                        {getPriorityLabel(vote.priority)}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Action buttons */}
-                <div className="mt-8 flex justify-center space-x-4">
-                    <button
-                        onClick={() => {
-                            // Navigate to results or refresh to see live results
-                            window.location.reload();
-                        }}
-                        className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors"
-                    >
-                        View Live Results
-                    </button>
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+                <div className="text-center">
+                    <div className="text-6xl mb-4">🗳️</div>
+                    <h2 className="text-2xl font-bold text-white mb-4">
+                        Active Voting Session
+                    </h2>
+                    <p className="text-white/70 mb-2">{activeSession.session_name}</p>
+                    <p className="text-white/60 text-sm mb-6">
+                        Created {new Date(activeSession.created_at).toLocaleString()}
+                    </p>
                     
-                    {/* Allow revote if session is still active */}
-                    {activeSession?.status === 'voting' && (
+                    {/* Session Stats */}
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="p-3 bg-white/5 rounded-lg">
+                            <div className="text-blue-400 font-bold text-lg">
+                                {activeSession.total_voters || 0}
+                            </div>
+                            <div className="text-white/60 text-sm">Votes Cast</div>
+                        </div>
+                        <div className="p-3 bg-white/5 rounded-lg">
+                            <div className="text-green-400 font-bold text-lg">
+                                {activeSession.games_count || 0}
+                            </div>
+                            <div className="text-white/60 text-sm">Games Available</div>
+                        </div>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
                         <button
-                            onClick={handleRetryVoting}
-                            className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-colors"
+                            onClick={joinActiveSession}
+                            className="px-6 py-3 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
                         >
-                            Change Votes
+                            🗳️ Join Voting
                         </button>
-                    )}
+                        
+                        <button
+                            onClick={viewResults}
+                            className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors duration-200"
+                        >
+                            📊 View Live Results
+                        </button>
+                    </div>
+                    
+                    {/* Live Status */}
+                    <div className="mt-6 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+                        <div className="flex items-center justify-center space-x-2 text-blue-300 text-sm">
+                            <span className="animate-pulse text-red-400">●</span>
+                            <span>Live voting session active</span>
+                        </div>
+                    </div>
+                    
+                    {/* Refresh Note */}
+                    <p className="mt-4 text-white/50 text-xs">
+                        Note: Page will refresh to show the live voting interface
+                    </p>
                 </div>
             </div>
         );
     }
 
-    // Main voting interface
+    // Show create new session interface
     return (
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl overflow-hidden">
-            {/* Header */}
-            <div className="p-6 border-b border-white/10">
-                <h3 className="text-xl font-bold text-white flex items-center">
-                    <span className="text-2xl mr-2">🗳️</span>
-                    Cast Your Votes
-                </h3>
-                <p className="text-white/60 mt-1">
-                    Select up to 3 games and rank them. Your top choice gets 3 points, second gets 2 points, third gets 1 point.
+        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <div className="text-center">
+                <div className="text-6xl mb-4">🎯</div>
+                <h2 className="text-2xl font-bold text-white mb-4">Ready to Vote?</h2>
+                <p className="text-white/70 mb-6">
+                    Start a new voting session to decide what game to play with your squad!
                 </p>
                 
-                {/* Selection summary */}
-                {selectedGames.length > 0 && (
-                    <div className="mt-4 p-3 bg-coral-500/10 border border-coral-500/20 rounded-lg">
-                        <div className="text-coral-300 text-sm font-medium mb-2">
-                            Selected ({selectedGames.length}/3):
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {selectedGames.map((game, index) => (
-                                <span key={game.id} className="px-2 py-1 bg-coral-500/20 text-coral-300 rounded text-xs flex items-center space-x-1">
-                                    <span className="font-bold">{selectedGames.length - index}.</span>
-                                    <span>{game.name}</span>
-                                    <button 
-                                        onClick={() => handleGameSelect(game)}
-                                        className="ml-1 text-coral-300 hover:text-white"
-                                    >
-                                        ×
-                                    </button>
-                                </span>
-                            ))}
+                {/* Error Display */}
+                {error && (
+                    <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">
+                        <div className="flex items-center space-x-2">
+                            <span>⚠️</span>
+                            <span>{error}</span>
                         </div>
                     </div>
                 )}
-            </div>
-
-            {/* Games list */}
-            <div className="p-6">
-                {votableGames.length > 0 ? (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                            {votableGames.map(game => {
-                                const isSelected = selectedGames.find(g => g.id === game.id);
-                                const priority = getGamePriority(game.id);
-                                
-                                return (
-                                    <button
-                                        key={game.id}
-                                        onClick={() => handleGameSelect(game)}
-                                        className={`flex items-center space-x-4 p-4 rounded-xl border transition-all duration-200 text-left ${
-                                            isSelected
-                                                ? 'bg-coral-500/20 border-coral-500/50 transform scale-105'
-                                                : 'bg-white/5 border-white/20 hover:bg-white/10 hover:border-white/30'
-                                        }`}
-                                    >
-                                        <div className="relative">
-                                            <GameImage
-                                                game={game}
-                                                size="sm"
-                                                className="w-16 h-16 rounded-lg"
-                                            />
-                                            {isSelected && (
-                                                <div className="absolute -top-2 -right-2 w-6 h-6 bg-coral-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                                                    {priority}
-                                                </div>
-                                            )}
-                                        </div>
-                                        
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-white font-medium truncate">{game.name}</div>
-                                            <div className="text-white/60 text-sm truncate">
-                                                {game.short_description || 'No description available'}
-                                            </div>
-                                            <div className="flex items-center space-x-3 mt-1">
-                                                {game.multiplayer && (
-                                                    <span className="text-green-400 text-xs">👥 Multiplayer</span>
-                                                )}
-                                                {game.co_op && (
-                                                    <span className="text-blue-400 text-xs">🤝 Co-op</span>
-                                                )}
-                                                {game.max_players && (
-                                                    <span className="text-white/60 text-xs">
-                                                        Max {game.max_players} players
-                                                    </span>
-                                                )}
-                                            </div>
-                                            
-                                            {isSelected && (
-                                                <div className="text-coral-400 text-sm font-medium mt-1">
-                                                    {getPriorityLabel(priority)}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                
+                {/* Features List */}
+                <div className="mb-8 space-y-3 text-left max-w-md mx-auto">
+                    <div className="flex items-center space-x-3 text-white/80">
+                        <span className="text-coral-400">✅</span>
+                        <span className="text-sm">Real-time voting with live updates</span>
                     </div>
-                ) : (
-                    <div className="text-center py-12">
-                        <div className="text-6xl mb-4">🎮</div>
-                        <h4 className="text-xl font-bold text-white mb-2">No Common Games Found</h4>
-                        <p className="text-white/60 mb-6">
-                            Make sure group members have connected their Steam accounts and own common multiplayer games.
-                        </p>
-                        <button
-                            onClick={checkExistingSession}
-                            className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors"
-                        >
-                            Refresh Games
-                        </button>
+                    <div className="flex items-center space-x-3 text-white/80">
+                        <span className="text-coral-400">✅</span>
+                        <span className="text-sm">Ranked choice voting (1st, 2nd, 3rd)</span>
                     </div>
-                )}
-            </div>
-
-            {/* Submit button */}
-            {votableGames.length > 0 && (
-                <div className="p-6 border-t border-white/10">
-                    <button
-                        onClick={handleVoteSubmission}
-                        disabled={selectedGames.length === 0 || loading}
-                        className="w-full px-6 py-4 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 disabled:from-gray-500 disabled:to-gray-600 disabled:opacity-50 text-white font-bold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
-                    >
-                        {loading ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                <span>Submitting Votes...</span>
-                            </>
-                        ) : (
-                            <>
-                                <span className="text-xl">🚀</span>
-                                <span>
-                                    Submit {selectedGames.length} Vote{selectedGames.length !== 1 ? 's' : ''}
-                                </span>
-                            </>
-                        )}
-                    </button>
-                    
-                    {selectedGames.length === 0 && (
-                        <p className="text-white/60 text-center text-sm mt-2">
-                            Select at least one game to vote
-                        </p>
-                    )}
+                    <div className="flex items-center space-x-3 text-white/80">
+                        <span className="text-coral-400">✅</span>
+                        <span className="text-sm">Only shows multiplayer games you all own</span>
+                    </div>
+                    <div className="flex items-center space-x-3 text-white/80">
+                        <span className="text-coral-400">✅</span>
+                        <span className="text-sm">Instant results and winner announcement</span>
+                    </div>
                 </div>
-            )}
+                
+                {/* Create Button */}
+                <button
+                    onClick={createVotingSession}
+                    disabled={creating || loading}
+                    className="px-8 py-4 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none"
+                >
+                    {creating ? (
+                        <div className="flex items-center justify-center">
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                            Creating Session...
+                        </div>
+                    ) : (
+                        '🗳️ Start Live Voting Session'
+                    )}
+                </button>
+
+                {/* Info Box */}
+                <div className="mt-8 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-sm">
+                    <div className="flex items-start space-x-2">
+                        <span className="text-blue-400 mt-0.5">💡</span>
+                        <div className="text-left">
+                            <strong>How it works:</strong>
+                            <ol className="mt-2 space-y-1 text-xs">
+                                <li>1. We'll find games everyone in your squad owns</li>
+                                <li>2. Each member votes for their top 3 choices</li>
+                                <li>3. Results update in real-time as votes come in</li>
+                                <li>4. The game with the most points wins!</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Requirements Check */}
+                <div className="mt-6 text-xs text-white/50">
+                    <p>💡 Make sure squad members have connected Steam for best results</p>
+                </div>
+            </div>
         </div>
     );
 };
