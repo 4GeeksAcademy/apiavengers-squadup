@@ -1,10 +1,22 @@
-# src/app.py - ENHANCED VERSION with Codespace CORS Support - FIXED
+# src/app.py - ENHANCED VERSION with Codespace CORS Support - FIXED IMPORTS + SSE SUPPORT
 
 import os
+import sys
 import logging
 from datetime import timedelta
 from collections import defaultdict
 from sqlalchemy import text
+from pathlib import Path
+
+# Add the src directory to Python path for imports
+current_dir = Path(__file__).parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+# Also add parent directory in case we're running from root
+parent_dir = current_dir.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 # Load environment first
 from dotenv import load_dotenv
@@ -18,16 +30,51 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-# Local application imports
-from api.utils import APIException, utc_now
-from api.models import db
-from api.routes import api
-from api.auth import auth
-from api.gaming import gaming, init_rate_limiting as init_gaming_rate_limiting
-from api.admin import setup_admin
-from api.commands import setup_commands
-from api.steam_auth import steam_auth
-from api.steam import steam
+# Local application imports with flexible path handling
+try:
+    # Try direct imports first (when running from src/)
+    from api.utils import APIException, utc_now
+    from api.models import db
+    from api.routes import api
+    from api.auth import auth
+    from api.gaming import gaming, init_rate_limiting as init_gaming_rate_limiting
+    from api.admin import setup_admin
+    from api.commands import setup_commands
+    from api.steam_auth import steam_auth
+    from api.steam import steam
+    # NEW: Import SSE blueprints
+    from api.live_events import live_events
+    from api.member_status import member_status
+except ImportError:
+    try:
+        # Try with src prefix (when running from root)
+        from src.api.utils import APIException, utc_now
+        from src.api.models import db
+        from src.api.routes import api
+        from src.api.auth import auth
+        from src.api.gaming import gaming, init_rate_limiting as init_gaming_rate_limiting
+        from src.api.admin import setup_admin
+        from src.api.commands import setup_commands
+        from src.api.steam_auth import steam_auth
+        from src.api.steam import steam
+        # NEW: Import SSE blueprints
+        from src.api.live_events import live_events
+        from src.api.member_status import member_status
+    except ImportError as e:
+        print(f"Import error: {e}")
+        print(f"Current directory: {os.getcwd()}")
+        print(f"Python path: {sys.path}")
+        print("Available files in current directory:")
+        try:
+            print([f for f in os.listdir('.') if not f.startswith('.')])
+        except:
+            pass
+        print("Available files in src directory:")
+        try:
+            print([f for f in os.listdir('src') if not f.startswith('.')])
+        except:
+            pass
+        raise
 
 # ============================================================================
 # App Initialization & Environment
@@ -158,7 +205,7 @@ else:
 # Remove duplicates and empty values
 allowed_origins = list(set([url for url in allowed_origins if url]))
 
-# 🔧 CRITICAL: Enhanced CORS configuration for Codespaces
+# 🔧 CRITICAL: Enhanced CORS configuration for Codespaces + SSE Support
 CORS(app, 
      origins=allowed_origins,
      supports_credentials=True,
@@ -173,13 +220,18 @@ CORS(app,
          'Cache-Control',
          'X-Mx-ReqToken',
          'Keep-Alive',
-         'If-Modified-Since'
+         'If-Modified-Since',
+         # SSE specific headers
+         'Accept-Encoding',
+         'Accept-Language'
      ],
      methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'],
      max_age=86400,
      automatic_options=True,
      send_wildcard=False,
-     vary_header=True
+     vary_header=True,
+     # Important for SSE
+     expose_headers=['Content-Type', 'Cache-Control', 'Connection']
 )
 
 print(f"🔧 CORS configured for {len(allowed_origins)} origins:")
@@ -195,7 +247,14 @@ if ENV == "production":
 
 for var in required_env_vars:
     if not os.getenv(var):
-        raise RuntimeError(f"{var} is not set in the environment")
+        if var == 'JWT_SECRET_KEY':
+            # Generate a default JWT secret for development
+            import secrets
+            default_jwt_secret = secrets.token_hex(32)
+            os.environ[var] = default_jwt_secret
+            print(f"⚠️ {var} not set, generated temporary key for development")
+        else:
+            raise RuntimeError(f"{var} is not set in the environment")
 
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
@@ -317,8 +376,17 @@ def handle_api_exception(error):
 
 @app.errorhandler(429)
 def ratelimit_handler(e):
-    """Enhanced rate limit handler"""
-    retry_after = getattr(e, 'retry_after', 60)
+    """Enhanced rate limit handler - FIXED for None retry_after values"""
+    # Safely get retry_after value with fallback
+    retry_after = getattr(e, 'retry_after', None)
+    if retry_after is None:
+        retry_after = 60  # Default to 60 seconds if not provided
+    
+    # Ensure retry_after is a number
+    try:
+        retry_after = int(retry_after)
+    except (ValueError, TypeError):
+        retry_after = 60
     
     if retry_after <= 60:
         limit_type = "per minute"
@@ -339,10 +407,20 @@ def ratelimit_handler(e):
     }), 429
 
 # ============================================================================
-# Blueprint Registration
+# Blueprint Registration - UPDATED WITH SSE SUPPORT
 # ============================================================================
-setup_admin(app)
-setup_commands(app)
+# Handle missing admin and commands modules gracefully
+try:
+    setup_admin(app)
+    print("✅ Admin module initialized")
+except Exception as e:
+    print(f"⚠️ Admin module initialization failed: {e}")
+
+try:
+    setup_commands(app)
+    print("✅ Commands module initialized")
+except Exception as e:
+    print(f"⚠️ Commands module initialization failed: {e}")
 
 try:
     gaming_limiter = init_gaming_rate_limiting(app)
@@ -350,11 +428,68 @@ try:
 except Exception as e:
     print(f"⚠️ Gaming rate limiting initialization failed: {e}")
 
+# Standard blueprint registration
 app.register_blueprint(api, url_prefix='/api')
 app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')
 app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')
-app.register_blueprint(steam, url_prefix='/api/steam')
+
+# NEW: Register SSE blueprints
+try:
+    app.register_blueprint(live_events, url_prefix='/api/gaming')
+    print("✅ Live events (SSE) blueprint registered")
+except Exception as e:
+    print(f"⚠️ Live events blueprint registration failed: {e}")
+
+try:
+    app.register_blueprint(member_status, url_prefix='/api/gaming')
+    print("✅ Member status (SSE) blueprint registered")
+except Exception as e:
+    print(f"⚠️ Member status blueprint registration failed: {e}")
+
+# Handle optional steam blueprint
+try:
+    app.register_blueprint(steam, url_prefix='/api/steam')
+    print("✅ Steam blueprint registered")
+except Exception as e:
+    print(f"⚠️ Steam blueprint registration failed: {e}")
+
+# ============================================================================
+# SSE Manager Initialization - NEW
+# ============================================================================
+class SSEManager:
+    """Global SSE connection manager"""
+    def __init__(self, app):
+        self.app = app
+        self.connections = defaultdict(set)
+        
+    def add_connection(self, session_id, connection_id):
+        """Add a new SSE connection"""
+        self.connections[session_id].add(connection_id)
+        
+    def remove_connection(self, session_id, connection_id):
+        """Remove SSE connection"""
+        self.connections[session_id].discard(connection_id)
+        if not self.connections[session_id]:
+            del self.connections[session_id]
+                
+    def get_connection_count(self, session_id):
+        """Get number of active connections for a session"""
+        return len(self.connections.get(session_id, set()))
+    
+    def cleanup_inactive_connections(self):
+        """Clean up empty connection sets"""
+        for session_id in list(self.connections.keys()):
+            if not self.connections[session_id]:
+                del self.connections[session_id]
+
+# Initialize SSE manager
+try:
+    sse_manager = SSEManager(app)
+    app.sse_manager = sse_manager
+    print("✅ SSE Manager initialized")
+except Exception as e:
+    print(f"⚠️ SSE Manager initialization failed: {e}")
 
 # ============================================================================
 # Enhanced Route Configuration & Health Checks
@@ -376,7 +511,16 @@ def health_check():
         logger.error(f"Rate limiter health check failed: {e}")
         rate_limiter_status = "unhealthy"
     
-    overall_status = "healthy" if db_status == "healthy" and rate_limiter_status in ["healthy", "disabled"] else "unhealthy"
+    # Check SSE status
+    try:
+        sse_status = "healthy" if hasattr(app, 'sse_manager') else "disabled"
+        total_sse_connections = sum(len(connections) for connections in app.sse_manager.connections.values()) if hasattr(app, 'sse_manager') else 0
+    except Exception as e:
+        logger.error(f"SSE health check failed: {e}")
+        sse_status = "unhealthy"
+        total_sse_connections = 0
+    
+    overall_status = "healthy" if all(status in ["healthy", "disabled"] for status in [db_status, rate_limiter_status, sse_status]) else "unhealthy"
     
     return jsonify({
         'status': overall_status,
@@ -384,6 +528,8 @@ def health_check():
         'environment': ENV,
         'database': db_status,
         'rate_limiter': rate_limiter_status,
+        'sse_manager': sse_status,
+        'active_sse_connections': total_sse_connections,
         'storage': redis_url.split('://')[0] if '://' in redis_url else 'memory',
         'version': '1.0.0'
     }), 200 if overall_status == "healthy" else 503
@@ -391,7 +537,24 @@ def health_check():
 @app.route('/')
 @limiter.limit("50 per minute")
 def redirect_to_admin():
-    return redirect(url_for('admin.index'))
+    try:
+        return redirect(url_for('admin.index'))
+    except:
+        return jsonify({
+            'message': 'SquadUp API Server',
+            'status': 'running',
+            'endpoints': {
+                'health': '/health',
+                'api_status': '/api/status',
+                'cors_debug': '/api/cors-debug',
+                'sse_endpoints': [
+                    '/api/gaming/sessions/{id}/live-results',
+                    '/api/gaming/sessions/{id}/voter-status-stream',
+                    '/api/gaming/sessions/{id}/events',
+                    '/api/gaming/sessions/{id}/member-status'
+                ]
+            }
+        })
 
 @app.route('/<path:path>', methods=['GET'])
 @limiter.limit("200 per minute")
@@ -411,7 +574,7 @@ def serve_any_other_file(path):
         return response
 
 # ============================================================================
-# CRITICAL: Enhanced CORS and OPTIONS handling for Codespaces
+# CRITICAL: Enhanced CORS and OPTIONS handling for Codespaces + SSE
 # ============================================================================
 @app.before_request
 def handle_options_and_security():
@@ -431,7 +594,13 @@ def after_request(response):
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['X-XSS-Protection'] = '1; mode=block'
     
-    if request.path.startswith('/api/'):
+    # Special handling for SSE endpoints
+    if any(sse_path in request.path for sse_path in ['/live-results', '/voter-status-stream', '/events', '/member-status']):
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['Connection'] = 'keep-alive'
+        response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering for SSE
+        
+    elif request.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
@@ -476,6 +645,11 @@ def api_status():
         
         rate_limiter_storage = redis_url.split('://')[0] if '://' in redis_url else 'memory'
         
+        # Check SSE status
+        sse_connections = 0
+        if hasattr(app, 'sse_manager'):
+            sse_connections = sum(len(connections) for connections in app.sse_manager.connections.values())
+        
         return jsonify({
             'api_status': 'operational',
             'timestamp': utc_now().isoformat(),
@@ -489,6 +663,10 @@ def api_status():
                     'status': 'operational',
                     'storage': rate_limiter_storage
                 },
+                'sse_manager': {
+                    'status': 'operational' if hasattr(app, 'sse_manager') else 'disabled',
+                    'active_connections': sse_connections
+                },
                 'steam_api': {
                     'status': 'operational' if os.getenv('STEAM_API_KEY') else 'limited',
                     'message': 'Available' if os.getenv('STEAM_API_KEY') else 'API key not configured'
@@ -498,7 +676,8 @@ def api_status():
                 'gaming_groups': True,
                 'live_voting': True,
                 'steam_integration': bool(os.getenv('STEAM_API_KEY')),
-                'real_time_updates': True
+                'real_time_updates': True,
+                'sse_streaming': hasattr(app, 'sse_manager')
             }
         })
     except Exception as e:
@@ -508,8 +687,6 @@ def api_status():
             'timestamp': utc_now().isoformat(),
             'error': 'Service temporarily unavailable'
         }), 503
-    
-    
 
 @app.route('/api/cors-debug', methods=['GET', 'OPTIONS'])
 @limiter.limit("60 per minute")
@@ -528,7 +705,8 @@ def cors_debug():
         'environment': ENV,
         'timestamp': utc_now().isoformat(),
         'request_headers': dict(request.headers),
-        'detected_codespace_urls': get_codespace_urls() if CODESPACE_NAME else None
+        'detected_codespace_urls': get_codespace_urls() if CODESPACE_NAME else None,
+        'sse_support': hasattr(app, 'sse_manager')
     }
     
     logger.info(f"🔍 CORS Debug - Origin: {origin}, Allowed: {origin in allowed_origins}")
@@ -572,6 +750,19 @@ if __name__ == '__main__':
     
     print(f"🚀 Starting SquadUp server in {ENV} mode on port {PORT}")
     print(f"🔧 Database: {'PostgreSQL' if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI'] else 'SQLite'}")
+    
+    if hasattr(app, 'sse_manager'):
+        print(f"📡 SSE Manager: Initialized and ready")
+    else:
+        print(f"⚠️ SSE Manager: Not available")
+    
+    # Initialize database
+    with app.app_context():
+        try:
+            db.create_all()
+            print("✅ Database initialized successfully")
+        except Exception as e:
+            print(f"❌ Database initialization error: {e}")
     
     try:
         app.run(
