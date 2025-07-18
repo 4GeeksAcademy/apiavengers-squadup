@@ -1,387 +1,422 @@
-// src/front/utils/groupValidation.js - NEW FILE: Enhanced group validation helpers
-
-import toast from 'react-hot-toast';
+// src/front/utils/groupValidation.js - Group validation utility functions for Phase 5
 
 /**
- * Validates group ID with detailed error reporting
+ * Validates a group ID to ensure it's a valid integer
  * @param {any} groupId - The group ID to validate
- * @returns {object} - {isValid: boolean, normalizedId: number|null, error: string|null}
+ * @returns {object} - Validation result with isValid flag and normalized ID
  */
 export const validateGroupId = (groupId) => {
-    // Check for null, undefined, or string representations
-    if (!groupId || groupId === 'undefined' || groupId === 'null' || groupId === '') {
-        console.error('❌ Invalid group ID received:', groupId);
-        return {
-            isValid: false,
-            normalizedId: null,
-            error: 'Invalid group ID provided'
-        };
-    }
-    
-    // Try to parse as integer
-    try {
-        const parsed = parseInt(groupId);
-        if (isNaN(parsed) || parsed <= 0) {
-            console.error('❌ Group ID must be a positive integer:', groupId);
-            return {
-                isValid: false,
-                normalizedId: null,
-                error: 'Group ID must be a positive integer'
-            };
-        }
-        
-        return {
-            isValid: true,
-            normalizedId: parsed,
-            error: null
-        };
-    } catch (error) {
-        console.error('❌ Error parsing group ID:', error);
-        return {
-            isValid: false,
-            normalizedId: null,
-            error: 'Invalid group ID format'
-        };
-    }
+  const errors = [];
+  
+  // Check for null, undefined, or empty string
+  if (!groupId || groupId === 'undefined' || groupId === 'null' || groupId === '') {
+    errors.push('Group ID is missing or invalid');
+    return {
+      isValid: false,
+      error: 'Invalid group ID provided',
+      errors,
+      normalizedId: null
+    };
+  }
+  
+  // Convert to string for parsing
+  const groupIdStr = String(groupId).trim();
+  
+  // Check if it's a valid number
+  const parsed = parseInt(groupIdStr, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    errors.push('Group ID must be a positive integer');
+    return {
+      isValid: false,
+      error: 'Group ID must be a positive integer',
+      errors,
+      normalizedId: null
+    };
+  }
+  
+  // Check if the parsed value matches the original (no decimals or extra chars)
+  if (String(parsed) !== groupIdStr) {
+    errors.push('Group ID contains invalid characters');
+    return {
+      isValid: false,
+      error: 'Group ID contains invalid characters',
+      errors,
+      normalizedId: null
+    };
+  }
+  
+  return {
+    isValid: true,
+    error: null,
+    errors: [],
+    normalizedId: parsed
+  };
 };
 
 /**
- * Safe wrapper for group operations with atomic error handling
- * @param {number} groupId - Validated group ID
- * @param {Function} operation - Async operation to perform
- * @param {string} operationName - Name for logging/error messages
- * @returns {Promise<object>} - {success: boolean, data: any, error: string|null}
- */
-export const safeGroupOperation = async (groupId, operation, operationName = 'operation') => {
-    // Validate group ID first
-    const validation = validateGroupId(groupId);
-    if (!validation.isValid) {
-        const error = `${operationName} failed: ${validation.error}`;
-        console.error('❌', error);
-        toast.error(error);
-        return {
-            success: false,
-            data: null,
-            error: validation.error
-        };
-    }
-    
-    try {
-        console.log(`🔄 Starting ${operationName} for group ${validation.normalizedId}`);
-        const result = await operation(validation.normalizedId);
-        console.log(`✅ ${operationName} completed successfully`);
-        
-        return {
-            success: true,
-            data: result,
-            error: null
-        };
-    } catch (error) {
-        const errorMessage = `${operationName} failed: ${error.message}`;
-        console.error('❌', errorMessage, error);
-        
-        // Don't show toast here - let the calling component decide
-        return {
-            success: false,
-            data: null,
-            error: error.message || 'Unknown error occurred'
-        };
-    }
-};
-
-/**
- * Validates group object structure
- * @param {object} group - Group object to validate
- * @returns {object} - {isValid: boolean, errors: string[]}
+ * Validates a group object structure
+ * @param {object} group - The group object to validate
+ * @returns {object} - Validation result
  */
 export const validateGroupObject = (group) => {
-    const errors = [];
-    
-    if (!group || typeof group !== 'object') {
-        errors.push('Group must be a valid object');
-        return { isValid: false, errors };
-    }
-    
-    // Required fields
-    if (!group.id) errors.push('Group missing ID');
-    if (!group.name || typeof group.name !== 'string') errors.push('Group missing valid name');
-    if (!group.creator) errors.push('Group missing creator information');
-    
-    // Optional but important fields
-    if (group.current_members !== undefined && (typeof group.current_members !== 'number' || group.current_members < 0)) {
-        errors.push('Invalid current_members count');
-    }
-    
-    if (group.max_members !== undefined && (typeof group.max_members !== 'number' || group.max_members < 1)) {
-        errors.push('Invalid max_members count');
-    }
-    
-    if (group.invite_code && (typeof group.invite_code !== 'string' || !/^[A-Z0-9]{8}$/i.test(group.invite_code))) {
-        errors.push('Invalid invite code format');
-    }
-    
+  const errors = [];
+  
+  if (!group || typeof group !== 'object') {
+    errors.push('Group is not a valid object');
     return {
-        isValid: errors.length === 0,
-        errors
+      isValid: false,
+      errors
     };
+  }
+  
+  // Validate required fields
+  if (!group.id) {
+    errors.push('Group ID is missing');
+  } else {
+    const idValidation = validateGroupId(group.id);
+    if (!idValidation.isValid) {
+      errors.push(...idValidation.errors);
+    }
+  }
+  
+  if (!group.name || typeof group.name !== 'string' || group.name.trim() === '') {
+    errors.push('Group name is missing or invalid');
+  }
+  
+  // Validate optional but expected fields
+  if (group.creator && (!group.creator.id || !group.creator.username)) {
+    errors.push('Group creator information is incomplete');
+  }
+  
+  if (group.current_members !== undefined && (typeof group.current_members !== 'number' || group.current_members < 0)) {
+    errors.push('Current members count is invalid');
+  }
+  
+  if (group.max_members !== undefined && (typeof group.max_members !== 'number' || group.max_members <= 0)) {
+    errors.push('Max members count is invalid');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
 };
 
 /**
  * Validates user permissions for group operations
- * @param {object} user - Current user object
- * @param {object} group - Group object
- * @param {string} operation - Operation type: 'view', 'manage', 'delete', 'kick', 'transfer'
- * @returns {object} - {hasPermission: boolean, reason: string|null}
+ * @param {object} user - The user object
+ * @param {object} group - The group object  
+ * @param {string} operation - The operation to validate ('leave', 'delete', 'edit', 'kick')
+ * @returns {object} - Permission validation result
  */
 export const validateGroupPermissions = (user, group, operation) => {
-    if (!user || !user.id) {
+  if (!user || !user.id) {
+    return {
+      hasPermission: false,
+      reason: 'User not authenticated'
+    };
+  }
+  
+  if (!group || !group.id) {
+    return {
+      hasPermission: false,
+      reason: 'Invalid group'
+    };
+  }
+  
+  const isCreator = group.creator?.id === user.id;
+  const isMember = group.members?.some(m => m.id === user.id) || isCreator;
+  
+  switch (operation) {
+    case 'leave':
+      if (!isMember) {
         return {
-            hasPermission: false,
-            reason: 'User not authenticated'
+          hasPermission: false,
+          reason: 'You are not a member of this group'
         };
-    }
-    
-    const groupValidation = validateGroupObject(group);
-    if (!groupValidation.isValid) {
+      }
+      return {
+        hasPermission: true,
+        reason: null
+      };
+      
+    case 'delete':
+      if (!isCreator) {
         return {
-            hasPermission: false,
-            reason: `Invalid group: ${groupValidation.errors.join(', ')}`
+          hasPermission: false,
+          reason: 'Only the group creator can delete the group'
         };
-    }
-    
-    const isCreator = group.creator?.id === user.id;
-    const isMember = group.members ? group.members.some(m => m.id === user.id) : false;
-    
-    switch (operation) {
-        case 'view':
-            return {
-                hasPermission: isMember,
-                reason: isMember ? null : 'You are not a member of this group'
-            };
-            
-        case 'manage':
-        case 'delete':
-        case 'transfer':
-            return {
-                hasPermission: isCreator,
-                reason: isCreator ? null : 'Only the group creator can perform this action'
-            };
-            
-        case 'kick':
-            return {
-                hasPermission: isCreator,
-                reason: isCreator ? null : 'Only the group creator can kick members'
-            };
-            
-        case 'leave':
-            return {
-                hasPermission: isMember,
-                reason: isMember ? null : 'You are not a member of this group'
-            };
-            
-        default:
-            return {
-                hasPermission: false,
-                reason: `Unknown operation: ${operation}`
-            };
-    }
+      }
+      return {
+        hasPermission: true,
+        reason: null
+      };
+      
+    case 'edit':
+    case 'kick':
+      if (!isCreator) {
+        return {
+          hasPermission: false,
+          reason: 'Only the group creator can perform this action'
+        };
+      }
+      return {
+        hasPermission: true,
+        reason: null
+      };
+      
+    default:
+      return {
+        hasPermission: false,
+        reason: 'Unknown operation'
+      };
+  }
 };
 
 /**
- * Enhanced error handler for group operations
- * @param {Error|object} error - Error object or response
- * @param {string} operation - Operation name for context
- * @param {object} options - Additional options
+ * Safely execute a group operation with validation and error handling
+ * @param {any} groupId - The group ID
+ * @param {function} operation - The operation to execute (receives validated group ID)
+ * @param {string} operationName - Name of the operation for logging
+ * @returns {object} - Operation result
+ */
+export const safeGroupOperation = async (groupId, operation, operationName = 'group operation') => {
+  console.log(`🔧 Starting safe ${operationName} for group:`, groupId);
+  
+  try {
+    // Validate group ID first
+    const validation = validateGroupId(groupId);
+    if (!validation.isValid) {
+      console.error(`❌ ${operationName} failed: ${validation.error}`);
+      return {
+        success: false,
+        error: validation.error,
+        data: null
+      };
+    }
+    
+    // Execute the operation with validated ID
+    const result = await operation(validation.normalizedId);
+    
+    console.log(`✅ ${operationName} completed successfully`);
+    return {
+      success: true,
+      error: null,
+      data: result
+    };
+    
+  } catch (error) {
+    console.error(`❌ ${operationName} failed with error:`, error);
+    
+    // Provide user-friendly error messages
+    let userFriendlyMessage = error.message;
+    
+    if (error.message.includes('network') || error.message.includes('fetch')) {
+      userFriendlyMessage = 'Network error. Please check your connection and try again.';
+    } else if (error.message.includes('401') || error.message.includes('unauthorized')) {
+      userFriendlyMessage = 'Authentication expired. Please refresh the page and try again.';
+    } else if (error.message.includes('403') || error.message.includes('forbidden')) {
+      userFriendlyMessage = 'You do not have permission to perform this action.';
+    } else if (error.message.includes('404') || error.message.includes('not found')) {
+      userFriendlyMessage = 'Group not found. It may have been deleted.';
+    } else if (error.message.includes('timeout')) {
+      userFriendlyMessage = 'Request timed out. Please try again.';
+    }
+    
+    return {
+      success: false,
+      error: userFriendlyMessage,
+      data: null,
+      originalError: error
+    };
+  }
+};
+
+/**
+ * Handle group-related errors with consistent logging and user feedback
+ * @param {Error} error - The error object
+ * @param {string} context - Context where the error occurred
+ * @param {object} groupInfo - Optional group information for logging
  * @returns {string} - User-friendly error message
  */
-export const handleGroupError = (error, operation = 'operation', options = {}) => {
-    const { showToast = true, logError = true } = options;
+export const handleGroupError = (error, context = 'group operation', groupInfo = null) => {
+  const errorId = Date.now().toString(36);
+  
+  console.group(`❌ Group Error [${errorId}]`);
+  console.error(`Context: ${context}`);
+  console.error(`Error:`, error);
+  if (groupInfo) {
+    console.error(`Group Info:`, groupInfo);
+  }
+  console.groupEnd();
+  
+  // Return user-friendly message based on error type
+  if (error.name === 'TypeError' && error.message.includes('fetch')) {
+    return 'Network connection error. Please check your internet and try again.';
+  }
+  
+  if (error.message.includes('401')) {
+    return 'Your session has expired. Please refresh the page and try again.';
+  }
+  
+  if (error.message.includes('403')) {
+    return 'You do not have permission to access this group.';
+  }
+  
+  if (error.message.includes('404')) {
+    return 'Group not found. It may have been deleted or moved.';
+  }
+  
+  if (error.message.includes('500')) {
+    return 'Server error occurred. Please try again in a moment.';
+  }
+  
+  // Generic fallback
+  return error.message || 'An unexpected error occurred. Please try again.';
+};
+
+/**
+ * Validate invite code format
+ * @param {string} inviteCode - The invite code to validate
+ * @returns {object} - Validation result
+ */
+export const validateInviteCode = (inviteCode) => {
+  if (!inviteCode || typeof inviteCode !== 'string') {
+    return {
+      isValid: false,
+      error: 'Invite code is required'
+    };
+  }
+  
+  const trimmed = inviteCode.trim();
+  
+  // Check if it's a full URL or just the code
+  let code = trimmed;
+  if (trimmed.includes('/join/')) {
+    const parts = trimmed.split('/join/');
+    code = parts[parts.length - 1];
+  }
+  
+  // Invite codes should be 8 characters, alphanumeric
+  const codeRegex = /^[a-zA-Z0-9]{8}$/;
+  if (!codeRegex.test(code)) {
+    return {
+      isValid: false,
+      error: 'Invite code must be 8 characters long and contain only letters and numbers'
+    };
+  }
+  
+  return {
+    isValid: true,
+    error: null,
+    normalizedCode: code
+  };
+};
+
+/**
+ * Validate group creation data
+ * @param {object} groupData - The group data to validate
+ * @returns {object} - Validation result
+ */
+export const validateGroupCreation = (groupData) => {
+  const errors = [];
+  
+  if (!groupData || typeof groupData !== 'object') {
+    return {
+      isValid: false,
+      errors: ['Group data is required']
+    };
+  }
+  
+  // Validate name
+  if (!groupData.name || typeof groupData.name !== 'string') {
+    errors.push('Group name is required');
+  } else {
+    const trimmedName = groupData.name.trim();
+    if (trimmedName.length < 2) {
+      errors.push('Group name must be at least 2 characters long');
+    } else if (trimmedName.length > 50) {
+      errors.push('Group name must be less than 50 characters');
+    }
+  }
+  
+  // Validate description (optional)
+  if (groupData.description && typeof groupData.description === 'string') {
+    if (groupData.description.trim().length > 500) {
+      errors.push('Group description must be less than 500 characters');
+    }
+  }
+  
+  // Validate max members (optional)
+  if (groupData.max_members !== undefined) {
+    const maxMembers = parseInt(groupData.max_members, 10);
+    if (isNaN(maxMembers) || maxMembers < 2 || maxMembers > 50) {
+      errors.push('Max members must be between 2 and 50');
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
+/**
+ * Debounce function for API calls
+ * @param {function} func - Function to debounce
+ * @param {number} wait - Wait time in milliseconds
+ * @returns {function} - Debounced function
+ */
+export const debounce = (func, wait) => {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
+
+/**
+ * Create a retry mechanism for failed operations
+ * @param {function} operation - The operation to retry
+ * @param {number} maxRetries - Maximum number of retries
+ * @param {number} delay - Delay between retries (ms)
+ * @returns {function} - Function that executes with retry logic
+ */
+export const withRetry = (operation, maxRetries = 3, delay = 1000) => {
+  return async (...args) => {
+    let lastError;
     
-    let userMessage = '';
-    let technicalMessage = '';
-    
-    if (typeof error === 'string') {
-        userMessage = error;
-        technicalMessage = error;
-    } else if (error?.message) {
-        technicalMessage = error.message;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation(...args);
+      } catch (error) {
+        lastError = error;
+        console.warn(`Attempt ${attempt} failed:`, error.message);
         
-        // Convert technical errors to user-friendly messages
-        if (error.message.includes('Invalid group ID') || error.message.includes('undefined')) {
-            userMessage = 'Invalid group information. Please refresh the page.';
-        } else if (error.message.includes('Network') || error.message.includes('fetch')) {
-            userMessage = 'Network error. Please check your connection.';
-        } else if (error.message.includes('Authentication')) {
-            userMessage = 'Authentication required. Please log in again.';
-        } else if (error.message.includes('Permission') || error.message.includes('403')) {
-            userMessage = 'You do not have permission to perform this action.';
-        } else if (error.message.includes('Not found') || error.message.includes('404')) {
-            userMessage = 'Group not found. It may have been deleted.';
-        } else if (error.message.includes('Group is full')) {
-            userMessage = 'Cannot join group - it is full.';
-        } else {
-            userMessage = `Failed to ${operation}. Please try again.`;
+        if (attempt < maxRetries) {
+          // Exponential backoff
+          const waitTime = delay * Math.pow(2, attempt - 1);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
-    } else {
-        userMessage = `An unexpected error occurred during ${operation}.`;
-        technicalMessage = JSON.stringify(error);
+      }
     }
     
-    if (logError) {
-        console.error(`❌ Group ${operation} error:`, technicalMessage);
-    }
-    
-    if (showToast) {
-        toast.error(userMessage);
-    }
-    
-    return userMessage;
+    throw lastError;
+  };
 };
 
-/**
- * Safe API call wrapper for group operations
- * @param {Function} apiCall - Function that returns a Promise
- * @param {string} operation - Operation name for error handling
- * @param {object} options - Additional options
- * @returns {Promise<object>} - Standardized response format
- */
-export const safeGroupApiCall = async (apiCall, operation, options = {}) => {
-    const { 
-        retries = 1, 
-        retryDelay = 1000, 
-        showErrorToast = true,
-        showSuccessToast = false,
-        successMessage = null
-    } = options;
-    
-    let lastError = null;
-    
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const result = await apiCall();
-            
-            if (showSuccessToast && successMessage) {
-                toast.success(successMessage);
-            }
-            
-            return {
-                success: true,
-                data: result,
-                error: null,
-                attempt: attempt + 1
-            };
-        } catch (error) {
-            lastError = error;
-            console.warn(`⚠️ Attempt ${attempt + 1} failed for ${operation}:`, error.message);
-            
-            // Don't retry on certain errors
-            if (error.message.includes('404') || 
-                error.message.includes('403') || 
-                error.message.includes('Invalid group ID')) {
-                break;
-            }
-            
-            // Wait before retry (except on last attempt)
-            if (attempt < retries) {
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-            }
-        }
-    }
-    
-    // All attempts failed
-    const errorMessage = handleGroupError(lastError, operation, { showToast: showErrorToast });
-    
-    return {
-        success: false,
-        data: null,
-        error: errorMessage,
-        attempt: retries + 1
-    };
-};
-
-/**
- * Validate member object structure
- * @param {object} member - Member object to validate
- * @returns {object} - {isValid: boolean, errors: string[]}
- */
-export const validateMemberObject = (member) => {
-    const errors = [];
-    
-    if (!member || typeof member !== 'object') {
-        errors.push('Member must be a valid object');
-        return { isValid: false, errors };
-    }
-    
-    if (!member.id) errors.push('Member missing ID');
-    if (!member.username || typeof member.username !== 'string') errors.push('Member missing valid username');
-    
-    return {
-        isValid: errors.length === 0,
-        errors
-    };
-};
-
-/**
- * Check if group is at capacity
- * @param {object} group - Group object
- * @returns {object} - {isFull: boolean, spotsLeft: number, canJoin: boolean}
- */
-export const checkGroupCapacity = (group) => {
-    const validation = validateGroupObject(group);
-    if (!validation.isValid) {
-        return {
-            isFull: true,
-            spotsLeft: 0,
-            canJoin: false,
-            error: 'Invalid group data'
-        };
-    }
-    
-    const currentMembers = group.current_members || 0;
-    const maxMembers = group.max_members || 10;
-    const spotsLeft = Math.max(0, maxMembers - currentMembers);
-    const isFull = spotsLeft === 0;
-    
-    return {
-        isFull,
-        spotsLeft,
-        canJoin: !isFull,
-        error: null
-    };
-};
-
-/**
- * Generate user-friendly group status message
- * @param {object} group - Group object
- * @returns {string} - Status message
- */
-export const getGroupStatusMessage = (group) => {
-    const validation = validateGroupObject(group);
-    if (!validation.isValid) {
-        return 'Invalid group data';
-    }
-    
-    const capacity = checkGroupCapacity(group);
-    const memberCount = group.current_members || 0;
-    
-    if (capacity.isFull) {
-        return `Group is full (${memberCount}/${group.max_members} members)`;
-    } else if (memberCount === 1) {
-        return `1 member (${capacity.spotsLeft} spots left)`;
-    } else {
-        return `${memberCount} members (${capacity.spotsLeft} spots left)`;
-    }
-};
-
-// Export all utilities
 export default {
-    validateGroupId,
-    safeGroupOperation,
-    validateGroupObject,
-    validateGroupPermissions,
-    handleGroupError,
-    safeGroupApiCall,
-    validateMemberObject,
-    checkGroupCapacity,
-    getGroupStatusMessage
+  validateGroupId,
+  validateGroupObject,
+  validateGroupPermissions,
+  safeGroupOperation,
+  handleGroupError,
+  validateInviteCode,
+  validateGroupCreation,
+  debounce,
+  withRetry
 };

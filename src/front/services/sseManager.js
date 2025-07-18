@@ -1,6 +1,11 @@
 // services/sseManager.js - Enhanced SSE Connection Manager
 import authService from '../store/authService';
+import { useRef, useState, useEffect } from 'react';
 
+/**
+ * Enhanced SSE Manager for reliable real-time connections
+ * Handles connection management, reconnection logic, heartbeat monitoring, and error recovery
+ */
 class SSEManager {
     constructor(endpoint, options = {}) {
         this.endpoint = endpoint;
@@ -10,43 +15,67 @@ class SSEManager {
             heartbeatTimeout: 30000,
             reconnectMultiplier: 1.5,
             maxReconnectDelay: 30000,
+            enableLogging: true,
+            autoReconnect: true,
             ...options
         };
         
+        // Connection state
         this.eventSource = null;
         this.retryCount = 0;
         this.isConnected = false;
         this.isReconnecting = false;
+        this.isDestroyed = false;
         this.lastHeartbeat = null;
+        this.connectionId = Math.random().toString(36).substr(2, 9);
+        this.connectionStartTime = null;
+        
+        // Event handling
         this.listeners = new Map();
+        this.messageQueue = [];
+        this.connectionAttempts = 0;
+        
+        // Timers
         this.reconnectTimer = null;
         this.heartbeatTimer = null;
-        this.connectionId = Math.random().toString(36).substr(2, 9);
+        this.healthCheckTimer = null;
         
         // Bind methods to preserve context
         this.connect = this.connect.bind(this);
         this.disconnect = this.disconnect.bind(this);
         this.scheduleReconnect = this.scheduleReconnect.bind(this);
         this.checkHeartbeat = this.checkHeartbeat.bind(this);
+        this.handleOpen = this.handleOpen.bind(this);
+        this.handleMessage = this.handleMessage.bind(this);
+        this.handleError = this.handleError.bind(this);
+        
+        this.log('SSE Manager initialized', { endpoint, options: this.options });
     }
     
     /**
      * Establish SSE connection with enhanced error handling
      */
     connect() {
+        if (this.isDestroyed) {
+            this.log('Cannot connect - manager is destroyed', 'warn');
+            return;
+        }
+        
         const token = authService.getAccessToken();
         if (!token) {
-            console.warn('🔐 SSEManager: No auth token available');
+            this.log('No auth token available', 'error');
             this.emit('authError', { message: 'No authentication token' });
             return;
         }
         
         // Prevent duplicate connections
         if (this.isConnected || this.isReconnecting) {
-            console.log('🔄 SSEManager: Connection already active or reconnecting');
+            this.log('Connection already active or reconnecting', 'warn');
             return;
         }
         
+        this.connectionAttempts++;
+        this.connectionStartTime = Date.now();
         this.isReconnecting = true;
         this.clearTimers();
         
@@ -55,91 +84,157 @@ class SSEManager {
             const url = new URL(this.endpoint, window.location.origin);
             url.searchParams.set('token', token);
             url.searchParams.set('connection_id', this.connectionId);
+            url.searchParams.set('client', 'web');
+            url.searchParams.set('version', '1.0');
             
-            console.log(`🔌 SSEManager: Connecting to ${this.endpoint} (attempt ${this.retryCount + 1})`);
+            this.log(`Connecting to SSE (attempt ${this.connectionAttempts})...`);
             
             this.eventSource = new EventSource(url.toString());
             
-            // Connection opened successfully
-            this.eventSource.onopen = () => {
-                console.log('✅ SSEManager: Connection established');
-                this.isConnected = true;
-                this.isReconnecting = false;
-                this.retryCount = 0;
-                this.lastHeartbeat = Date.now();
-                this.startHeartbeatMonitor();
-                this.emit('connected', { 
-                    connectionId: this.connectionId,
-                    endpoint: this.endpoint 
-                });
-            };
+            // Set up event handlers
+            this.eventSource.onopen = this.handleOpen;
+            this.eventSource.onmessage = this.handleMessage;
+            this.eventSource.onerror = this.handleError;
             
-            // Message received
-            this.eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    // Handle different message types
-                    if (data.type === 'heartbeat') {
-                        this.lastHeartbeat = Date.now();
-                        this.emit('heartbeat', { timestamp: this.lastHeartbeat });
-                        return;
-                    }
-                    
-                    if (data.type === 'error') {
-                        console.error('❌ SSEManager: Server error:', data.message);
-                        this.emit('serverError', data);
-                        return;
-                    }
-                    
-                    if (data.type === 'auth_error') {
-                        console.error('🔐 SSEManager: Authentication error');
-                        this.emit('authError', data);
-                        this.disconnect();
-                        return;
-                    }
-                    
-                    // Regular data message
-                    this.lastHeartbeat = Date.now();
-                    this.emit('message', data);
-                    
-                } catch (parseError) {
-                    console.error('❌ SSEManager: Message parse error:', parseError);
-                    this.emit('parseError', { 
-                        error: parseError, 
-                        rawData: event.data 
-                    });
-                }
-            };
-            
-            // Connection error occurred
-            this.eventSource.onerror = (error) => {
-                console.error('❌ SSEManager: Connection error:', error);
-                this.isConnected = false;
-                this.isReconnecting = false;
-                this.stopHeartbeatMonitor();
-                
-                // Emit error event
-                this.emit('error', { 
-                    error,
-                    retryCount: this.retryCount,
-                    willRetry: this.retryCount < this.options.maxRetries
-                });
-                
-                // Close the connection
-                if (this.eventSource) {
-                    this.eventSource.close();
-                    this.eventSource = null;
-                }
-                
-                // Schedule reconnection if within retry limits
-                this.scheduleReconnect();
-            };
+            // Start health monitoring
+            this.startHealthMonitoring();
             
         } catch (error) {
-            console.error('❌ SSEManager: Failed to create connection:', error);
-            this.isReconnecting = false;
-            this.emit('connectionError', { error });
+            this.log('Failed to create EventSource', 'error', error);
+            this.handleConnectionFailure(error);
+        }
+    }
+    
+    /**
+     * Handle successful connection
+     */
+    handleOpen(event) {
+        const connectionTime = Date.now() - this.connectionStartTime;
+        
+        this.log(`SSE connected successfully in ${connectionTime}ms`, 'success');
+        
+        this.isConnected = true;
+        this.isReconnecting = false;
+        this.retryCount = 0;
+        this.lastHeartbeat = Date.now();
+        
+        this.clearReconnectTimer();
+        this.startHeartbeatMonitor();
+        
+        this.emit('connected', { 
+            connectionId: this.connectionId,
+            endpoint: this.endpoint,
+            connectionTime,
+            attempt: this.connectionAttempts
+        });
+        
+        // Process queued messages
+        this.processMessageQueue();
+    }
+    
+    /**
+     * Handle incoming messages
+     */
+    handleMessage(event) {
+        try {
+            this.lastHeartbeat = Date.now();
+            
+            // Parse message data
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (parseError) {
+                this.log('Failed to parse message data', 'warn', parseError);
+                this.emit('parseError', { 
+                    error: parseError, 
+                    rawData: event.data 
+                });
+                return;
+            }
+            
+            this.log('Received message', 'debug', data);
+            
+            // Handle different message types
+            if (data.type === 'heartbeat') {
+                this.emit('heartbeat', { 
+                    timestamp: data.timestamp || this.lastHeartbeat,
+                    connectionId: this.connectionId
+                });
+                return;
+            }
+            
+            if (data.type === 'error') {
+                this.log('Server error message', 'error', data);
+                this.emit('serverError', data);
+                return;
+            }
+            
+            if (data.type === 'auth_error') {
+                this.log('Authentication error from server', 'error', data);
+                this.emit('authError', data);
+                this.disconnect();
+                return;
+            }
+            
+            // Regular data message
+            this.emit('message', data);
+            
+        } catch (error) {
+            this.log('Error processing message', 'error', error);
+        }
+    }
+    
+    /**
+     * Handle connection errors
+     */
+    handleError(error) {
+        this.log('SSE connection error', 'error', error);
+        
+        this.isConnected = false;
+        this.isReconnecting = false;
+        this.stopHeartbeatMonitor();
+        
+        this.emit('disconnected', {
+            reason: 'connection_error',
+            retryCount: this.retryCount,
+            connectionId: this.connectionId
+        });
+        
+        this.emit('error', { 
+            error,
+            retryCount: this.retryCount,
+            willRetry: this.retryCount < this.options.maxRetries
+        });
+        
+        // Close the connection
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+        
+        // Schedule reconnection if auto-reconnect is enabled
+        if (this.options.autoReconnect && !this.isDestroyed) {
+            this.scheduleReconnect();
+        }
+    }
+    
+    /**
+     * Handle connection failures
+     */
+    handleConnectionFailure(error) {
+        this.log('Connection failure', 'error', error);
+        
+        this.isConnected = false;
+        this.isReconnecting = false;
+        
+        this.emit('connectionError', { error });
+        this.emit('error', {
+            message: error.message || 'Failed to establish connection',
+            retryCount: this.retryCount,
+            willRetry: this.retryCount < this.options.maxRetries
+        });
+        
+        if (this.options.autoReconnect && !this.isDestroyed) {
             this.scheduleReconnect();
         }
     }
@@ -148,7 +243,7 @@ class SSEManager {
      * Gracefully disconnect SSE connection
      */
     disconnect() {
-        console.log('🔌 SSEManager: Disconnecting...');
+        this.log('Disconnecting SSE');
         
         this.isConnected = false;
         this.isReconnecting = false;
@@ -160,6 +255,7 @@ class SSEManager {
         }
         
         this.emit('disconnected', { 
+            reason: 'manual_disconnect',
             connectionId: this.connectionId,
             wasConnected: this.isConnected 
         });
@@ -170,22 +266,23 @@ class SSEManager {
      */
     scheduleReconnect() {
         if (this.retryCount >= this.options.maxRetries) {
-            console.log('❌ SSEManager: Max reconnection attempts reached');
+            this.log('Max reconnection attempts reached', 'error');
             this.emit('maxRetriesReached', { 
                 retryCount: this.retryCount,
-                maxRetries: this.options.maxRetries 
+                maxRetries: this.options.maxRetries,
+                totalAttempts: this.connectionAttempts
             });
             return;
         }
         
-        const delay = Math.min(
-            this.options.retryDelay * Math.pow(this.options.reconnectMultiplier, this.retryCount),
-            this.options.maxReconnectDelay
-        );
-        
         this.retryCount++;
         
-        console.log(`🔄 SSEManager: Scheduling reconnection in ${delay}ms (attempt ${this.retryCount}/${this.options.maxRetries})`);
+        // Calculate delay with exponential backoff
+        const baseDelay = this.options.retryDelay;
+        const multiplier = Math.pow(this.options.reconnectMultiplier, this.retryCount - 1);
+        const delay = Math.min(baseDelay * multiplier, this.options.maxReconnectDelay);
+        
+        this.log(`Scheduling reconnect attempt ${this.retryCount} in ${delay}ms`);
         
         this.emit('reconnectScheduled', { 
             delay, 
@@ -194,7 +291,8 @@ class SSEManager {
         });
         
         this.reconnectTimer = setTimeout(() => {
-            if (!this.isConnected) {
+            if (!this.isConnected && !this.isDestroyed) {
+                this.log(`Attempting reconnect ${this.retryCount}/${this.options.maxRetries}`);
                 this.connect();
             }
         }, delay);
@@ -230,15 +328,54 @@ class SSEManager {
         const timeSinceHeartbeat = Date.now() - this.lastHeartbeat;
         
         if (timeSinceHeartbeat > this.options.heartbeatTimeout) {
-            console.warn('💔 SSEManager: Heartbeat timeout detected');
+            this.log(`Heartbeat timeout (${timeSinceHeartbeat}ms since last heartbeat)`, 'warn');
             this.emit('heartbeatTimeout', { 
                 timeSinceHeartbeat,
                 timeout: this.options.heartbeatTimeout 
             });
             
             // Force reconnection
-            this.disconnect();
+            this.handleHeartbeatTimeout();
+        }
+    }
+    
+    /**
+     * Handle heartbeat timeout
+     */
+    handleHeartbeatTimeout() {
+        this.log('Heartbeat timeout detected, forcing reconnection', 'warn');
+        
+        this.disconnect();
+        
+        if (this.options.autoReconnect && !this.isDestroyed) {
             this.scheduleReconnect();
+        }
+    }
+    
+    /**
+     * Start general health monitoring
+     */
+    startHealthMonitoring() {
+        this.stopHealthMonitoring();
+        
+        this.healthCheckTimer = setInterval(() => {
+            if (this.isConnected && this.eventSource) {
+                // Check if EventSource is still in a good state
+                if (this.eventSource.readyState === EventSource.CLOSED) {
+                    this.log('EventSource closed unexpectedly', 'warn');
+                    this.handleError(new Event('unexpected_close'));
+                }
+            }
+        }, 30000); // Check every 30 seconds
+    }
+    
+    /**
+     * Stop health monitoring
+     */
+    stopHealthMonitoring() {
+        if (this.healthCheckTimer) {
+            clearInterval(this.healthCheckTimer);
+            this.healthCheckTimer = null;
         }
     }
     
@@ -246,11 +383,19 @@ class SSEManager {
      * Clear all active timers
      */
     clearTimers() {
+        this.clearReconnectTimer();
+        this.stopHeartbeatMonitor();
+        this.stopHealthMonitoring();
+    }
+    
+    /**
+     * Clear reconnection timer
+     */
+    clearReconnectTimer() {
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
-        this.stopHeartbeatMonitor();
     }
     
     /**
@@ -298,32 +443,73 @@ class SSEManager {
                 try {
                     callback(data);
                 } catch (error) {
-                    console.error(`❌ SSEManager: Listener error for ${event}:`, error);
+                    this.log(`Error in event listener for ${event}`, 'error', error);
                 }
             });
         }
     }
     
     /**
-     * Get current connection status
+     * Queue message for later processing
+     */
+    queueMessage(message) {
+        this.messageQueue.push({
+            message,
+            timestamp: Date.now()
+        });
+        
+        // Limit queue size
+        if (this.messageQueue.length > 100) {
+            this.messageQueue.shift();
+        }
+    }
+    
+    /**
+     * Process queued messages
+     */
+    processMessageQueue() {
+        if (this.messageQueue.length > 0) {
+            this.log(`Processing ${this.messageQueue.length} queued messages`);
+            
+            this.messageQueue.forEach(({ message }) => {
+                this.emit('message', message);
+            });
+            
+            this.messageQueue = [];
+        }
+    }
+    
+    /**
+     * Get current connection status and stats
      */
     getStatus() {
         return {
             isConnected: this.isConnected,
             isReconnecting: this.isReconnecting,
+            isDestroyed: this.isDestroyed,
             retryCount: this.retryCount,
             maxRetries: this.options.maxRetries,
             lastHeartbeat: this.lastHeartbeat,
             connectionId: this.connectionId,
-            endpoint: this.endpoint
+            connectionAttempts: this.connectionAttempts,
+            endpoint: this.endpoint,
+            queuedMessages: this.messageQueue.length,
+            uptime: this.connectionStartTime ? Date.now() - this.connectionStartTime : 0
         };
+    }
+    
+    /**
+     * Get detailed connection stats
+     */
+    getStats() {
+        return this.getStatus();
     }
     
     /**
      * Force reconnection (useful for manual retry)
      */
     forceReconnect() {
-        console.log('🔄 SSEManager: Force reconnection requested');
+        this.log('Force reconnection requested');
         this.retryCount = 0; // Reset retry count
         this.disconnect();
         setTimeout(() => this.connect(), 1000);
@@ -334,17 +520,49 @@ class SSEManager {
      */
     updateOptions(newOptions) {
         this.options = { ...this.options, ...newOptions };
-        console.log('⚙️ SSEManager: Options updated:', this.options);
+        this.log('Options updated', 'info', this.options);
     }
     
     /**
-     * Clean up all resources
+     * Destroy the manager (no more connections)
      */
     destroy() {
-        console.log('🗑️ SSEManager: Destroying connection manager');
+        this.log('Destroying SSE Manager');
+        
+        this.isDestroyed = true;
         this.disconnect();
         this.removeAllListeners();
         this.clearTimers();
+        this.messageQueue = [];
+        
+        this.emit('destroyed');
+    }
+    
+    /**
+     * Enhanced logging
+     */
+    log(message, level = 'info', data = null) {
+        if (!this.options.enableLogging) return;
+        
+        const prefix = `[SSE Manager]`;
+        const timestamp = new Date().toISOString();
+        
+        switch (level) {
+            case 'error':
+                console.error(`${prefix} ${timestamp} ❌`, message, data || '');
+                break;
+            case 'warn':
+                console.warn(`${prefix} ${timestamp} ⚠️`, message, data || '');
+                break;
+            case 'success':
+                console.log(`${prefix} ${timestamp} ✅`, message, data || '');
+                break;
+            case 'debug':
+                console.debug(`${prefix} ${timestamp} 🔍`, message, data || '');
+                break;
+            default:
+                console.log(`${prefix} ${timestamp} ℹ️`, message, data || '');
+        }
     }
 }
 
@@ -387,7 +605,7 @@ export function useSSEManager(endpoint, options = {}) {
             manager.on('error', (data) => {
                 setStatus(prev => ({ 
                     ...prev, 
-                    error: data.error?.message || 'Connection error',
+                    error: data.error?.message || data.message || 'Connection error',
                     retryCount: data.retryCount 
                 }));
             }),
