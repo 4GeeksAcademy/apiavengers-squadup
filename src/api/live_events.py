@@ -7,6 +7,7 @@ import json
 import time
 from datetime import datetime
 from collections import defaultdict
+from api.utils import utc_now
 
 live_events = Blueprint('live_events', __name__)
 
@@ -108,7 +109,7 @@ def broadcast_event(session_id):
             'session_id': session_id,
             'user_id': current_user_id,
             'username': user.username,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': utc_now().isoformat(),
             'data': data.get('data', {})
         }
         
@@ -222,7 +223,7 @@ def get_session_live_state(session_id):
             'voting_active': session.status == 'voting'
         },
         'active_connections': len(active_connections[session_id]),
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': utc_now().isoformat()
     }
 
 # Event broadcasting helpers
@@ -238,7 +239,7 @@ def broadcast_vote_cast(session_id, user_id, votes):
         'user_id': user_id,
         'username': user.username,
         'vote_count': len(votes),
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': utc_now().isoformat(),
         'data': {
             'votes': [{'game_id': v['game_id'], 'priority': v['priority']} for v in votes]
         }
@@ -252,7 +253,7 @@ def broadcast_session_complete(session_id):
     event = {
         'type': 'session_completed',
         'session_id': session_id,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': utc_now().isoformat(),
         'data': {}
     }
     
@@ -270,7 +271,7 @@ def broadcast_member_joined(session_id, user_id):
         'session_id': session_id,
         'user_id': user_id,
         'username': user.username,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': utc_now().isoformat(),
         'data': {}
     }
     
@@ -280,7 +281,7 @@ def broadcast_member_joined(session_id, user_id):
 # Cleanup old events periodically
 def cleanup_old_events():
     """Clean up old events (run this periodically)"""
-    current_time = datetime.utcnow()
+    current_time = utc_now()
     for session_id in list(event_store.keys()):
         # Remove events older than 1 hour
         event_store[session_id] = [

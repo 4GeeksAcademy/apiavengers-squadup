@@ -104,7 +104,7 @@ def get_owned_games():
 @steam.route('/sync-games', methods=['POST'])
 @jwt_required()
 def sync_games():
-    """Sync user's Steam library with rate limiting"""
+    """Sync user's Steam library with rate limiting using User model helper methods"""
     limiter = get_limiter()
     if limiter:
         # Rate limit sync to prevent spam - 2 syncs per minute
@@ -116,36 +116,61 @@ def sync_games():
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
-            
-        if not user.steam_id:
-            return jsonify({
-                'error': 'Steam not connected',
-                'message': 'Please connect your Steam account first'
-            }), 400
         
         current_app.logger.info(f"Starting manual sync for user {user.username}")
         
-        # 🔧 FIXED: Check if user synced recently with utc_now
-        if user.steam_library_synced_at:
-            from datetime import timedelta
-            if utc_now() - user.steam_library_synced_at < timedelta(minutes=5):
+        # 🔧 FIXED: Use User model helper methods for rate limiting
+        can_sync, message = user.can_sync_steam()
+        
+        if not can_sync:
+            if "not connected" in message:
+                return jsonify({
+                    'error': 'Steam not connected',
+                    'message': message
+                }), 400
+            else:
+                # Rate limiting message with exact countdown
+                cooldown_remaining = user.steam_sync_cooldown_remaining()
                 return jsonify({
                     'success': False,
                     'error': 'Recently synced',
-                    'message': 'Please wait a few minutes before syncing again',
-                    'last_synced': user.steam_library_synced_at.isoformat()
+                    'message': message,
+                    'retry_after': cooldown_remaining,
+                    'last_synced': user.steam_library_synced_at.isoformat() if user.steam_library_synced_at else None
                 }), 429
         
         # Use steam_service to sync
-        new_games, updated_games = steam_service.sync_user_library(user_id)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Library synced successfully! Added {new_games} new games, updated {updated_games} games.',
-            'new_games': new_games,
-            'updated_games': updated_games,
-            'total_games': new_games + updated_games
-        }), 200
+        try:
+            new_games, updated_games = steam_service.sync_user_library(user_id)
+            
+            # 🔧 FIXED: Update sync timestamp using User model method
+            user.update_steam_sync_time()
+            
+            # Update user's total games count
+            user.total_games = len(user.owned_games)
+            
+            # Commit the changes
+            db.session.commit()
+            
+            current_app.logger.info(f"Steam sync completed for {user.username}: {new_games} new, {updated_games} updated")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Library synced successfully! Added {new_games} new games, updated {updated_games} games.',
+                'new_games': new_games,
+                'updated_games': updated_games,
+                'total_games': len(user.owned_games),
+                'sync_time': user.steam_library_synced_at.isoformat() if user.steam_library_synced_at else None
+            }), 200
+            
+        except Exception as sync_error:
+            db.session.rollback()
+            current_app.logger.error(f"Steam service sync failed for {user.username}: {str(sync_error)}")
+            return jsonify({
+                'success': False,
+                'error': 'Sync failed',
+                'message': 'Failed to sync Steam library. Please try again later.'
+            }), 500
         
     except APIException as e:
         current_app.logger.error(f"API Exception in sync_games: {e.message}")
@@ -158,6 +183,66 @@ def sync_games():
             'success': False,
             'error': 'Internal server error',
             'message': 'Failed to sync Steam library. Please try again later.'
+        }), 500
+
+# 🔧 NEW: Steam sync status endpoint using User model helper methods
+@steam.route('/sync-status', methods=['GET'])
+@jwt_required()
+def get_sync_status():
+    """Get user's Steam sync status using User model helper methods"""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # 🔧 NEW: Use User model helper method
+        status = user.get_steam_sync_status()
+        
+        return jsonify({
+            'success': True,
+            'status': status
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting sync status: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+# 🔧 NEW: Check if user can sync endpoint
+@steam.route('/can-sync', methods=['GET'])
+@jwt_required()
+def can_sync():
+    """Check if user can sync Steam library with detailed status"""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # 🔧 NEW: Use User model helper methods
+        can_sync, message = user.can_sync_steam()
+        cooldown_remaining = user.steam_sync_cooldown_remaining()
+        
+        return jsonify({
+            'success': True,
+            'can_sync': can_sync,
+            'message': message,
+            'cooldown_remaining': cooldown_remaining,
+            'last_synced': user.steam_library_synced_at.isoformat() if user.steam_library_synced_at else None,
+            'steam_connected': user.is_steam_connected,
+            'total_games': user.total_games or 0
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error checking sync permission: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
         }), 500
 
 @steam.route('/common-games', methods=['POST'])
@@ -350,7 +435,7 @@ def get_steam_profile():
 @steam.route('/status', methods=['GET'])
 @jwt_required()
 def steam_status():
-    """Get Steam service status and user's connection info"""
+    """Get Steam service status and user's connection info using User model helper methods"""
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
@@ -361,6 +446,15 @@ def steam_status():
         # Check Steam service availability
         steam_available = steam_service is not None
         api_key_configured = bool(steam_service and steam_service.api_key) if steam_available else False
+        
+        # 🔧 ENHANCED: Get sync status using User model helper methods
+        sync_status = user.get_steam_sync_status() if user.steam_id else {
+            "connected": False,
+            "can_sync": False,
+            "message": "Steam account not connected",
+            "last_synced": None,
+            "cooldown_remaining": 0
+        }
         
         return jsonify({
             'success': True,
@@ -375,7 +469,8 @@ def steam_status():
                 'steam_username': user.steam_username if user.is_steam_connected else None,
                 'total_games': user.total_games if user.is_steam_connected else 0,
                 'last_synced': user.steam_library_synced_at.isoformat() if user.steam_library_synced_at else None
-            }
+            },
+            'sync_status': sync_status
         }), 200
         
     except Exception as e:
@@ -398,7 +493,7 @@ def steam_health():
         
         # Test database connection
         try:
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))
             health_status['database'] = 'healthy'
         except Exception:
             health_status['database'] = 'unhealthy'

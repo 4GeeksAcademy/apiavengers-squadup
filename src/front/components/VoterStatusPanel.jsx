@@ -1,4 +1,4 @@
-// src/front/components/VoterStatusPanel.jsx - Enhanced with SSE Manager
+// src/front/components/VoterStatusPanel.jsx - OPTIMIZED for Rate Limiting
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import authService from '../store/authService';
 import Avatar from './Avatar';
@@ -28,20 +28,40 @@ const VoterStatusPanel = ({
         updateCount: 0
     });
     
-    // SSE Manager ref
+    // CRITICAL: Rate limiting and request management
     const sseManagerRef = useRef(null);
     const pollIntervalRef = useRef(null);
+    const lastFetchTimeRef = useRef(0);
+    const isLoadingRef = useRef(false);
+    const mountedRef = useRef(true);
+    
+    // CRITICAL: Rate limiting constants
+    const MIN_FETCH_INTERVAL = 5000; // 5 seconds minimum between API calls
+    const POLL_INTERVAL = 30000; // 30 seconds for fallback polling
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_BASE = 2000; // 2 seconds base delay
 
-    // Initialize component
+    // Initialize component with rate limiting
     useEffect(() => {
         if (!sessionId) return;
 
+        mountedRef.current = true;
         initializeVoterStatuses();
-        fetchVoterStatus();
-        setupEnhancedLiveConnection();
-        setupFallbackPolling();
+        
+        // Use controlled initialization to prevent multiple simultaneous calls
+        const initTimer = setTimeout(() => {
+            if (mountedRef.current) {
+                fetchVoterStatusSafe();
+                setupEnhancedLiveConnection();
+                setupControlledFallbackPolling();
+            }
+        }, 100);
 
-        return cleanup;
+        return () => {
+            mountedRef.current = false;
+            clearTimeout(initTimer);
+            cleanup();
+        };
     }, [sessionId, groupMembers]);
 
     const initializeVoterStatuses = useCallback(() => {
@@ -64,14 +84,39 @@ const VoterStatusPanel = ({
         setVoterStatuses(initialStatuses);
     }, [groupMembers]);
 
-    const fetchVoterStatus = async (silent = false) => {
+    // CRITICAL: Rate-limited fetch function
+    const fetchVoterStatusSafe = async (silent = false, retryCount = 0) => {
+        // Prevent multiple simultaneous requests
+        if (isLoadingRef.current) {
+            console.log('🛑 VoterStatus: Request already in progress, skipping...');
+            return;
+        }
+
+        // Rate limiting check
+        const now = Date.now();
+        if (now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
+            console.log('🛑 VoterStatus: Rate limited, skipping request');
+            return;
+        }
+
+        if (!sessionId || !mountedRef.current) {
+            return;
+        }
+
+        isLoadingRef.current = true;
+        lastFetchTimeRef.current = now;
+        
         try {
             if (!silent) setLoading(true);
             
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
+            console.log('📊 VoterStatus: Safe fetch for session:', sessionId);
+            
             const response = await authService.authenticatedFetch(
                 `${backendUrl}/api/gaming/sessions/${sessionId}/voters`
             );
+            
+            if (!mountedRef.current) return;
             
             if (response.ok) {
                 const data = await response.json();
@@ -79,16 +124,61 @@ const VoterStatusPanel = ({
                 updateVoterStatusesFromData(data);
                 setError(null);
                 
-                console.log('📊 Voter status loaded:', data);
+                console.log('📊 Voter status loaded safely:', data);
+            } else if (response.status === 429) {
+                // Rate limited - implement exponential backoff
+                const delay = RETRY_DELAY_BASE * Math.pow(2, retryCount);
+                console.log(`⏳ VoterStatus: Rate limited, retrying in ${delay}ms...`);
+                
+                if (mountedRef.current) {
+                    setError('Rate limited - retrying automatically...');
+                    
+                    if (retryCount < MAX_RETRIES) {
+                        setTimeout(() => {
+                            if (mountedRef.current) {
+                                fetchVoterStatusSafe(silent, retryCount + 1);
+                            }
+                        }, delay);
+                    } else {
+                        setError('Rate limit exceeded. Please wait before refreshing.');
+                    }
+                }
+                return;
             } else {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Failed to load voter status');
             }
         } catch (error) {
             console.error('❌ Error fetching voter status:', error);
-            setError(error.message || 'Network error loading voter status');
+            
+            if (mountedRef.current) {
+                // Handle different error types
+                if (error.message.includes('ERR_INSUFFICIENT_RESOURCES')) {
+                    setError('Network overloaded - reducing update frequency');
+                    // Increase poll interval to reduce load
+                    setupControlledFallbackPolling(60000); // 1 minute intervals
+                } else if (error.message.includes('Failed to fetch')) {
+                    setError('Network connection issue');
+                } else {
+                    setError(error.message || 'Network error loading voter status');
+                }
+                
+                // Retry with exponential backoff for non-critical errors
+                if (retryCount < MAX_RETRIES && 
+                    !error.message.includes('ERR_INSUFFICIENT_RESOURCES')) {
+                    const delay = RETRY_DELAY_BASE * Math.pow(2, retryCount);
+                    setTimeout(() => {
+                        if (mountedRef.current) {
+                            fetchVoterStatusSafe(silent, retryCount + 1);
+                        }
+                    }, delay);
+                }
+            }
         } finally {
-            if (!silent) setLoading(false);
+            if (mountedRef.current) {
+                if (!silent) setLoading(false);
+            }
+            isLoadingRef.current = false;
         }
     };
 
@@ -100,13 +190,13 @@ const VoterStatusPanel = ({
         
         console.log('🔌 Setting up enhanced voter status live connection...');
         
-        // Create SSE Manager for voter status
+        // Create SSE Manager for voter status with conservative retry settings
         const sseManager = new SSEManager(endpoint, {
-            maxRetries: 5,
-            retryDelay: 3000,
-            heartbeatTimeout: 45000,
-            reconnectMultiplier: 1.4,
-            maxReconnectDelay: 25000
+            maxRetries: 3, // Reduced from 5
+            retryDelay: 5000, // Increased from 3000
+            heartbeatTimeout: 60000, // Increased from 45000
+            reconnectMultiplier: 2.0, // Increased from 1.4
+            maxReconnectDelay: 60000 // Increased from 25000
         });
         
         sseManagerRef.current = sseManager;
@@ -177,10 +267,13 @@ const VoterStatusPanel = ({
                 error: 'Live updates unavailable'
             }));
             
-            toast.error('Voter status live updates unavailable. Using polling.', {
+            toast.error('Voter status live updates unavailable. Using reduced polling.', {
                 duration: 4000,
                 icon: '⚠️'
             });
+            
+            // Fall back to less frequent polling
+            setupControlledFallbackPolling(60000); // 1 minute intervals
         });
         
         // Start the connection
@@ -284,21 +377,31 @@ const VoterStatusPanel = ({
         }
     };
 
-    const setupFallbackPolling = () => {
+    // CRITICAL: Controlled fallback polling with configurable intervals
+    const setupControlledFallbackPolling = (customInterval = POLL_INTERVAL) => {
         // Clear any existing interval
         if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
         }
 
-        // Setup polling as fallback
+        console.log(`📊 Setting up controlled polling every ${customInterval}ms`);
+        
+        // Setup polling as fallback with rate limiting
         const interval = setInterval(() => {
+            // Don't poll if connected via SSE or voting is complete
             if (connectionState.isConnected || voterData?.voting_complete) {
-                return; // Don't poll if connected or voting is complete
+                return;
             }
             
-            console.log('📊 Polling fallback - fetching voter status');
-            fetchVoterStatus(true);
-        }, 15000); // Poll every 15 seconds
+            // Don't poll if there's already a request in progress
+            if (isLoadingRef.current) {
+                console.log('📊 Skipping poll - request in progress');
+                return;
+            }
+            
+            console.log('📊 Controlled polling fallback - fetching voter status');
+            fetchVoterStatusSafe(true);
+        }, customInterval);
         
         pollIntervalRef.current = interval;
     };
@@ -376,21 +479,30 @@ const VoterStatusPanel = ({
     };
 
     const cleanup = () => {
+        console.log('🧹 Cleaning up enhanced voter status...');
+        
         if (sseManagerRef.current) {
-            console.log('🧹 Cleaning up enhanced voter status SSE Manager...');
             sseManagerRef.current.destroy();
             sseManagerRef.current = null;
         }
+        
         if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
         }
+        
+        isLoadingRef.current = false;
+        mountedRef.current = false;
     };
 
+    // CRITICAL: Safe retry with rate limiting
     const handleRetry = () => {
         setError(null);
-        setLoading(true);
-        fetchVoterStatus();
+        
+        // Reset rate limiting for manual retry
+        lastFetchTimeRef.current = 0;
+        
+        fetchVoterStatusSafe();
         
         if (sseManagerRef.current) {
             sseManagerRef.current.forceReconnect();
@@ -476,8 +588,9 @@ const VoterStatusPanel = ({
                 <button
                     onClick={handleRetry}
                     className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition-colors"
+                    disabled={isLoadingRef.current}
                 >
-                    🔄 Retry
+                    🔄 {isLoadingRef.current ? 'Retrying...' : 'Retry'}
                 </button>
             </div>
         );
@@ -497,7 +610,7 @@ const VoterStatusPanel = ({
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white font-semibold flex items-center">
                     <span className="text-xl mr-2">👥</span>
-                    Enhanced Voter Status
+                    Live Voter Status
                 </h3>
                 <div className="flex items-center space-x-2">
                     <div className={`w-2 h-2 rounded-full ${
@@ -681,8 +794,9 @@ const VoterStatusPanel = ({
                     <button
                         onClick={forceReconnect}
                         className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30 rounded text-xs transition-colors"
+                        disabled={isLoadingRef.current}
                     >
-                        🔄 Reconnect
+                        🔄 {isLoadingRef.current ? 'Connecting...' : 'Reconnect'}
                     </button>
                 </div>
             )}

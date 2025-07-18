@@ -3,8 +3,9 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey, UniqueConstraint, CheckConstraint, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta  # 🔧 ADD: Import timedelta for Steam sync
 import json
+import pytz  # 🔧 ADD: Import pytz for timezone handling
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
@@ -136,6 +137,93 @@ class User(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    # 🔧 NEW: Steam sync helper methods for Option 3
+    def can_sync_steam(self):
+        """
+        Check if user can sync Steam library (5 minute cooldown)
+        Returns tuple of (can_sync: bool, message: str)
+        """
+        if not self.steam_id:
+            return False, "Steam account not connected"
+        
+        if not self.steam_library_synced_at:
+            return True, "Ready to sync"
+        
+        # Use naive datetime for comparison to avoid timezone issues
+        now = datetime.utcnow()
+        last_synced = self.steam_library_synced_at
+        
+        # Handle timezone-aware datetime if present
+        if hasattr(last_synced, 'tzinfo') and last_synced.tzinfo is not None:
+            last_synced = last_synced.astimezone(pytz.UTC).replace(tzinfo=None)
+        
+        time_since_sync = now - last_synced
+        cooldown_period = timedelta(minutes=5)
+        
+        if time_since_sync < cooldown_period:
+            remaining = cooldown_period - time_since_sync
+            remaining_seconds = int(remaining.total_seconds())
+            return False, f"Please wait {remaining_seconds} seconds before syncing again"
+        
+        return True, "Ready to sync"
+
+    def steam_sync_cooldown_remaining(self):
+        """
+        Get remaining cooldown time in seconds
+        Returns 0 if no cooldown or can sync
+        """
+        if not self.steam_id or not self.steam_library_synced_at:
+            return 0
+        
+        # Use naive datetime for comparison
+        now = datetime.utcnow()
+        last_synced = self.steam_library_synced_at
+        
+        # Handle timezone-aware datetime if present
+        if hasattr(last_synced, 'tzinfo') and last_synced.tzinfo is not None:
+            last_synced = last_synced.astimezone(pytz.UTC).replace(tzinfo=None)
+        
+        time_since_sync = now - last_synced
+        cooldown_period = timedelta(minutes=5)
+        
+        if time_since_sync >= cooldown_period:
+            return 0
+        
+        remaining = cooldown_period - time_since_sync
+        return int(remaining.total_seconds())
+
+    def update_steam_sync_time(self):
+        """
+        Update the last Steam sync timestamp to now
+        """
+        self.steam_library_synced_at = datetime.utcnow()
+
+    def get_steam_sync_status(self):
+        """
+        Get comprehensive Steam sync status information
+        """
+        if not self.steam_id:
+            return {
+                "connected": False,
+                "can_sync": False,
+                "message": "Steam account not connected",
+                "last_synced": None,
+                "cooldown_remaining": 0
+            }
+        
+        can_sync, message = self.can_sync_steam()
+        cooldown = self.steam_sync_cooldown_remaining()
+        
+        return {
+            "connected": True,
+            "can_sync": can_sync,
+            "message": message,
+            "last_synced": self.steam_library_synced_at.isoformat() if self.steam_library_synced_at else None,
+            "cooldown_remaining": cooldown,
+            "steam_username": self.steam_username,
+            "total_games": self.total_games or 0
+        }
 
     def serialize(self):
         return {

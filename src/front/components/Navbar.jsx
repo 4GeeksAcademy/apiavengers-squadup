@@ -5,6 +5,8 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
+import steamService from '../services/steamService.js'; // Import your steamService
+import toast from 'react-hot-toast';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -14,6 +16,7 @@ export const Navbar = () => {
     const user = store.user;
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showExploreMenu, setShowExploreMenu] = useState(false);
+    const [isConnectingSteam, setIsConnectingSteam] = useState(false); // Add loading state
     const location = useLocation();
     const navigate = useNavigate();
     const dropdownRef = useRef(null);
@@ -60,23 +63,63 @@ export const Navbar = () => {
         navigate('/');
     };
 
+    // 🔧 FIXED: Steam integration using your steamService
     const handleSteamIntegration = async () => {
         console.log('Steam Integration clicked');
-        const steamId = prompt('Enter your Steam ID to connect:');
-        if (!steamId) {
-            alert('Steam ID is required.');
-            return;
-        }
+        setIsConnectingSteam(true);
+        
         try {
-            const result = await authService.connectSteam(steamId);
-            if (result.success && result.user) {
-                dispatch({ type: 'set_user', payload: result.user });
+            // Show options to user: OpenID or Manual
+            const useOpenID = window.confirm(
+                'Choose Steam connection method:\n\n' +
+                'OK = Use Steam OpenID (Automatic - Recommended)\n' +
+                'Cancel = Enter Steam ID manually'
+            );
+
+            if (useOpenID) {
+                // Use Steam OpenID (automatic method)
+                await steamService.connectViaOpenID('/dashboard?steam_connected=true');
+                // Note: This will redirect to Steam, so code below won't execute
+            } else {
+                // Manual Steam ID entry
+                const instructions = steamService.showSteamIdInstructions();
+                const steamId = prompt(
+                    `${instructions.title}\n\n` +
+                    `${instructions.steps.join('\n')}\n\n` +
+                    `Example: ${instructions.example}\n\n` +
+                    `Note: ${instructions.note}\n\n` +
+                    'Enter your 17-digit Steam ID:'
+                );
+
+                if (!steamId) {
+                    setIsConnectingSteam(false);
+                    return;
+                }
+
+                const result = await steamService.connectManually(steamId);
+                
+                if (result.success) {
+                    // Update user state with new Steam connection
+                    dispatch({ 
+                        type: 'set_user', 
+                        payload: result.user 
+                    });
+                    
+                    toast.success(
+                        `Steam connected! ${result.newGames} games added to your library.`
+                    );
+                    
+                    setShowUserMenu(false);
+                } else {
+                    throw new Error(result.error || 'Failed to connect Steam account');
+                }
             }
-            alert('Steam integration initiated!');
-            setShowUserMenu(false);
         } catch (error) {
             console.error('Steam integration failed:', error);
-            alert('Failed to connect Steam. Please try again.');
+            const friendlyError = steamService.getErrorMessage(error);
+            toast.error(friendlyError);
+        } finally {
+            setIsConnectingSteam(false);
         }
     };
 
@@ -193,6 +236,14 @@ export const Navbar = () => {
 
                         {isAuthenticated ? (
                             <div className="flex items-center space-x-4">
+                                {/* Steam Connection Status Indicator */}
+                                {user && !user.steam_connected && (
+                                    <div className="hidden sm:flex items-center space-x-2 px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-lg">
+                                        <span className="text-orange-300 text-sm">🎮</span>
+                                        <span className="text-orange-300 text-sm font-medium">Connect Steam</span>
+                                    </div>
+                                )}
+
                                 <div className="relative z-[60]">  {/* Increased z-index for stacking context */}
                                     <button 
                                         onClick={handleToggle}
@@ -222,20 +273,56 @@ export const Navbar = () => {
                                         onClick={(e) => e.stopPropagation()}
                                     >  
                                         <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
-                                            <span className="flex items-center space-x-2"><span>👤</span><span>Profile Settings</span></span>
+                                            <span className="flex items-center space-x-2">
+                                                <span>👤</span>
+                                                <span>Profile Settings</span>
+                                            </span>
                                         </Link>
                                         <Link to="/dashboard" className="dropdown-item" onClick={handleDashboardClick}>
-                                            <span className="flex items-center space-x-2"><span>📊</span><span>Dashboard</span></span>
+                                            <span className="flex items-center space-x-2">
+                                                <span>📊</span>
+                                                <span>Dashboard</span>
+                                            </span>
                                         </Link>
                                         <Link to="/sessions" className="dropdown-item" onClick={handleFindGamesClick}>
-                                            <span className="flex items-center space-x-2"><span>🎮</span><span>Find Games</span></span>
+                                            <span className="flex items-center space-x-2">
+                                                <span>🎮</span>
+                                                <span>Find Games</span>
+                                            </span>
                                         </Link>
-                                        <button className="dropdown-item" onClick={handleSteamIntegration}>
-                                            <span className="flex items-center space-x-2"><span>🔗</span><span>Steam Integration</span></span>
+                                        
+                                        {/* Enhanced Steam Integration Button */}
+                                        <button 
+                                            className="dropdown-item" 
+                                            onClick={handleSteamIntegration}
+                                            disabled={isConnectingSteam}
+                                        >
+                                            <span className="flex items-center space-x-2">
+                                                {isConnectingSteam ? (
+                                                    <>
+                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                        <span>Connecting...</span>
+                                                    </>
+                                                ) : user?.steam_connected ? (
+                                                    <>
+                                                        <span>✅</span>
+                                                        <span>Steam Connected</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <span>🔗</span>
+                                                        <span>Connect Steam</span>
+                                                    </>
+                                                )}
+                                            </span>
                                         </button>
+                                        
                                         <hr className="my-2 border-white/20" />
                                         <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
-                                            <span className="flex items-center space-x-2"><span>🚪</span><span>Logout</span></span>
+                                            <span className="flex items-center space-x-2">
+                                                <span>🚪</span>
+                                                <span>Logout</span>
+                                            </span>
                                         </button>
                                     </div>
                                 </div>

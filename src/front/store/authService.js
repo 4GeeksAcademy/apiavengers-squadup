@@ -1,4 +1,4 @@
-// src/front/store/authService.js - MINIMAL CRITICAL FIXES for race conditions
+// src/front/store/authService.js - FIXED VERSION to prevent loops
 
 class AuthService {
     constructor() {
@@ -11,9 +11,13 @@ class AuthService {
         this.isRefreshing = false;
         this.failedQueue = [];
         this.refreshTimer = null;
+        
+        // 🔧 CRITICAL FIXES for preventing loops
         this.authCheckCompleted = false;
-        this.initializationPromise = null; // 🔧 NEW: Prevent multiple initializations
-        this.isInitializing = false; // 🔧 NEW: Track initialization state
+        this.initializationPromise = null;
+        this.isInitializing = false;
+        this.lastAuthCheck = 0; // Prevent rapid auth checks
+        this.AUTH_CHECK_COOLDOWN = 5000; // 5 second cooldown between auth checks
         
         console.log('🔐 AuthService initialized');
     }
@@ -22,14 +26,18 @@ class AuthService {
         console.log('✅ Dispatch function injected into AuthService.');
         this.dispatch = dispatch;
         
-        // 🔧 CRITICAL FIX: Prevent multiple concurrent initializations
-        if (this.isInitializing || this.authCheckCompleted) {
-            console.log('🔍 Auth already initializing or completed, reusing existing state');
+        // 🔧 CRITICAL: Prevent multiple concurrent initializations
+        const now = Date.now();
+        if (this.isInitializing || 
+            this.authCheckCompleted || 
+            (now - this.lastAuthCheck < this.AUTH_CHECK_COOLDOWN)) {
+            console.log('🔍 Auth check skipped - already in progress or completed recently');
             return this.initializationPromise || Promise.resolve();
         }
         
         if (!this.initializationPromise) {
             this.isInitializing = true;
+            this.lastAuthCheck = now;
             this.initializationPromise = this.checkAuthOnStartup()
                 .finally(() => {
                     this.isInitializing = false;
@@ -45,7 +53,7 @@ class AuthService {
             return;
         }
         
-        console.log('🔍 Starting one-time auth check on startup...');
+        console.log('🔍 Starting ONE-TIME auth check on startup...');
         
         if (this.dispatch) {
             this.dispatch({ type: 'set_loading', payload: true });
@@ -55,14 +63,13 @@ class AuthService {
             const accessToken = this.getAccessToken();
             const storedUser = this.getUser();
             
-            // 🔧 ENHANCED: More thorough validation without breaking existing logic
             if (accessToken && storedUser && this.isValidTokenFormat(accessToken)) {
                 console.log('🔍 Found stored credentials, verifying with server...');
                 
                 try {
-                    // 🔧 IMPROVED: Add timeout and better error handling
+                    // 🔧 CRITICAL: Add timeout and prevent multiple verification attempts
                     const isValid = await Promise.race([
-                        this.verifyToken(),
+                        this.verifyTokenOnce(), // Use single-use verification
                         new Promise((_, reject) => 
                             setTimeout(() => reject(new Error('Verification timeout')), 8000)
                         )
@@ -84,13 +91,12 @@ class AuthService {
                         this.clearAuth();
                     }
                 } catch (verifyError) {
-                    console.log('⚠️ Token verification failed with error:', verifyError.message);
+                    console.log('⚠️ Token verification failed:', verifyError.message);
                     
-                    // 🔧 IMPROVED: Better handling of network vs auth errors
+                    // Keep local auth for network errors, clear for auth errors
                     if (verifyError.message.includes('timeout') || 
-                        verifyError.message.includes('Network') || 
-                        verifyError.message.includes('fetch')) {
-                        console.log('⚠️ Network error during verification, keeping local auth temporarily');
+                        verifyError.message.includes('Network')) {
+                        console.log('⚠️ Network error, keeping local auth temporarily');
                         if (this.dispatch) {
                             this.dispatch({ 
                                 type: 'login_success',
@@ -122,23 +128,68 @@ class AuthService {
                 this.dispatch({ type: 'set_loading', payload: false });
             }
             
-            console.log('🔍 Auth check completed');
+            console.log('🔍 Auth check completed - NO MORE AUTO CHECKS');
         }
     }
 
-    // 🔧 IMPROVED: Better token validation
+    // 🔧 NEW: Single-use token verification to prevent loops
+    async verifyTokenOnce() {
+        if (this.isVerifying) {
+            console.log('🔍 Already verifying token, skipping...');
+            return false;
+        }
+        
+        this.isVerifying = true;
+        
+        try {
+            const token = this.getAccessToken();
+            if (!token || !this.isValidTokenFormat(token)) {
+                return false;
+            }
+            
+            console.log('🔍 Verifying token with server (single attempt)...');
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
+            const res = await fetch(`${this.apiUrl}/api/auth/verify`, { 
+                headers: { 
+                    // 🔧 CRITICAL: Use both header formats for better CORS compatibility
+                    'authorization': `Bearer ${token}`,  // lowercase for some CORS setups
+                    'Authorization': `Bearer ${token}`   // standard capitalized version
+                },
+                signal: controller.signal
+            }); 
+            
+            clearTimeout(timeoutId);
+            
+            if (res.ok) {
+                console.log('✅ Token verification successful');
+                return true;
+            } else {
+                console.log('❌ Token verification failed with status:', res.status);
+                return false;
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('Network timeout during token verification');
+            } else {
+                throw new Error('Network error during token verification');
+            }
+        } finally {
+            this.isVerifying = false;
+        }
+    }
+
     isValidTokenFormat(token) {
         if (!token || typeof token !== 'string') return false;
         
         try {
-            // JWT tokens have 3 parts separated by dots
             const parts = token.split('.');
             if (parts.length !== 3) return false;
             
-            // Try to decode the payload to check if it's valid JSON
             const payload = JSON.parse(atob(parts[1]));
             
-            // Check if token has expiry and it's not expired
             if (payload.exp && payload.exp * 1000 < Date.now()) {
                 console.log('🚫 Token is expired');
                 return false;
@@ -151,73 +202,17 @@ class AuthService {
         }
     }
 
-    // 🔧 IMPROVED: Better token verification with timeout and retry
-    async verifyToken() { 
-        const token = this.getAccessToken(); 
-        if (!token) {
-            console.log('🚫 No token to verify');
-            return false; 
-        }
-        
-        // Check token format before making API call
-        if (!this.isValidTokenFormat(token)) {
-            console.log('🚫 Invalid token format, not making API call');
-            return false;
-        }
-        
-        try { 
-            console.log('🔍 Verifying token with server...');
-            
-            // 🔧 IMPROVED: Add timeout to prevent hanging
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-            
-            const res = await fetch(`${this.apiUrl}/api/auth/verify`, { 
-                headers: { 'Authorization': `Bearer ${token}` },
-                signal: controller.signal
-            }); 
-            
-            clearTimeout(timeoutId);
-            
-            if (res.ok) {
-                const data = await res.json();
-                console.log('✅ Token verification successful');
-                
-                // 🔧 IMPROVED: Update user data if it changed, but don't trigger dispatch loops
-                if (data.user && this.dispatch && data.user.id !== this.getUser()?.id) {
-                    this.dispatch({ type: 'set_user', payload: data.user });
-                }
-                return true;
-            } else if (res.status === 401) {
-                console.log('❌ Token verification failed: 401 Unauthorized');
-                return false;
-            } else {
-                console.log('❌ Token verification failed with status:', res.status);
-                return false;
-            }
-        } catch (error) { 
-            if (error.name === 'AbortError') {
-                console.error('💥 Token verification timeout');
-                throw new Error('Network timeout during token verification');
-            } else {
-                console.error('💥 Token verification error:', error);
-                throw new Error('Network error during token verification');
-            }
-        } 
-    }
-
-    // 🔧 IMPROVED: More reliable authentication check
+    // 🔧 CRITICAL: More reliable authentication check
     isAuthenticated() { 
         const token = this.getAccessToken();
         const user = this.getUser();
         
-        // 🔧 CRITICAL: If we're still checking auth, be conservative
-        if (!this.authCheckCompleted) {
-            console.log('🔍 AuthService.isAuthenticated(): Auth check not completed yet');
-            return false;
+        // 🔧 CRITICAL: If we're still checking auth, be conservative but don't block
+        if (!this.authCheckCompleted && this.isInitializing) {
+            console.log('🔍 Auth check in progress, using stored state');
+            return !!(token && user);
         }
         
-        // Enhanced validation
         const hasValidToken = token && this.isValidTokenFormat(token);
         const hasValidUser = user && typeof user === 'object' && user.id;
         
@@ -235,7 +230,6 @@ class AuthService {
         return result; 
     }
 
-    // 🔧 IMPROVED: Better error handling in login
     async login(credentials, remember = false) {
         try {
             console.log('🔐 Starting login process...');
@@ -245,7 +239,7 @@ class AuthService {
             }
             
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
             
             const response = await fetch(`${this.apiUrl}/api/auth/login`, { 
                 method: 'POST', 
@@ -268,7 +262,7 @@ class AuthService {
                     throw new Error('No access token received');
                 }
                 
-                console.log('✅ Login successful, storing tokens and updating global state...');
+                console.log('✅ Login successful, storing tokens...');
                 const tokensStored = this.setTokens(accessToken, refreshToken, data.user, remember);
                 
                 if (!tokensStored) {
@@ -286,7 +280,7 @@ class AuthService {
                     });
                 }
                 
-                // 🔧 CRITICAL: Mark auth as completed
+                // 🔧 CRITICAL: Mark auth as completed after successful login
                 this.authCheckCompleted = true;
                 
                 return { success: true, user: data.user };
@@ -310,89 +304,19 @@ class AuthService {
         }
     }
 
-    // 🔧 IMPROVED: Better registration flow
-    async register(userData, remember = false) {
-        try {
-            console.log('📝 Starting registration process...');
-            
-            if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: true });
-            }
-            
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            
-            const response = await fetch(`${this.apiUrl}/api/auth/register`, { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify(userData),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
-            
-            const data = await response.json();
-            
-            if (response.ok && data.success) {
-                const { access_token: accessToken, refresh_token: refreshToken } = data.tokens || {};
-                
-                if (!accessToken) {
-                    throw new Error('No access token received');
-                }
-                
-                console.log('✅ Registration successful, storing tokens and updating global state...');
-                const tokensStored = this.setTokens(accessToken, refreshToken, data.user, remember);
-                
-                if (!tokensStored) {
-                    throw new Error('Failed to store authentication tokens');
-                }
-                
-                if (this.dispatch) {
-                    this.dispatch({ 
-                        type: 'login_success',
-                        payload: { 
-                            user: data.user, 
-                            token: accessToken, 
-                            refreshToken: refreshToken 
-                        } 
-                    });
-                }
-                
-                // Mark auth as completed
-                this.authCheckCompleted = true;
-                
-                return { success: true, user: data.user };
-            } else { 
-                if (this.dispatch) {
-                    this.dispatch({ type: 'set_loading', payload: false });
-                }
-                return { success: false, error: data.error || 'Registration failed' }; 
-            }
-        } catch (error) { 
-            console.error('Registration error:', error);
-            if (this.dispatch) {
-                this.dispatch({ type: 'set_loading', payload: false });
-            }
-            
-            if (error.name === 'AbortError') {
-                return { success: false, error: 'Registration request timed out. Please try again.' };
-            }
-            
-            return { success: false, error: error.message || 'Network error' }; 
-        }
-    }
-
-    // 🔧 IMPROVED: Better logout handling
     async logout() { 
         console.log('🚪 Starting logout process...');
         
         try { 
             const token = this.getAccessToken(); 
             if (token) { 
-                // Don't wait for logout API call to complete - clear local state immediately
                 fetch(`${this.apiUrl}/api/auth/logout`, { 
                     method: 'POST', 
-                    headers: { 'Authorization': `Bearer ${token}` } 
+                    headers: { 
+                        // 🔧 CRITICAL: Use both header formats for logout too
+                        'authorization': `Bearer ${token}`,
+                        'Authorization': `Bearer ${token}`
+                    } 
                 }).catch(error => {
                     console.log('⚠️ Logout API call failed (non-critical):', error);
                 });
@@ -401,16 +325,15 @@ class AuthService {
             console.error('Logout API call failed:', error); 
         }
         
-        // Always clear local auth regardless of API call result
+        // Always clear local auth
         this.clearAuth(); 
     }
 
-    // 🔧 IMPROVED: Better token storage validation
     setTokens(accessToken, refreshToken, user, remember = false) { 
         const storage = remember ? localStorage : sessionStorage; 
         
         if (!accessToken || !user) {
-            console.error('❌ Invalid tokens or user data provided to setTokens');
+            console.error('❌ Invalid tokens or user data provided');
             return false;
         }
         
@@ -428,7 +351,6 @@ class AuthService {
         }
     }
 
-    // 🔧 IMPROVED: Better auth clearing
     clearAuth() { 
         console.log('🧹 Clearing auth data...');
         
@@ -443,6 +365,10 @@ class AuthService {
             this.refreshTimer = null;
         } 
         
+        // 🔧 CRITICAL: Reset auth state flags
+        this.authCheckCompleted = true; // Prevent new checks after logout
+        this.isVerifying = false;
+        
         if (this.dispatch) {
             this.dispatch({ type: 'logout' });
             this.dispatch({ type: 'set_loading', payload: false });
@@ -451,7 +377,7 @@ class AuthService {
         console.log('🧹 Auth cleared successfully'); 
     }
 
-    // Utility methods (unchanged)
+    // Utility methods remain the same
     getAccessToken() { 
         return localStorage.getItem(this.tokenKey) || sessionStorage.getItem(this.tokenKey); 
     }
@@ -485,7 +411,7 @@ class AuthService {
         return this.apiUrl;
     }
 
-    // 🔧 NEW: Add method for waiting for initialization
+    // 🔧 NEW: Method for components to wait for initialization
     async waitForInitialization() {
         if (this.authCheckCompleted) {
             return;
@@ -504,7 +430,7 @@ class AuthService {
         }
     }
 
-    // 🔧 IMPROVED: Simplified authenticated fetch
+    // 🔧 CRITICAL: Enhanced authenticatedFetch with CORS-compatible headers
     async authenticatedFetch(url, options = {}) {
         const token = this.getAccessToken();
         
@@ -517,19 +443,22 @@ class AuthService {
             headers: {
                 'Content-Type': 'application/json',
                 ...options.headers,
-                'Authorization': `Bearer ${token}`
+                // 🔧 CRITICAL: Use both header formats for better CORS compatibility
+                'authorization': `Bearer ${token}`,  // lowercase for some CORS setups
+                'Authorization': `Bearer ${token}`   // standard capitalized version
             }
         };
 
         try {
             const response = await fetch(url, config);
             
-            // Handle 401 with token refresh
-            if (response.status === 401) {
+            // Handle 401 with token refresh (but don't create loops)
+            if (response.status === 401 && !this.isRefreshing) {
                 try {
                     await this.refreshTokenSilently();
                     const newToken = this.getAccessToken();
                     if (newToken) {
+                        config.headers['authorization'] = `Bearer ${newToken}`;
                         config.headers['Authorization'] = `Bearer ${newToken}`;
                         return await fetch(url, config);
                     }
@@ -556,7 +485,7 @@ class AuthService {
             const expiry = payload.exp * 1000;
             const now = Date.now();
             const timeToExpiry = expiry - now;
-            const refreshTime = timeToExpiry - (5 * 60 * 1000); // 5 minutes before expiry
+            const refreshTime = timeToExpiry - (5 * 60 * 1000);
             
             if (refreshTime > 0) {
                 this.refreshTimer = setTimeout(() => {
@@ -564,7 +493,7 @@ class AuthService {
                 }, refreshTime);
                 console.log(`⏰ Token refresh scheduled in ${Math.round(refreshTime / 1000 / 60)} minutes`);
             } else {
-                console.log('⚠️ Token is already expired or expires very soon');
+                console.log('⚠️ Token expires soon or is expired');
                 this.clearAuth();
             }
         } catch (error) {
@@ -593,6 +522,8 @@ class AuthService {
             const response = await fetch(`${this.apiUrl}/api/auth/refresh`, {
                 method: 'POST',
                 headers: {
+                    // 🔧 CRITICAL: Use both header formats for refresh too
+                    'authorization': `Bearer ${refreshToken}`,
                     'Authorization': `Bearer ${refreshToken}`,
                     'Content-Type': 'application/json'
                 }

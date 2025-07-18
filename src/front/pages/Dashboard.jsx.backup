@@ -1,26 +1,32 @@
-// src/front/pages/Dashboard.jsx - COMPLETE FIXED VERSION
+// src/front/pages/Dashboard.jsx - ENHANCED VERSION with Critical Fixes using your existing utilities
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import CreateGroupModal from '../components/CreateGroupModal';
-import { validateGroupId, validateGroupObject, safeGroupOperation, handleGroupError, validateInviteCode } from '../utils/groupValidation';
+import { validateGroupId, validateGroupObject, safeGroupOperation } from '../utils/groupValidation';
 import toast from 'react-hot-toast';
 
 // Import your existing enhanced components
 import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
 import { NetworkErrorState, AuthErrorState } from '../components/ErrorState';
+import { 
+    validateGroupId, 
+    validateGroupObject, 
+    safeGroupOperation, 
+    handleGroupError,
+    validateInviteCode 
+} from '../utils/groupValidation';
 
 export function Dashboard() {
     const navigate = useNavigate();
     const { store, dispatch } = useGlobalReducer();
     
-    // 🔧 CRITICAL: Use refs to prevent multiple effect runs and track state
+    // 🔧 CRITICAL: Use refs to prevent multiple effect runs
     const initializationRef = useRef(false);
     const dataLoadedRef = useRef(false);
     const isMountedRef = useRef(true);
-    const loadingTimeoutRef = useRef(null);
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [groups, setGroups] = useState([]);
@@ -36,70 +42,57 @@ export function Dashboard() {
 
     // 🔧 CRITICAL: Enhanced data loading with comprehensive validation
     const loadDashboardData = async () => {
-        // Check if data is already loaded and this isn't a forced refresh
-        if (dataLoadedRef.current && !loading) {
+        if (dataLoadedRef.current) {
             console.log('📊 Dashboard: Data already loaded, skipping...');
-            setLoading(false);
             return;
         }
 
+        dataLoadedRef.current = true;
         console.log('📊 Dashboard: Loading user groups...');
         setLoading(true);
         setError(null);
 
-        // Clear any existing timeout
-        if (loadingTimeoutRef.current) {
-            clearTimeout(loadingTimeoutRef.current);
-        }
-
-        // Set a fallback timeout to prevent infinite loading
-        loadingTimeoutRef.current = setTimeout(() => {
-            if (isMountedRef.current) {
-                console.log('⏰ Dashboard: Loading timeout reached, forcing loading to false');
-                setLoading(false);
-            }
-        }, 10000); // 10 second timeout
-
+        // Use try-catch for dashboard loading since it's not a group-specific operation
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            console.log('📡 Fetching groups from:', `${backendUrl}/api/gaming/groups`);
-            
-            const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
-            
-            if (!isMountedRef.current) return;
-            
-            if (groupsResponse.ok) {
-                const groupsData = await groupsResponse.json();
+            const loadOperation = async () => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                console.log('📡 Fetching groups from:', `${backendUrl}/api/gaming/groups`);
                 
-                // 🔧 CRITICAL: Validate group data using your validation utility
-                const validGroups = (groupsData.groups || []).filter(group => {
-                    const validation = validateGroupObject(group);
-                    if (!validation.isValid) {
-                        console.error('❌ Invalid group data received:', group, validation.errors);
+                const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+                
+                if (groupsResponse.ok) {
+                    const groupsData = await groupsResponse.json();
+                    
+                    // 🔧 CRITICAL: Validate group data using your validation utility
+                    const validGroups = (groupsData.groups || []).filter(group => {
+                        const validation = validateGroupObject(group);
+                        if (!validation.isValid) {
+                            console.error('❌ Invalid group data received:', group, validation.errors);
+                        }
+                        return validation.isValid;
+                    });
+                    
+                    console.log('✅ Valid groups loaded:', validGroups.length);
+                    return validGroups;
+                } else {
+                    const errorData = await groupsResponse.json();
+                    console.error('Groups fetch error:', errorData);
+                    
+                    if (groupsResponse.status === 401) {
+                        throw new Error('Authentication expired');
                     }
-                    return validation.isValid;
-                });
-                
-                console.log('✅ Valid groups loaded:', validGroups.length);
-                
-                if (isMountedRef.current) {
-                    setGroups(validGroups);
-                    setError(null);
-                    dataLoadedRef.current = true;
-                    console.log('✅ Dashboard: Groups loaded successfully');
+                    
+                    throw new Error(errorData.error || 'Failed to load groups');
                 }
-            } else {
-                const errorData = await groupsResponse.json();
-                console.error('Groups fetch error:', errorData);
-                
-                if (groupsResponse.status === 401) {
-                    console.log('🚨 Auth error in dashboard, clearing auth and redirecting...');
-                    authService.logout();
-                    navigate('/login');
-                    return;
-                }
-                
-                throw new Error(errorData.error || 'Failed to load groups');
+            };
+            
+            console.log('🔄 Starting dashboard data load...');
+            const validGroups = await loadOperation();
+            
+            if (isMountedRef.current) {
+                setGroups(validGroups);
+                setError(null);
+                console.log('✅ Dashboard: Groups loaded successfully:', validGroups);
             }
             
         } catch (error) {
@@ -120,104 +113,52 @@ export function Dashboard() {
                 toast.error(friendlyError);
             }
         } finally {
-            // CRITICAL: Always clear timeout and set loading to false
-            if (loadingTimeoutRef.current) {
-                clearTimeout(loadingTimeoutRef.current);
-                loadingTimeoutRef.current = null;
-            }
-            
             if (isMountedRef.current) {
-                console.log('🏁 Dashboard: Setting loading to false');
                 setLoading(false);
             }
         }
     };
 
-    // 🔧 CRITICAL: Main useEffect with enhanced logic
+    // 🔧 CRITICAL: Enhanced useEffect with proper conditions
     useEffect(() => {
-        console.log('🔄 Dashboard useEffect triggered:', {
-            initialized: initializationRef.current,
-            dataLoaded: dataLoadedRef.current,
-            isAuthenticated,
-            hasUser: !!user,
-            authLoading,
-            loading
-        });
-
-        // Reset mounted flag on each effect run
-        isMountedRef.current = true;
-
-        // If we're waiting for auth, don't do anything yet
-        if (authLoading) {
-            console.log('⏳ Dashboard: Auth still loading, waiting...');
+        if (initializationRef.current) {
+            console.log('🔄 Dashboard: Already initialized, skipping...');
             return;
         }
 
-        // If not authenticated, stop loading and let auth error component show
-        if (!isAuthenticated || !user) {
-            console.log('🚨 Dashboard: Not authenticated or no user');
-            setLoading(false);
-            return;
-        }
-
-        // If already initialized and data loaded, ensure loading is off
-        if (initializationRef.current && dataLoadedRef.current) {
-            console.log('📊 Dashboard: Already initialized and data loaded');
-            if (loading) {
-                console.log('🔧 Dashboard: Fixing stuck loading state');
+        if (!isAuthenticated || !user || authLoading) {
+            console.log('🔄 Dashboard: Waiting for auth completion...', {
+                isAuthenticated,
+                hasUser: !!user,
+                authLoading
+            });
+            // If not loading and not authenticated, stop loading state
+            if (!authLoading) {
                 setLoading(false);
             }
             return;
         }
 
-        // If already initialized but no data, something went wrong - retry
-        if (initializationRef.current && !dataLoadedRef.current) {
-            console.log('🔄 Dashboard: Initialized but no data, retrying...');
-            loadDashboardData();
-            return;
-        }
-
-        // First time initialization
-        if (!initializationRef.current) {
-            initializationRef.current = true;
-            console.log('🔄 Dashboard: Starting initial data load for user:', user.username);
-            loadDashboardData();
-        }
+        initializationRef.current = true;
+        console.log('🔄 Dashboard: Starting data load for user:', user.username);
+        loadDashboardData();
 
         return () => {
-            console.log('🧹 Dashboard: Cleanup triggered');
             isMountedRef.current = false;
-            if (loadingTimeoutRef.current) {
-                clearTimeout(loadingTimeoutRef.current);
-            }
         };
     }, [isAuthenticated, user?.id, authLoading]);
-
-    // 🔧 CRITICAL: Navigation handling useEffect
-    useEffect(() => {
-        // Handle case where user navigates back to dashboard
-        const navigationTimer = setTimeout(() => {
-            if (initializationRef.current && dataLoadedRef.current && loading) {
-                console.log('🔧 Dashboard: Navigation check - forcing loading state to false');
-                setLoading(false);
-            }
-        }, 500); // Slightly longer delay to ensure all effects have run
-
-        return () => clearTimeout(navigationTimer);
-    }, []); // Run only on mount
 
     // 🔧 CRITICAL: Enhanced group creation handler with validation
     const handleGroupCreated = async (newGroup) => {
         console.log('✅ Dashboard: New group created:', newGroup);
         
-        // Validate new group data
+        // Validate new group data using your validation utility
         const validation = validateGroupObject(newGroup);
         if (!validation.isValid) {
             console.error('❌ Invalid group data from creation:', newGroup, validation.errors);
             toast.error('Group created but invalid data received. Please refresh.');
             // Force refresh dashboard data
             dataLoadedRef.current = false;
-            initializationRef.current = false;
             loadDashboardData();
             return;
         }
@@ -231,14 +172,13 @@ export function Dashboard() {
     const handleGroupUpdate = (action, wasDeleted, groupId) => {
         console.log('🔄 Group update received:', { action, wasDeleted, groupId });
         
-        // Validate groupId before proceeding
+        // Validate groupId using your validation utility
         const validation = validateGroupId(groupId);
         if (!validation.isValid) {
             console.error('❌ Invalid groupId in handleGroupUpdate:', groupId, validation.error);
             toast.error('Invalid group data. Please refresh the page.');
             // Force refresh dashboard data
             dataLoadedRef.current = false;
-            initializationRef.current = false;
             loadDashboardData();
             return;
         }
@@ -257,7 +197,6 @@ export function Dashboard() {
             
             // Reset the data loaded flag and reload
             dataLoadedRef.current = false;
-            initializationRef.current = false;
             loadDashboardData();
         }
     };
@@ -276,18 +215,14 @@ export function Dashboard() {
             toast.error('Joined group but invalid data received. Please refresh.');
             // Force refresh dashboard data
             dataLoadedRef.current = false;
-            initializationRef.current = false;
             loadDashboardData();
         }
     };
 
-    // 🔧 CRITICAL: Safe refresh handler
+    // 🔧 CRITICAL: Safe refresh handler using try-catch instead of safeGroupOperation
     const handleRefresh = async () => {
-        console.log('🔄 Dashboard: Manual refresh triggered');
-        
-        // Reset all state flags
-        dataLoadedRef.current = false;
-        initializationRef.current = false;
+        console.log('🔄 Dashboard: Refreshing groups...');
+        dataLoadedRef.current = false; // Allow reload
         setLoading(true);
         setError(null);
 
@@ -304,7 +239,6 @@ export function Dashboard() {
                 
                 setGroups(validGroups);
                 dataLoadedRef.current = true;
-                initializationRef.current = true;
                 toast.success('Groups refreshed!');
             } else {
                 const errorData = await response.json();
@@ -320,9 +254,9 @@ export function Dashboard() {
         }
     };
 
-    // 🔧 CRITICAL: Safe group filtering with validation
+    // 🔧 CRITICAL: Safe group filtering with validation using your utilities
     const getFilteredGroups = () => {
-        // Filter out invalid groups with validation
+        // Filter out invalid groups using your validation utility
         const validGroups = groups.filter(g => {
             const validation = validateGroupObject(g);
             return validation.isValid;
@@ -345,43 +279,23 @@ export function Dashboard() {
         }
     };
 
-    // 🔧 CRITICAL: Enhanced loading state logic
-    const shouldShowLoading = authLoading || loading;
+    // 🔧 CRITICAL: Enhanced loading state logic using your components
+    const shouldShowLoading = authLoading || (loading && !dataLoadedRef.current);
     
-    // Debug logging
-    console.log('🎯 Dashboard render state:', {
-        loading,
-        authLoading,
-        shouldShowLoading,
-        dataLoaded: dataLoadedRef.current,
-        initialized: initializationRef.current,
-        groupsLength: groups.length,
-        isAuthenticated,
-        hasUser: !!user
-    });
-    
-    // Use enhanced loading component
+    // Use your PageLoadingState component
     if (shouldShowLoading) {
         return <PageLoadingState message="Loading your dashboard..." subMessage="Fetching groups and game data" />;
     }
 
-    // Enhanced error handling with NetworkErrorState
+    // Enhanced error handling with your NetworkErrorState
     if (error && !groups.length) {
-        return <NetworkErrorState 
-            error={error}
-            onRetry={handleRefresh}
-            onRefresh={() => window.location.reload()}
-            helpText="Check your internet connection and try refreshing the page."
-        />;
+        return <NetworkErrorState onRetry={handleRefresh} onRefresh={() => window.location.reload()} />;
     }
 
-    // Enhanced authentication error handling
+    // Enhanced authentication error handling with your AuthErrorState
     if (!isAuthenticated || !user) {
         console.log('🚨 Dashboard: Not authenticated, showing auth error');
-        return <AuthErrorState 
-            onLogin={() => navigate('/login')}
-            onGoHome={() => navigate('/')}
-        />;
+        return <AuthErrorState onLogin={() => navigate('/login')} onGoHome={() => navigate('/')} />;
     }
 
     const filteredGroups = getFilteredGroups();
@@ -464,7 +378,7 @@ export function Dashboard() {
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {filteredGroups.map(group => {
-                                // 🔧 CRITICAL: Validate each group before rendering
+                                // 🔧 CRITICAL: Validate each group before rendering using your utility
                                 const validation = validateGroupObject(group);
                                 if (!validation.isValid) {
                                     console.error('❌ Skipping invalid group in render:', group, validation.errors);

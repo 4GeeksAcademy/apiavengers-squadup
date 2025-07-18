@@ -17,6 +17,7 @@ cloudinary = "*"
 werkzeug = "*"
 requests = "*"
 pyjwt = "==2.9.0"
+pytz = "*"
 
 [dev-packages]
 
