@@ -1,4 +1,4 @@
-// src/front/pages/Profile.jsx - UPDATED with Unified Steam Integration
+// src/front/pages/Profile.jsx - PHASE 5 IMPLEMENTATION: Standardized UI/UX Components
 
 import React, { useState, useEffect } from 'react';
 import useGlobalReducer from '../hooks/useGlobalReducer';
@@ -8,6 +8,10 @@ import toast from 'react-hot-toast';
 import Avatar from '../components/Avatar';
 import SteamConnectionManager from '../components/SteamConnectionManager';
 
+// 🚀 PHASE 5: Import standardized components
+import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
+import { NetworkErrorState, SteamErrorState } from '../components/ErrorState';
+
 export const Profile = () => {
     const { store, dispatch } = useGlobalReducer();
     const { user: globalUser } = store;
@@ -15,6 +19,7 @@ export const Profile = () => {
     const [formData, setFormData] = useState({});
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [profileError, setProfileError] = useState(null); // 🚀 PHASE 5: Enhanced error state
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -28,6 +33,7 @@ export const Profile = () => {
                 favorite_genres: globalUser.favorite_genres || []
             });
             setIsLoading(false);
+            setProfileError(null); // Clear any previous errors
         } else {
             setIsLoading(true);
         }
@@ -62,16 +68,24 @@ export const Profile = () => {
         }
     }, [globalUser]);
 
+    // 🚀 PHASE 5: Enhanced refreshUserProfile with better error handling
     const refreshUserProfile = async () => {
         try {
+            setProfileError(null);
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
             const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`);
+            
             if (response.ok) {
                 const data = await response.json();
                 dispatch({ type: 'set_user', payload: data.user });
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to refresh profile');
             }
         } catch (error) {
             console.error('Error refreshing profile:', error);
+            setProfileError(error.message);
+            toast.error('Failed to refresh profile data');
         }
     };
 
@@ -89,10 +103,13 @@ export const Profile = () => {
         }));
     };
 
+    // 🚀 PHASE 5: Enhanced handleSave with better error handling
     const handleSave = async () => {
         setIsSaving(true);
-        const backendUrl = import.meta.env.VITE_BACKEND_URL;
+        setProfileError(null);
+        
         try {
+            const backendUrl = import.meta.env.VITE_BACKEND_URL;
             const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`, {
                 method: 'PUT',
                 body: JSON.stringify({
@@ -102,6 +119,7 @@ export const Profile = () => {
                     favorite_genres: formData.favorite_genres
                 })
             });
+            
             if (response.ok) {
                 const data = await response.json();
                 dispatch({ type: 'set_user', payload: data.user });
@@ -109,11 +127,15 @@ export const Profile = () => {
                 toast.success('Profile updated successfully!');
             } else {
                 const data = await response.json();
-                toast.error(data.error || 'Failed to update profile');
+                const errorMessage = data.error || 'Failed to update profile';
+                setProfileError(errorMessage);
+                toast.error(errorMessage);
             }
         } catch (error) {
             console.error('Error updating profile:', error);
-            toast.error('Network error updating profile');
+            const errorMessage = 'Network error updating profile';
+            setProfileError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsSaving(false);
         }
@@ -129,12 +151,14 @@ export const Profile = () => {
             favorite_genres: globalUser.favorite_genres || []
         });
         setIsEditing(false);
+        setProfileError(null); // Clear any errors when canceling
     };
 
     // Handle user updates from Steam connection
     const handleUserUpdate = (updatedUser) => {
         if (updatedUser) {
             dispatch({ type: 'set_user', payload: updatedUser });
+            setProfileError(null); // Clear errors on successful update
         } else {
             // If user is null/false, refresh profile
             refreshUserProfile();
@@ -144,15 +168,22 @@ export const Profile = () => {
     const availableGenres = ['Action', 'Adventure', 'RPG', 'Strategy', 'Simulation', 'Sports', 'Racing', 'Puzzle', 'Fighting', 'Shooter', 'Horror', 'Platformer', 'MMO', 'Battle Royale', 'MOBA', 'Indie'];
     const gamingStyles = ['Casual', 'Competitive', 'Hardcore', 'Social', 'Solo', 'Co-op'];
 
+    // 🚀 PHASE 5: Use standardized PageLoadingState
     if (isLoading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                    <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-white text-lg">Loading your profile...</p>
-                </div>
-            </div>
-        );
+        return <PageLoadingState 
+            message="Loading your profile..." 
+            subMessage="Fetching Steam data and preferences" 
+        />;
+    }
+
+    // 🚀 PHASE 5: Handle profile errors with NetworkErrorState
+    if (profileError && !globalUser) {
+        return <NetworkErrorState 
+            error={profileError}
+            onRetry={refreshUserProfile}
+            onRefresh={() => window.location.reload()}
+            helpText="Check your connection and try refreshing."
+        />;
     }
 
     return (
@@ -168,6 +199,24 @@ export const Profile = () => {
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 shadow-2xl">
                     <h1 className="text-3xl font-bold text-white mb-6">Profile Settings</h1>
                     <p className="text-white/70 mb-8">Manage your gaming profile and preferences</p>
+
+                    {/* 🚀 PHASE 5: Display profile error if exists */}
+                    {profileError && (
+                        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
+                            <div className="flex items-center space-x-2">
+                                <span>⚠️</span>
+                                <div>
+                                    <strong>Profile Error:</strong> {profileError}
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setProfileError(null)}
+                                className="mt-2 text-xs underline hover:no-underline"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         {/* Profile Image and Basic Info */}
@@ -204,14 +253,27 @@ export const Profile = () => {
                                 )}
                             </div>
                             
-                            {/* UNIFIED Steam Connection Component */}
-                            <SteamConnectionManager 
-                                user={globalUser}
-                                onUserUpdate={handleUserUpdate}
-                                showLibraryButton={true}
-                                showSyncButton={true}
-                                className="w-full"
-                            />
+                            {/* 🚀 PHASE 5: Enhanced Steam Connection with error handling */}
+                            <div className="w-full">
+                                <SteamConnectionManager 
+                                    user={globalUser}
+                                    onUserUpdate={handleUserUpdate}
+                                    showLibraryButton={true}
+                                    showSyncButton={true}
+                                    className="w-full"
+                                />
+                                
+                                {/* Show Steam-specific errors */}
+                                {profileError && profileError.includes('Steam') && (
+                                    <div className="mt-4">
+                                        <SteamErrorState 
+                                            error={profileError}
+                                            onRetry={refreshUserProfile}
+                                            onSkip={() => setProfileError(null)}
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Profile Details */}
@@ -276,7 +338,8 @@ export const Profile = () => {
                                     
                                     <button 
                                         onClick={() => setIsEditing(true)}
-                                        className="w-full px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
+                                        disabled={isSaving}
+                                        className="w-full px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 disabled:opacity-50"
                                     >
                                         ✏️ Edit Profile
                                     </button>
@@ -293,6 +356,7 @@ export const Profile = () => {
                                                 className="w-full bg-white/5 border border-white/20 rounded-xl p-4 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/20 transition-all resize-none"
                                                 rows="4"
                                                 placeholder="Tell other gamers about yourself..."
+                                                disabled={isSaving}
                                             />
                                         </div>
                                         
@@ -305,6 +369,7 @@ export const Profile = () => {
                                                 onChange={handleChange}
                                                 className="w-full bg-white/5 border border-white/20 rounded-xl p-4 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/20 transition-all"
                                                 placeholder="https://example.com/avatar.jpg"
+                                                disabled={isSaving}
                                             />
                                             <p className="text-white/50 text-xs mt-1">
                                                 Note: Steam avatar will take priority if connected
@@ -318,6 +383,7 @@ export const Profile = () => {
                                                 value={formData.gaming_style}
                                                 onChange={handleChange}
                                                 className="w-full bg-white/5 border border-white/20 rounded-xl p-4 text-white focus:outline-none focus:border-coral-500 focus:ring-2 focus:ring-coral-500/20 transition-all"
+                                                disabled={isSaving}
                                             >
                                                 <option value="">Select your style</option>
                                                 {gamingStyles.map(style => (
@@ -333,7 +399,8 @@ export const Profile = () => {
                                                     <button 
                                                         key={genre}
                                                         onClick={() => handleGenreToggle(genre)}
-                                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                                        disabled={isSaving}
+                                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
                                                             formData.favorite_genres && formData.favorite_genres.includes(genre)
                                                                 ? 'bg-coral-500 text-white border-2 border-coral-400'
                                                                 : 'bg-white/10 text-white hover:bg-white/20 border-2 border-transparent'
@@ -350,9 +417,16 @@ export const Profile = () => {
                                         <button 
                                             onClick={handleSave}
                                             disabled={isSaving}
-                                            className="flex-1 px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="flex-1 px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                                         >
-                                            {isSaving ? '💾 Saving...' : '💾 Save Changes'}
+                                            {isSaving ? (
+                                                <>
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                                                    Saving...
+                                                </>
+                                            ) : (
+                                                '💾 Save Changes'
+                                            )}
                                         </button>
                                         <button 
                                             onClick={handleCancel}

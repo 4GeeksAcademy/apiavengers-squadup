@@ -1,13 +1,20 @@
+// src/front/pages/FindGames.jsx - PHASE 5 IMPLEMENTATION: Standardized UI/UX Components
+
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
 
+// 🚀 PHASE 5: Import standardized components
+import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
+import { NetworkErrorState, SteamErrorState } from '../components/ErrorState';
+
 const FindGames = () => {
     const { store } = useGlobalReducer();
     const [commonGames, setCommonGames] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState(null); // 🚀 PHASE 5: Enhanced error state
+    const [fetchError, setFetchError] = useState(null); // 🚀 PHASE 5: Specific fetch error
     const [filters, setFilters] = useState({
         genre: '',
         multiplayer: false,
@@ -178,41 +185,48 @@ const FindGames = () => {
     ];
 
     useEffect(() => {
-        const fetchCommonGames = async () => {
-            console.log('🎮 Fetching common games...');
-            try {
-                // Check if user has Steam connected and groups
-                if (store.user?.steam_connected) {
-                    console.log('✅ User has Steam connected, attempting to fetch real data...');
+        fetchCommonGames();
+    }, [store.user]);
+
+    // 🚀 PHASE 5: Enhanced fetchCommonGames with better error handling
+    const fetchCommonGames = async () => {
+        console.log('🎮 Fetching common games...');
+        setLoading(true);
+        setError(null);
+        setFetchError(null);
+        
+        try {
+            // Check if user has Steam connected and groups
+            if (store.user?.steam_connected) {
+                console.log('✅ User has Steam connected, attempting to fetch real data...');
+                
+                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                
+                try {
+                    // First, check if user has any groups
+                    const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
                     
-                    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-                    
-                    try {
-                        // First, check if user has any groups
-                        const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+                    if (groupsResponse.ok) {
+                        const groupsData = await groupsResponse.json();
+                        const userGroups = groupsData.groups || [];
                         
-                        if (groupsResponse.ok) {
-                            const groupsData = await groupsResponse.json();
-                            const userGroups = groupsData.groups || [];
+                        if (userGroups.length > 0) {
+                            // Try to get common games from the first group
+                            const firstGroup = userGroups[0];
+                            console.log(`🔍 Trying to fetch common games from group: ${firstGroup.name}`);
                             
-                            if (userGroups.length > 0) {
-                                // Try to get common games from the first group
-                                const firstGroup = userGroups[0];
-                                console.log(`🔍 Trying to fetch common games from group: ${firstGroup.name}`);
+                            const commonGamesResponse = await authService.authenticatedFetch(
+                                `${backendUrl}/api/gaming/groups/${firstGroup.id}/common-games`
+                            );
+                            
+                            if (commonGamesResponse.ok) {
+                                const commonGamesData = await commonGamesResponse.json();
+                                console.log('✅ Successfully fetched real common games:', commonGamesData.games?.length || 0);
                                 
-                                const commonGamesResponse = await authService.authenticatedFetch(
-                                    `${backendUrl}/api/gaming/groups/${firstGroup.id}/common-games`
-                                );
-                                
-                                if (commonGamesResponse.ok) {
-                                    const commonGamesData = await commonGamesResponse.json();
-                                    console.log('✅ Successfully fetched real common games:', commonGamesData.games?.length || 0);
-                                    
-                                    if (commonGamesData.games && commonGamesData.games.length > 0) {
-                                        setCommonGames(commonGamesData.games);
-                                        setLoading(false);
-                                        return;
-                                    }
+                                if (commonGamesData.games && commonGamesData.games.length > 0) {
+                                    setCommonGames(commonGamesData.games);
+                                    setLoading(false);
+                                    return;
                                 }
                             }
                         }
@@ -250,30 +264,41 @@ const FindGames = () => {
                         
                         console.log('⚠️ No real games available, using demo data for better UX');
                         
-                    } catch (apiError) {
-                        console.log('⚠️ API call failed, using demo data:', apiError.message);
+                    } else {
+                        // API error
+                        const errorData = await groupsResponse.json();
+                        throw new Error(errorData.error || 'Failed to fetch groups');
                     }
-                } else {
-                    console.log('ℹ️ Steam not connected, using demo data');
+                    
+                } catch (apiError) {
+                    console.log('⚠️ API call failed:', apiError.message);
+                    setFetchError(apiError.message);
+                    
+                    // Don't throw here, fall back to demo data
                 }
-                
-                // Fallback to demo data (no error thrown)
-                console.log('📋 Using demo data with CDN images for presentation');
-                setCommonGames(mockGames);
-                setError(null); // Clear any previous errors
-                
-            } catch (err) {
-                console.error('❌ Unexpected error in fetchCommonGames:', err);
-                // Even on error, show demo data for better UX
-                setCommonGames(mockGames);
-                setError(null);
-            } finally {
-                setLoading(false);
+            } else {
+                console.log('ℹ️ Steam not connected, using demo data');
             }
-        };
-        
+            
+            // Fallback to demo data (no error thrown)
+            console.log('📋 Using demo data with CDN images for presentation');
+            setCommonGames(mockGames);
+            setError(null); // Clear any previous errors
+            
+        } catch (err) {
+            console.error('❌ Unexpected error in fetchCommonGames:', err);
+            // Even on error, show demo data for better UX
+            setCommonGames(mockGames);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 🚀 PHASE 5: Enhanced retry function
+    const handleRetry = () => {
         fetchCommonGames();
-    }, [store.user]);
+    };
 
     const handleFilterChange = (filterType, value) => {
         setFilters(prev => ({
@@ -305,15 +330,9 @@ const FindGames = () => {
         return 'Partial Match';
     };
 
+    // 🚀 PHASE 5: Use standardized PageLoadingState
     if (loading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                    <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-white text-lg">Finding games you can play together...</p>
-                </div>
-            </div>
-        );
+        return <PageLoadingState message="Finding games you can play together..." />;
     }
 
     return (
@@ -363,6 +382,19 @@ const FindGames = () => {
                                 <strong>Live Data:</strong> Showing real games from your Steam library and groups!
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* 🚀 PHASE 5: Enhanced error display for fetch errors */}
+                {fetchError && (
+                    <div className="mb-6">
+                        <NetworkErrorState 
+                            error={fetchError}
+                            onRetry={handleRetry}
+                            onRefresh={() => window.location.reload()}
+                            helpText="Check your Steam connection and group memberships."
+                            className="max-w-2xl mx-auto"
+                        />
                     </div>
                 )}
 

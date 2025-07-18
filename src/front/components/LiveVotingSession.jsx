@@ -1,9 +1,14 @@
-// src/front/components/LiveVotingSession.jsx - Enhanced with SSE Manager
+// src/front/components/LiveVotingSession.jsx - PHASE 5 IMPLEMENTATION: Enhanced with SSE Manager
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import GameImage from './GameImage';
+
+// 🚀 PHASE 5: Import standardized components and enhanced SSE
+import { VotingLoadingState, DataLoadingState } from './LoadingState';
+import { NetworkErrorState, VotingErrorState } from './ErrorState';
 import SSEManager from '../services/sseManager';
 
 const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
@@ -22,7 +27,7 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
     const [liveResults, setLiveResults] = useState([]);
     const [voterStats, setVoterStats] = useState({ voted: 0, total: 0, percentage: 0 });
     
-    // Enhanced connection state
+    // 🚀 PHASE 5: Enhanced connection state
     const [connectionState, setConnectionState] = useState({
         isConnected: false,
         isReconnecting: false,
@@ -92,7 +97,7 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
         
         console.log('🚀 Setting up enhanced live voting updates...');
         
-        // Create SSE Manager with enhanced options
+        // 🚀 PHASE 5: Create SSE Manager with enhanced options
         const sseManager = new SSEManager(endpoint, {
             maxRetries: 8,
             retryDelay: 3000,
@@ -460,14 +465,19 @@ const LiveVotingSession = ({ groupId, session, onSessionUpdate }) => {
         }
     };
 
+    // 🚀 PHASE 5: Use standardized VotingLoadingState
     if (loading) {
-        return (
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-white">Loading enhanced voting session...</p>
-                <p className="text-white/60 text-sm mt-2">Setting up real-time connections...</p>
-            </div>
-        );
+        return <VotingLoadingState />;
+    }
+
+    // 🚀 PHASE 5: Handle connection errors with NetworkErrorState
+    if (connectionState.error && !connectionState.isConnected && !votingComplete) {
+        return <NetworkErrorState 
+            error={connectionState.error}
+            onRetry={forceReconnect}
+            onRefresh={() => window.location.reload()}
+            helpText="Live voting connection failed. You can still vote, but results may not update in real-time."
+        />;
     }
 
     return (

@@ -1,10 +1,20 @@
-// src/front/pages/ResultsPage.jsx - Enhanced with SSE Manager
+// src/front/pages/ResultsPage.jsx - PHASE 5 IMPLEMENTATION: Enhanced with SSE Manager
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import GameImage from '../components/GameImage';
 import VoterStatusPanel from '../components/VoterStatusPanel';
+
+// 🚀 PHASE 5: Import standardized components and enhanced SSE
+import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
+import { 
+    PageErrorState, 
+    NetworkErrorState, 
+    NotFoundErrorState,
+    PermissionErrorState 
+} from '../components/ErrorState';
 import SSEManager from '../services/sseManager';
 
 const ResultsPage = () => {
@@ -18,7 +28,7 @@ const ResultsPage = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [groupMembers, setGroupMembers] = useState([]);
     
-    // Enhanced connection state
+    // 🚀 PHASE 5: Enhanced connection state
     const [connectionState, setConnectionState] = useState({
         isConnected: false,
         isReconnecting: false,
@@ -78,10 +88,10 @@ const ResultsPage = () => {
                 }
                 
             } else if (response.status === 404) {
-                setError('Voting session not found');
+                setError('Session not found');
                 if (!silent) toast.error('Voting session not found');
             } else if (response.status === 403) {
-                setError('You do not have permission to view these results');
+                setError('Access denied');
                 if (!silent) toast.error('Access denied');
             } else {
                 const errorData = await response.json();
@@ -108,7 +118,7 @@ const ResultsPage = () => {
         
         console.log('🔌 Setting up enhanced live results updates...');
         
-        // Create SSE Manager with enhanced options for results page
+        // 🚀 PHASE 5: Create SSE Manager with enhanced options for results page
         const sseManager = new SSEManager(endpoint, {
             maxRetries: 6,
             retryDelay: 5000,
@@ -385,42 +395,39 @@ const ResultsPage = () => {
         }
     };
 
+    // 🚀 PHASE 5: Use standardized PageLoadingState
     if (loading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                    <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-white text-lg">Loading enhanced results...</p>
-                    <p className="text-white/60 text-sm mt-2">Setting up live updates...</p>
-                </div>
-            </div>
-        );
+        return <PageLoadingState 
+            message="Loading enhanced results..." 
+            subMessage="Setting up live updates..." 
+        />;
     }
 
+    // 🚀 PHASE 5: Enhanced error handling with specific error states
     if (error) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md">
-                    <div className="text-6xl mb-4">❌</div>
-                    <h2 className="text-2xl font-bold text-white mb-4">Unable to Load Results</h2>
-                    <p className="text-white/70 mb-6">{error}</p>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                            onClick={() => fetchResults()}
-                            className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
-                        >
-                            Try Again
-                        </button>
-                        <button
-                            onClick={handleBackToGroup}
-                            className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-colors duration-200"
-                        >
-                            Back to Group
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
+        if (error.includes('not found') || error.includes('Session not found')) {
+            return <NotFoundErrorState 
+                title="Session Not Found"
+                message="This voting session may have been deleted or you don't have access to it."
+                onGoBack={handleBackToGroup}
+                onGoHome={() => navigate('/dashboard')}
+            />;
+        }
+        
+        if (error.includes('Access denied') || error.includes('permission')) {
+            return <PermissionErrorState 
+                onGoBack={handleBackToGroup}
+                onGoHome={() => navigate('/dashboard')}
+            />;
+        }
+        
+        // Generic network/server error
+        return <PageErrorState 
+            title="Unable to Load Results"
+            message={error}
+            onRetry={() => fetchResults()}
+            onGoHome={handleBackToGroup}
+        />;
     }
 
     if (!results || !results.results || results.results.length === 0) {
@@ -449,7 +456,7 @@ const ResultsPage = () => {
                                     }`}>
                                         <div className={`w-1.5 h-1.5 rounded-full ${
                                             connectionState.isConnected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
-                                        }`}>                                    </div>
+                                        }`}></div>
                                         <span>{connectionState.isConnected ? 'Live' : 'Polling'}</span>
                                     </div>
                                 </div>

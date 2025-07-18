@@ -1,17 +1,29 @@
-// src/front/pages/GroupPage.jsx - UPDATED to use unified GroupMembersTab
+// src/front/pages/GroupPage.jsx - PHASE 5 IMPLEMENTATION: Standardized UI/UX Components
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import authService from '../store/authService';
+import useGlobalReducer from '../hooks/useGlobalReducer';
+import toast from 'react-hot-toast';
+
+// 🚀 PHASE 5: Import standardized components
+import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
+import { 
+    NetworkErrorState, 
+    NotFoundErrorState, 
+    PermissionErrorState,
+    GroupErrorState 
+} from '../components/ErrorState';
+import { validateGroupId, safeGroupOperation } from '../utils/groupValidation';
+
 import CommonGamesList from '../components/CommonGamesList';
 import LiveVotingSession from '../components/LiveVotingSession';
 import QuickVote from '../components/QuickVote';
 import GroupInviteLink from '../components/GroupInviteLink';
 import GroupActionButtons from '../components/GroupActionButtons';
-import GroupMembersTab from '../components/GroupMembersTab'; // 🚀 NEW: Use unified component
+import GroupMembersTab from '../components/GroupMembersTab';
 import VoterStatusPanel from '../components/VoterStatusPanel';
 import VotingReminders from '../components/VotingReminders';
-import authService from '../store/authService';
-import useGlobalReducer from '../hooks/useGlobalReducer';
-import toast from 'react-hot-toast';
 
 const GroupPage = () => {
     const { groupId } = useParams();
@@ -21,6 +33,7 @@ const GroupPage = () => {
     
     const [group, setGroup] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null); // 🚀 PHASE 5: Enhanced error state
     const [activeTab, setActiveTab] = useState('vote');
     const [activeSessions, setActiveSessions] = useState([]);
     
@@ -30,6 +43,15 @@ const GroupPage = () => {
 
     useEffect(() => {
         if (groupId) {
+            // 🚀 PHASE 5: Validate groupId before proceeding
+            const validation = validateGroupId(groupId);
+            if (!validation.isValid) {
+                console.error('❌ Invalid groupId in URL:', groupId, validation.error);
+                setError('Invalid group ID in URL');
+                setLoading(false);
+                return;
+            }
+
             fetchGroupData();
             fetchActiveSessions();
         }
@@ -49,50 +71,80 @@ const GroupPage = () => {
         }
     }, [activeSessions]);
 
+    // 🚀 PHASE 5: Enhanced fetchGroupData with safeGroupOperation
     const fetchGroupData = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}`);
+        const result = await safeGroupOperation(
+            groupId,
+            async (validatedGroupId) => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${validatedGroupId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.group;
+                } else if (response.status === 404) {
+                    throw new Error('Group not found');
+                } else if (response.status === 403) {
+                    throw new Error('Access denied to this group');
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to load group details');
+                }
+            },
+            'fetch group data'
+        );
+
+        setLoading(false);
+
+        if (result.success) {
+            setGroup(result.data);
+            setError(null);
+        } else {
+            console.error('❌ Failed to fetch group data:', result.error);
+            setError(result.error);
             
-            if (response.ok) {
-                const data = await response.json();
-                setGroup(data.group);
-            } else if (response.status === 404) {
+            // Show appropriate toast based on error type
+            if (result.error.includes('not found')) {
                 toast.error("Group not found");
-                navigate('/dashboard');
-            } else if (response.status === 403) {
+            } else if (result.error.includes('Access denied')) {
                 toast.error("You don't have access to this group");
-                navigate('/dashboard');
             } else {
-                console.error("Failed to load group details.");
                 toast.error("Failed to load group details");
             }
-        } catch (err) {
-            console.error("An unexpected error occurred while fetching group data.");
-            toast.error("Network error loading group");
-        } finally {
-            setLoading(false);
         }
     };
 
+    // 🚀 PHASE 5: Enhanced fetchActiveSessions with safeGroupOperation
     const fetchActiveSessions = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${groupId}/sessions`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                const sessions = data.sessions || [];
-                setActiveSessions(sessions);
+        const result = await safeGroupOperation(
+            groupId,
+            async (validatedGroupId) => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${validatedGroupId}/sessions`);
                 
-                console.log('📊 Found sessions:', sessions.length, 'sessions');
-                const votingSessions = sessions.filter(s => s.status === 'voting');
-                if (votingSessions.length > 0) {
-                    console.log('🔴 Active voting sessions:', votingSessions.length);
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.sessions || [];
+                } else {
+                    console.warn('Failed to fetch sessions:', response.status);
+                    return []; // Don't fail the whole page for sessions
                 }
+            },
+            'fetch active sessions'
+        );
+
+        if (result.success) {
+            const sessions = result.data;
+            setActiveSessions(sessions);
+            
+            console.log('📊 Found sessions:', sessions.length, 'sessions');
+            const votingSessions = sessions.filter(s => s.status === 'voting');
+            if (votingSessions.length > 0) {
+                console.log('🔴 Active voting sessions:', votingSessions.length);
             }
-        } catch (error) {
-            console.error("Error fetching sessions:", error);
+        } else {
+            console.error("Error fetching sessions:", result.error);
+            // Don't set error state for sessions, just log it
         }
     };
 
@@ -123,33 +175,55 @@ const GroupPage = () => {
         }
     };
 
+    // 🚀 PHASE 5: Use standardized PageLoadingState
     if (loading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                    <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-white text-lg">Loading Group...</p>
-                </div>
-            </div>
-        );
+        return <PageLoadingState 
+            message="Loading group..." 
+            subMessage="Fetching members and game data" 
+        />;
     }
 
+    // 🚀 PHASE 5: Enhanced error handling with specific error states
+    if (error) {
+        if (error.includes('not found')) {
+            return <NotFoundErrorState 
+                title="Group Not Found"
+                message="This group may have been deleted or you don't have access to it."
+                onGoBack={() => navigate('/dashboard')}
+            />;
+        }
+        
+        if (error.includes('Access denied') || error.includes('permission')) {
+            return <PermissionErrorState 
+                onGoBack={() => navigate('/dashboard')}
+                onGoHome={() => navigate('/')}
+            />;
+        }
+        
+        if (error.includes('Invalid group ID')) {
+            return <GroupErrorState 
+                error="Invalid group ID in the URL"
+                onRetry={() => window.location.reload()}
+                onGoHome={() => navigate('/dashboard')}
+            />;
+        }
+        
+        // Generic network/server error
+        return <NetworkErrorState 
+            error={error}
+            onRetry={fetchGroupData}
+            onRefresh={() => window.location.reload()}
+            helpText="Check your connection and try again."
+        />;
+    }
+
+    // 🚀 PHASE 5: Additional validation - ensure group exists
     if (!group) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                    <div className="text-6xl mb-4">❌</div>
-                    <h2 className="text-2xl font-bold text-white mb-4">Group Not Found</h2>
-                    <p className="text-white/70 mb-6">This group may have been deleted or you don't have access to it.</p>
-                    <button
-                        onClick={() => navigate('/dashboard')}
-                        className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
-                    >
-                        Back to Dashboard
-                    </button>
-                </div>
-            </div>
-        );
+        return <NotFoundErrorState 
+            title="Group Not Found"
+            message="This group may have been deleted or you don't have access to it."
+            onGoBack={() => navigate('/dashboard')}
+        />;
     }
     
     return (
@@ -343,7 +417,7 @@ const GroupPage = () => {
                             </div>
                         )}
                         
-                        {/* 🚀 UPDATED: Use unified GroupMembersTab component */}
+                        {/* 🚀 PHASE 5: Continue using the unified GroupMembersTab component */}
                         {activeTab === 'members' && (
                             <GroupMembersTab 
                                 group={group}

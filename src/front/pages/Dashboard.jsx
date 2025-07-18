@@ -1,10 +1,16 @@
-// src/front/pages/Dashboard.jsx - CRITICAL FIXES for group management
+// src/front/pages/Dashboard.jsx - PHASE 5 IMPLEMENTATION: Standardized UI/UX Components
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
+
+// 🚀 PHASE 5: Import standardized components
+import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
+import { NetworkErrorState, AuthErrorState } from '../components/ErrorState';
+import { validateGroupId, safeGroupOperation } from '../utils/groupValidation';
+
 import CreateGroupModal from '../components/CreateGroupModal';
 import GroupActionButtons from '../components/GroupActionButtons';
 import JoinGroupInput from '../components/JoinGroupInput';
@@ -19,6 +25,7 @@ export const Dashboard = () => {
 
     const [dashboardData, setDashboardData] = useState(null);
     const [isLoadingData, setIsLoadingData] = useState(true);
+    const [dashboardError, setDashboardError] = useState(null); // 🚀 PHASE 5: Better error state
     const [groups, setGroups] = useState([]);
     const [commonGames, setCommonGames] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -74,6 +81,7 @@ export const Dashboard = () => {
         loadDashboardData();
     }, [isAuthenticated, user?.id, authLoading]);
 
+    // 🚀 PHASE 5: Enhanced data loading with better error handling
     const loadDashboardData = async () => {
         if (dataLoadedRef.current) {
             console.log('🔄 Dashboard: Data already loaded, skipping...');
@@ -82,52 +90,65 @@ export const Dashboard = () => {
 
         dataLoadedRef.current = true;
         setIsLoadingData(true);
+        setDashboardError(null); // Clear previous errors
 
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            console.log('📡 Fetching groups from:', `${backendUrl}/api/gaming/groups`);
-            
-            const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
-            
-            if (groupsResponse.ok) {
-                const groupsData = await groupsResponse.json();
+        // 🚀 PHASE 5: Use safeGroupOperation for enhanced validation and error handling
+        const result = await safeGroupOperation(
+            'dashboard', // Not a real group ID, but we need a placeholder
+            async () => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                console.log('📡 Fetching groups from:', `${backendUrl}/api/gaming/groups`);
                 
-                // CRITICAL FIX: Validate group data before setting state
-                const validGroups = (groupsData.groups || []).filter(group => {
-                    const isValid = group && group.id && group.id !== 'undefined' && group.name;
-                    if (!isValid) {
-                        console.error('❌ Invalid group data received:', group);
+                const groupsResponse = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+                
+                if (groupsResponse.ok) {
+                    const groupsData = await groupsResponse.json();
+                    
+                    // CRITICAL FIX: Validate group data before setting state
+                    const validGroups = (groupsData.groups || []).filter(group => {
+                        const validation = validateGroupId(group?.id);
+                        const isValid = validation.isValid && group.name;
+                        if (!isValid) {
+                            console.error('❌ Invalid group data received:', group);
+                        }
+                        return isValid;
+                    });
+                    
+                    console.log('✅ Valid groups loaded:', validGroups.length);
+                    
+                    // Fetch common games if we have valid groups
+                    if (validGroups.length > 0) {
+                        await fetchCommonGames(validGroups);
                     }
-                    return isValid;
-                });
-                
-                console.log('✅ Valid groups loaded:', validGroups.length);
-                setGroups(validGroups);
-                
-                // Fetch common games if we have valid groups
-                if (validGroups.length > 0) {
-                    await fetchCommonGames(validGroups);
+                    
+                    return validGroups;
+                } else {
+                    const errorData = await groupsResponse.json();
+                    console.error('Groups fetch error:', errorData);
+                    
+                    if (groupsResponse.status === 401) {
+                        throw new Error('Authentication expired');
+                    }
+                    
+                    throw new Error(errorData.error || 'Failed to load groups');
                 }
-            } else {
-                const errorData = await groupsResponse.json();
-                console.error('Groups fetch error:', errorData);
-                toast.error(`Failed to load groups: ${errorData.error || 'Unknown error'}`);
-                
-                if (groupsResponse.status === 401) {
-                    console.log('🚨 Auth error in dashboard, clearing auth and redirecting...');
-                    authService.logout();
-                    navigate('/login');
-                    return;
-                }
-            }
+            },
+            'load dashboard data'
+        );
+
+        setIsLoadingData(false);
+
+        if (result.success) {
+            setGroups(result.data);
+            setDashboardError(null);
             
             // Set enhanced dashboard stats
             const enhancedData = { 
                 stats: { 
-                    totalSessions: groups.length > 0 ? Math.floor(Math.random() * 20) + 5 : 0,
-                    totalVotes: groups.length > 0 ? Math.floor(Math.random() * 50) + 10 : 0,
+                    totalSessions: result.data.length > 0 ? Math.floor(Math.random() * 20) + 5 : 0,
+                    totalVotes: result.data.length > 0 ? Math.floor(Math.random() * 50) + 10 : 0,
                     favoriteGame: user?.steam_connected ? 'Valorant' : 'Connect Steam to see stats',
-                    winRate: groups.length > 0 ? Math.floor(Math.random() * 40) + 60 : 0
+                    winRate: result.data.length > 0 ? Math.floor(Math.random() * 40) + 60 : 0
                 }
             };
             setDashboardData(enhancedData);
@@ -138,18 +159,16 @@ export const Dashboard = () => {
                 { id: 2, type: 'game_vote', message: 'Voted for Valorant in squad session', time: '1 day ago', icon: '🗳️' },
                 { id: 3, type: 'steam_sync', message: 'Steam library synced', time: '2 days ago', icon: '🔄' }
             ]);
+        } else {
+            console.error('❌ Error loading dashboard data:', result.error);
+            setDashboardError(result.error);
             
-        } catch (error) {
-            console.error('❌ Error loading dashboard data:', error);
-            toast.error("Could not load your dashboard data.");
-            
-            if (error.message === 'Authentication failed' || error.message.includes('401')) {
+            if (result.error.includes('Authentication expired') || result.originalError?.message?.includes('401')) {
                 console.log('🚨 Auth error in dashboard, clearing auth and redirecting...');
                 authService.logout();
                 navigate('/login');
+                return;
             }
-        } finally {
-            setIsLoadingData(false);
         }
     };
 
@@ -180,37 +199,46 @@ export const Dashboard = () => {
         }
     };
 
-    const handleCreateGroup = async (groupName) => {
+    const handleCreateGroup = async (groupData) => {
         const loadingToast = toast.loading("Creating group...");
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`, {
-                method: 'POST',
-                body: JSON.stringify({ name: groupName })
-            });
+        
+        // 🚀 PHASE 5: Use safeGroupOperation for group creation
+        const result = await safeGroupOperation(
+            'create', // Placeholder for creation operation
+            async () => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`, {
+                    method: 'POST',
+                    body: JSON.stringify(groupData)
+                });
 
-            toast.dismiss(loadingToast);
-
-            if (response.ok) {
-                const data = await response.json();
-                
-                // CRITICAL FIX: Validate new group data
-                if (data.group && data.group.id && data.group.id !== 'undefined') {
-                    setGroups(prevGroups => [...prevGroups, data.group]);
-                    toast.success(`Group "${data.group.name}" created!`);
-                    setIsModalOpen(false);
-                    await fetchCommonGames([...groups, data.group]);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // CRITICAL FIX: Validate new group data
+                    const validation = validateGroupId(data.group?.id);
+                    if (!validation.isValid || !data.group?.name) {
+                        throw new Error('Invalid group data received from server');
+                    }
+                    
+                    return data.group;
                 } else {
-                    console.error('❌ Invalid group data received from creation:', data.group);
-                    toast.error('Group created but invalid data received. Please refresh.');
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Unknown error');
                 }
-            } else {
-                const errorData = await response.json();
-                toast.error(`Error: ${errorData.error || 'Unknown error'}`);
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            toast.error("A network error occurred.");
+            },
+            'create group'
+        );
+
+        toast.dismiss(loadingToast);
+
+        if (result.success) {
+            setGroups(prevGroups => [...prevGroups, result.data]);
+            toast.success(`Group "${result.data.name}" created!`);
+            setIsModalOpen(false);
+            await fetchCommonGames([...groups, result.data]);
+        } else {
+            toast.error(`Error: ${result.error}`);
         }
     };
 
@@ -218,7 +246,8 @@ export const Dashboard = () => {
         console.log('🎉 Group joined successfully:', newGroup.name);
         
         // CRITICAL FIX: Validate new group before adding
-        if (newGroup && newGroup.id && newGroup.id !== 'undefined') {
+        const validation = validateGroupId(newGroup?.id);
+        if (validation.isValid && newGroup?.name) {
             setGroups(prevGroups => [...prevGroups, newGroup]);
             await fetchCommonGames([...groups, newGroup]);
             toast.success(`Welcome to "${newGroup.name}"! 🎉`);
@@ -232,8 +261,9 @@ export const Dashboard = () => {
     const handleGroupUpdate = (action, wasDeleted, groupId) => {
         console.log('🔄 Group update received:', { action, wasDeleted, groupId });
         
-        // ENHANCED: Validate groupId before proceeding
-        if (!groupId || groupId === 'undefined') {
+        // 🚀 PHASE 5: Enhanced validation before proceeding
+        const validation = validateGroupId(groupId);
+        if (!validation.isValid) {
             console.error('❌ Invalid groupId in handleGroupUpdate:', groupId);
             toast.error('Invalid group data. Please refresh the page.');
             // Force refresh dashboard data
@@ -245,8 +275,8 @@ export const Dashboard = () => {
         if (wasDeleted || action === 'deleted') {
             // Remove the group from state completely
             setGroups(prevGroups => {
-                const updatedGroups = prevGroups.filter(g => g.id !== groupId);
-                console.log(`🗑️ Group ${groupId} removed from state. Remaining groups:`, updatedGroups.length);
+                const updatedGroups = prevGroups.filter(g => g.id !== validation.normalizedId);
+                console.log(`🗑️ Group ${validation.normalizedId} removed from state. Remaining groups:`, updatedGroups.length);
                 return updatedGroups;
             });
             
@@ -255,7 +285,7 @@ export const Dashboard = () => {
         } else if (action === 'left') {
             console.log('👋 Member left, refreshing dashboard data...');
             // Remove the group from state and refresh
-            setGroups(prevGroups => prevGroups.filter(g => g.id !== groupId));
+            setGroups(prevGroups => prevGroups.filter(g => g.id !== validation.normalizedId));
             
             // Reset the data loaded flag and reload
             dataLoadedRef.current = false;
@@ -279,8 +309,11 @@ export const Dashboard = () => {
     const navigateToProfile = () => navigate('/profile');
 
     const getFilteredGroups = () => {
-        // CRITICAL FIX: Filter out invalid groups
-        const validGroups = groups.filter(g => g && g.id && g.id !== 'undefined');
+        // CRITICAL FIX: Filter out invalid groups with enhanced validation
+        const validGroups = groups.filter(g => {
+            const validation = validateGroupId(g?.id);
+            return validation.isValid && g?.name;
+        });
         
         switch (groupFilter) {
             case 'creator':
@@ -292,23 +325,31 @@ export const Dashboard = () => {
         }
     };
 
+    // 🚀 PHASE 5: Determine loading state with enhanced logic
     const shouldShowLoading = authLoading || isLoadingData || !dashboardData || !initializationRef.current;
     
+    // 🚀 PHASE 5: Use standardized PageLoadingState
     if (shouldShowLoading) { 
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                    <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-white/70">Loading your dashboard...</p>
-                </div>
-            </div>
-        );
+        return <PageLoadingState message="Loading your dashboard..." subMessage="Fetching groups and game data" />;
     }
     
+    // 🚀 PHASE 5: Handle dashboard errors with NetworkErrorState
+    if (dashboardError) {
+        return <NetworkErrorState 
+            error={dashboardError}
+            onRetry={loadDashboardData}
+            onRefresh={() => window.location.reload()}
+            helpText="Check your internet connection and try refreshing the page."
+        />;
+    }
+    
+    // 🚀 PHASE 5: Handle authentication with AuthErrorState
     if (!isAuthenticated || !user) { 
         console.log('🚨 Dashboard: Not authenticated, redirecting to login');
-        navigate('/login');
-        return null;
+        return <AuthErrorState 
+            onLogin={() => navigate('/login')}
+            onGoHome={() => navigate('/')}
+        />;
     }
 
     const { stats } = dashboardData;
@@ -461,7 +502,8 @@ export const Dashboard = () => {
                                 {filteredGroups.length > 0 ? (
                                     filteredGroups.map((group) => {
                                         // CRITICAL FIX: Validate each group before rendering
-                                        if (!group || !group.id || group.id === 'undefined') {
+                                        const validation = validateGroupId(group?.id);
+                                        if (!validation.isValid || !group?.name) {
                                             console.error('❌ Skipping invalid group in render:', group);
                                             return null;
                                         }

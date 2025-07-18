@@ -1,5 +1,8 @@
-// src/front/components/ErrorBoundary.jsx
+// src/front/components/ErrorBoundary.jsx - PHASE 5 IMPLEMENTATION: Uses standardized ErrorState
+
 import React from 'react';
+// 🚀 PHASE 5: Import standardized error component
+import { PageErrorState } from './ErrorState';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -17,9 +20,13 @@ class ErrorBoundary extends React.Component {
     }
 
     componentDidCatch(error, errorInfo) {
-        // Log error for debugging
-        console.error('🚨 Error caught by ErrorBoundary:', error);
-        console.error('🚨 Error info:', errorInfo);
+        // 🚀 PHASE 5: Enhanced error logging
+        console.group('🚨 Error caught by ErrorBoundary');
+        console.error('Error:', error);
+        console.error('Error info:', errorInfo);
+        console.error('Component stack:', errorInfo.componentStack);
+        console.error('Error stack:', error.stack);
+        console.groupEnd();
         
         // Update state with error details
         this.setState({
@@ -27,76 +34,55 @@ class ErrorBoundary extends React.Component {
             errorInfo: errorInfo
         });
 
-        // Optional: Send error to logging service
+        // 🚀 PHASE 5: Optional: Send error to logging service
         // Example: logErrorToService(error, errorInfo);
+        try {
+            // You could integrate with error tracking services here
+            // Sentry.captureException(error, { contexts: { react: errorInfo } });
+        } catch (loggingError) {
+            console.warn('Failed to log error to external service:', loggingError);
+        }
     }
 
     handleReload = () => {
+        // 🚀 PHASE 5: Clear error state and reload
+        this.setState({ hasError: false, error: null, errorInfo: null });
         window.location.reload();
     };
 
     handleGoHome = () => {
+        // 🚀 PHASE 5: Clear error state and navigate
+        this.setState({ hasError: false, error: null, errorInfo: null });
         window.location.href = '/';
+    };
+
+    handleReset = () => {
+        // 🚀 PHASE 5: Reset error boundary state without full reload
+        this.setState({ hasError: false, error: null, errorInfo: null });
     };
 
     render() {
         if (this.state.hasError) {
+            // 🚀 PHASE 5: Use standardized PageErrorState component
             return (
-                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
-                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-lg shadow-2xl">
-                        <div className="text-6xl mb-6">💥</div>
-                        <h1 className="text-3xl font-bold text-white mb-4">
-                            Oops! Something went wrong
-                        </h1>
-                        <p className="text-white/80 mb-6 leading-relaxed">
-                            The gaming squad encountered an unexpected error. Don't worry, 
-                            your data is safe and this is just a temporary glitch.
-                        </p>
-                        
-                        <div className="space-y-4">
-                            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                                <button 
-                                    onClick={this.handleReload}
-                                    className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-0.5 shadow-lg"
-                                >
-                                    🔄 Reload App
-                                </button>
-                                <button 
-                                    onClick={this.handleGoHome}
-                                    className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all duration-300"
-                                >
-                                    🏠 Go Home
-                                </button>
-                            </div>
-                            
-                            {/* Developer Info - Only show in development */}
-                            {import.meta.env.DEV && this.state.error && (
-                                <details className="mt-6 text-left">
-                                    <summary className="text-white/60 text-sm cursor-pointer hover:text-white transition-colors">
-                                        🔧 Developer Info
-                                    </summary>
-                                    <div className="mt-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-xs font-mono">
-                                        <div className="mb-2">
-                                            <strong>Error:</strong> {this.state.error.toString()}
-                                        </div>
-                                        {this.state.errorInfo && (
-                                            <div>
-                                                <strong>Component Stack:</strong>
-                                                <pre className="mt-1 whitespace-pre-wrap">
-                                                    {this.state.errorInfo.componentStack}
-                                                </pre>
-                                            </div>
-                                        )}
-                                    </div>
-                                </details>
-                            )}
-                            
-                            <div className="text-white/50 text-sm">
-                                If this keeps happening, try clearing your browser cache or contact support.
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <PageErrorState 
+                    title="Oops! Something went wrong"
+                    message="The gaming squad encountered an unexpected error. Don't worry, your data is safe and this is just a temporary glitch."
+                    icon="💥"
+                    onRetry={this.handleReload}
+                    onGoHome={this.handleGoHome}
+                    retryText="Reload App"
+                    backText="Go Home"
+                    size="large"
+                    details={import.meta.env.DEV ? {
+                        error: this.state.error?.toString(),
+                        componentStack: this.state.errorInfo?.componentStack,
+                        errorStack: this.state.error?.stack
+                    } : null}
+                    helpText="If this keeps happening, try clearing your browser cache or refreshing the page."
+                    errorCode="BOUNDARY_001"
+                    actionLayout="horizontal"
+                />
             );
         }
 
@@ -105,29 +91,3 @@ class ErrorBoundary extends React.Component {
 }
 
 export default ErrorBoundary;
-
-// Also update your main.jsx to wrap the app:
-/*
-import ErrorBoundary from './components/ErrorBoundary';
-
-root.render(
-    <React.StrictMode>
-        <ErrorBoundary>
-            <StoreProvider>
-                <RouterProvider router={router} />
-                <Toaster 
-                    position="top-right"
-                    toastOptions={{
-                        duration: 4000,
-                        style: {
-                            background: '#1e293b',
-                            color: '#fff',
-                            border: '1px solid rgba(255, 255, 255, 0.1)'
-                        }
-                    }}
-                />
-            </StoreProvider>
-        </ErrorBoundary>
-    </React.StrictMode>
-);
-*/
