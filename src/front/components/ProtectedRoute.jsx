@@ -1,14 +1,14 @@
-// src/front/components/ProtectedRoute.jsx - Enhanced with gaming permissions while keeping existing logic
+// src/front/components/ProtectedRoute.jsx - ENHANCED with better validation and group requirements
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import useGlobalReducer from '../hooks/useGlobalReducer'; // Fixed: default import
+import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import { getGamingSelectors } from '../store/store.js';
 
 const ProtectedRoute = ({ 
     children,
-    // New gaming-specific props
+    // Gaming-specific props
     requireSteam = false,
     requireGroupMembership = false,
     requireGroupCreator = false,
@@ -22,10 +22,31 @@ const ProtectedRoute = ({
     const [authState, setAuthState] = useState({
         isChecking: true,
         isAuthenticated: false,
-        error: null
+        error: null,
+        hasRequiredPermissions: false
     });
 
-    // Your existing auth check logic (unchanged)
+    // 🔧 IMPROVED: Better validation helper
+    const validateGroupId = useCallback((id) => {
+        if (!id || id === 'undefined' || id === 'null') {
+            console.error('🚫 ProtectedRoute: Invalid group ID:', id);
+            return null;
+        }
+        
+        try {
+            const parsed = parseInt(id);
+            if (isNaN(parsed) || parsed <= 0) {
+                console.error('🚫 ProtectedRoute: Group ID must be positive integer:', id);
+                return null;
+            }
+            return parsed;
+        } catch (error) {
+            console.error('🚫 ProtectedRoute: Error parsing group ID:', error);
+            return null;
+        }
+    }, []);
+
+    // 🔧 IMPROVED: More robust auth checking with timeout protection
     useEffect(() => {
         let isMounted = true;
         let timeoutId = null;
@@ -34,7 +55,7 @@ const ProtectedRoute = ({
             try {
                 console.log('🛡️ ProtectedRoute: Starting auth check for:', location.pathname);
 
-                // Set a reasonable timeout
+                // 🔧 IMPROVED: Set a reasonable timeout with escape hatch
                 timeoutId = setTimeout(() => {
                     if (isMounted) {
                         console.log('⏰ ProtectedRoute: Auth check timeout, using local state');
@@ -42,12 +63,21 @@ const ProtectedRoute = ({
                         setAuthState({
                             isChecking: false,
                             isAuthenticated: hasLocalAuth,
-                            error: hasLocalAuth ? null : 'Authentication timeout'
+                            error: hasLocalAuth ? null : 'Authentication timeout',
+                            hasRequiredPermissions: hasLocalAuth
                         });
                     }
-                }, 3000); // 3 second timeout
+                }, 5000); // 5 second timeout
 
-                // Quick auth check without waiting
+                // 🔧 IMPROVED: Wait for auth service initialization if needed
+                if (!authService.authCheckCompleted) {
+                    console.log('⏳ ProtectedRoute: Waiting for auth service initialization...');
+                    await authService.waitForInitialization();
+                }
+
+                if (!isMounted) return;
+
+                // Get auth status from both sources
                 const serviceAuth = authService.isAuthenticated();
                 const storeAuth = store?.isAuthenticated;
                 const hasUser = !!store?.user;
@@ -61,64 +91,57 @@ const ProtectedRoute = ({
                     authCheckCompleted: authService.authCheckCompleted
                 });
 
-                // If we have consistent auth state, use it immediately
-                if (serviceAuth && storeAuth && hasUser && !isLoading) {
-                    console.log('✅ ProtectedRoute: Quick auth success');
+                // 🔧 IMPROVED: More robust auth validation
+                const isAuthenticated = serviceAuth && storeAuth && hasUser && !isLoading;
+
+                if (isAuthenticated) {
+                    // Check additional gaming requirements
+                    const hasRequiredPermissions = await checkGamingRequirements();
+                    
                     if (isMounted) {
                         clearTimeout(timeoutId);
                         setAuthState({
                             isChecking: false,
                             isAuthenticated: true,
-                            error: null
+                            error: null,
+                            hasRequiredPermissions
                         });
                     }
-                    return;
-                }
-
-                // If clearly not authenticated, proceed quickly
-                if (!serviceAuth && !storeAuth && !isLoading) {
-                    console.log('❌ ProtectedRoute: Quick auth failure');
+                } else if (!serviceAuth && !storeAuth && !isLoading) {
+                    // Clearly not authenticated
                     if (isMounted) {
                         clearTimeout(timeoutId);
                         setAuthState({
                             isChecking: false,
                             isAuthenticated: false,
-                            error: null
+                            error: null,
+                            hasRequiredPermissions: false
                         });
                     }
-                    return;
-                }
-
-                // If still loading, wait a bit but not too long
-                if (isLoading && !authService.authCheckCompleted) {
-                    console.log('⏳ ProtectedRoute: Auth still loading, waiting briefly...');
-                    
-                    // Wait max 1 second for auth to complete
-                    const maxWait = 1000;
-                    const startTime = Date.now();
-                    
-                    while ((Date.now() - startTime < maxWait) && store?.authLoading && !authService.authCheckCompleted) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        if (!isMounted) return;
+                } else if (isLoading && authService.authCheckCompleted) {
+                    // Still loading but auth service says it's done - wait a bit more
+                    setTimeout(() => {
+                        if (isMounted) {
+                            const finalAuth = authService.isAuthenticated() && store?.isAuthenticated && !!store?.user;
+                            setAuthState({
+                                isChecking: false,
+                                isAuthenticated: finalAuth,
+                                error: null,
+                                hasRequiredPermissions: finalAuth
+                            });
+                        }
+                    }, 1000);
+                } else {
+                    // Default to not authenticated if unclear
+                    if (isMounted) {
+                        clearTimeout(timeoutId);
+                        setAuthState({
+                            isChecking: false,
+                            isAuthenticated: false,
+                            error: null,
+                            hasRequiredPermissions: false
+                        });
                     }
-                }
-
-                // Final auth check
-                const finalServiceAuth = authService.isAuthenticated();
-                const finalStoreAuth = store?.isAuthenticated;
-                const finalHasUser = !!store?.user;
-
-                if (isMounted) {
-                    clearTimeout(timeoutId);
-                    const isAuthenticated = finalServiceAuth && finalStoreAuth && finalHasUser;
-                    
-                    console.log('🏁 ProtectedRoute: Final auth decision:', isAuthenticated);
-                    
-                    setAuthState({
-                        isChecking: false,
-                        isAuthenticated,
-                        error: null
-                    });
                 }
 
             } catch (error) {
@@ -128,10 +151,68 @@ const ProtectedRoute = ({
                     setAuthState({
                         isChecking: false,
                         isAuthenticated: false,
-                        error: error.message
+                        error: error.message,
+                        hasRequiredPermissions: false
                     });
                 }
             }
+        };
+
+        // 🔧 NEW: Check gaming requirements
+        const checkGamingRequirements = async () => {
+            const user = store?.user;
+            
+            // Check Steam connection requirement
+            if (requireSteam && (!user?.steam_connected && !user?.is_steam_connected)) {
+                console.log('🚫 ProtectedRoute: Steam required but not connected');
+                return false;
+            }
+
+            // Check group membership requirement
+            if (requireGroupMembership && groupId) {
+                const validGroupId = validateGroupId(groupId);
+                if (!validGroupId) {
+                    console.log('🚫 ProtectedRoute: Invalid group ID for membership check');
+                    return false;
+                }
+
+                const currentGroup = selectors.getCurrentGroup();
+                const userGroups = selectors.getUserGroups();
+                
+                const isMember = (currentGroup?.id === validGroupId) || 
+                                userGroups.some(group => group.id === validGroupId);
+                
+                if (!isMember) {
+                    console.log('🚫 ProtectedRoute: User not member of required group');
+                    return false;
+                }
+            }
+
+            // Check group creator requirement
+            if (requireGroupCreator && groupId) {
+                const validGroupId = validateGroupId(groupId);
+                if (!validGroupId) {
+                    console.log('🚫 ProtectedRoute: Invalid group ID for creator check');
+                    return false;
+                }
+
+                const currentGroup = selectors.getCurrentGroup();
+                
+                // If we don't have current group data, try to load it
+                if (!currentGroup || currentGroup.id !== validGroupId) {
+                    console.log('⏳ ProtectedRoute: Missing group data for creator check');
+                    return false; // Will show loading state
+                }
+                
+                const isCreator = user && currentGroup.creator && currentGroup.creator.id === user.id;
+                
+                if (!isCreator) {
+                    console.log('🚫 ProtectedRoute: User not creator of required group');
+                    return false;
+                }
+            }
+
+            return true;
         };
 
         performAuthCheck();
@@ -143,27 +224,35 @@ const ProtectedRoute = ({
                 clearTimeout(timeoutId);
             }
         };
-    }, [store?.isAuthenticated, store?.user?.id, store?.authLoading, location.pathname]);
+    }, [store?.isAuthenticated, store?.user?.id, store?.authLoading, location.pathname, 
+        requireSteam, requireGroupMembership, requireGroupCreator, groupId, 
+        selectors, validateGroupId]);
 
-    // Loading state with escape hatch (your existing code)
+    // 🔧 IMPROVED: Loading state with better escape hatch
     if (authState.isChecking) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md">
                     <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-white text-lg">Verifying access...</p>
-                    <p className="text-white/60 text-sm mt-2">Please wait</p>
+                    <p className="text-white/60 text-sm mt-2">
+                        {requireSteam && "Checking Steam connection..."}
+                        {requireGroupMembership && "Verifying group membership..."}
+                        {requireGroupCreator && "Validating group permissions..."}
+                        {!requireSteam && !requireGroupMembership && !requireGroupCreator && "Please wait"}
+                    </p>
                     
-                    {/* Escape hatch for stuck users */}
+                    {/* Enhanced escape hatch */}
                     <div className="mt-6">
                         <button 
                             onClick={() => {
-                                console.log('🚪 User clicked skip verification');
+                                console.log('🚪 User clicked emergency skip verification');
                                 const hasBasicAuth = authService.getAccessToken() && authService.getCurrentUser();
                                 setAuthState({
                                     isChecking: false,
                                     isAuthenticated: hasBasicAuth,
-                                    error: null
+                                    error: null,
+                                    hasRequiredPermissions: hasBasicAuth
                                 });
                             }}
                             className="text-coral-400 hover:text-coral-300 text-sm underline transition-colors"
@@ -176,55 +265,48 @@ const ProtectedRoute = ({
         );
     }
 
-    // Handle unauthenticated state (your existing code)
+    // Handle unauthenticated state
     if (!authState.isAuthenticated) {
         console.log('🚪 ProtectedRoute: Redirecting to login from:', location.pathname);
         const redirectPath = location.pathname !== '/login' ? location.pathname : '/dashboard';
         return <Navigate to="/login" state={{ from: { pathname: redirectPath } }} replace />;
     }
 
-    // NEW: Additional gaming-specific checks after basic auth passes
-    const user = store?.user;
+    // Handle missing gaming requirements
+    if (!authState.hasRequiredPermissions) {
+        const user = store?.user;
 
-    // Check Steam connection requirement
-    if (requireSteam && (!user?.steam_connected && !user?.is_steam_connected)) {
-        return fallback || (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md mx-4">
-                    <div className="text-6xl mb-4">🎮</div>
-                    <h2 className="text-2xl font-bold text-white mb-4">Steam Connection Required</h2>
-                    <p className="text-white/60 mb-6">
-                        This feature requires a connected Steam account to access your game library and find common games with friends.
-                    </p>
-                    <div className="space-y-3">
-                        <button
-                            onClick={() => window.location.href = '/api/auth/steam/connect'}
-                            className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
-                        >
-                            🔗 Connect Steam Account
-                        </button>
-                        <button
-                            onClick={() => window.history.back()}
-                            className="w-full px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-colors"
-                        >
-                            ← Go Back
-                        </button>
+        // Steam connection requirement
+        if (requireSteam && (!user?.steam_connected && !user?.is_steam_connected)) {
+            return fallback || (
+                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md mx-4">
+                        <div className="text-6xl mb-4">🎮</div>
+                        <h2 className="text-2xl font-bold text-white mb-4">Steam Connection Required</h2>
+                        <p className="text-white/60 mb-6">
+                            This feature requires a connected Steam account to access your game library and find common games with friends.
+                        </p>
+                        <div className="space-y-3">
+                            <button
+                                onClick={() => window.location.href = '/profile'}
+                                className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+                            >
+                                🔗 Connect Steam Account
+                            </button>
+                            <button
+                                onClick={() => window.history.back()}
+                                className="w-full px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-colors"
+                            >
+                                ← Go Back
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        );
-    }
+            );
+        }
 
-    // Check group membership requirement
-    if (requireGroupMembership && groupId) {
-        const currentGroup = selectors.getCurrentGroup();
-        const userGroups = selectors.getUserGroups();
-        
-        // Check if user is member of the specific group
-        const isMember = currentGroup?.id === parseInt(groupId) || 
-                         userGroups.some(group => group.id === parseInt(groupId));
-        
-        if (!isMember) {
+        // Group membership requirement
+        if (requireGroupMembership && groupId) {
             return fallback || (
                 <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md mx-4">
@@ -251,27 +333,9 @@ const ProtectedRoute = ({
                 </div>
             );
         }
-    }
 
-    // Check group creator requirement
-    if (requireGroupCreator && groupId) {
-        const isCreator = selectors.isCurrentUserGroupCreator();
-        const currentGroup = selectors.getCurrentGroup();
-        
-        // If we don't have current group data, show loading
-        if (!currentGroup || currentGroup.id !== parseInt(groupId)) {
-            return fallback || (
-                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-                        <div className="w-8 h-8 border-2 border-coral-500/30 border-t-coral-500 rounded-full animate-spin mx-auto mb-4"></div>
-                        <h2 className="text-xl font-bold text-white mb-2">Loading Group...</h2>
-                        <p className="text-white/60">Verifying group permissions</p>
-                    </div>
-                </div>
-            );
-        }
-        
-        if (!isCreator) {
+        // Group creator requirement
+        if (requireGroupCreator && groupId) {
             return fallback || (
                 <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md mx-4">
@@ -301,7 +365,7 @@ const ProtectedRoute = ({
     }
 
     // All checks passed, render protected content
-    console.log('✅ ProtectedRoute: Rendering protected content');
+    console.log('✅ ProtectedRoute: All checks passed, rendering protected content');
     return children;
 };
 

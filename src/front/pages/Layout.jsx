@@ -1,4 +1,4 @@
-// src/front/pages/Layout.jsx - FIXED to prevent authentication checking loops
+// src/front/pages/Layout.jsx - CRITICAL FIXES to prevent authentication loops
 
 import React, { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
@@ -12,14 +12,23 @@ export const Layout = () => {
     const { store, dispatch } = useGlobalReducer();
     const location = useLocation();
     
-    // CRITICAL FIX: Use ref to prevent multiple initializations
+    // 🔧 CRITICAL FIX: Use ref to prevent multiple initializations
     const initializationRef = useRef(false);
     const lastLocationRef = useRef(location.pathname);
+    const initPromiseRef = useRef(null); // Track the initialization promise
 
-    // CRITICAL FIX: Single initialization effect that only runs once
+    // 🔧 CRITICAL FIX: Single initialization effect that only runs once
     useEffect(() => {
+        // CRITICAL: Check if already initialized
         if (initializationRef.current) {
             console.log('🏗️ Layout: Already initialized, skipping...');
+            return;
+        }
+
+        // CRITICAL: Check if authService already completed auth check
+        if (authService.authCheckCompleted) {
+            console.log('🏗️ Layout: AuthService already completed check, skipping...');
+            initializationRef.current = true;
             return;
         }
 
@@ -29,7 +38,13 @@ export const Layout = () => {
         const initializeAuth = async () => {
             try {
                 console.log('💉 Injecting dispatch into authService...');
-                await authService.setDispatch(dispatch);
+                
+                // 🔧 CRITICAL: Store the initialization promise to prevent concurrent calls
+                if (!initPromiseRef.current) {
+                    initPromiseRef.current = authService.setDispatch(dispatch);
+                }
+                
+                await initPromiseRef.current;
                 console.log('✅ Layout initialization complete');
             } catch (error) {
                 console.error('❌ Layout initialization error:', error);
@@ -41,20 +56,22 @@ export const Layout = () => {
         };
 
         initializeAuth();
-    }, []); // CRITICAL: Empty dependency array - only run once
+    }, []); // 🔧 CRITICAL: Empty dependency array - only run once
 
-    // CRITICAL FIX: Separate effect for handling route changes and pending invites only
+    // 🔧 IMPROVED: Separate effect for handling route changes and pending invites only
     useEffect(() => {
-        // Only process if initialization is complete
-        if (!initializationRef.current) return;
+        // Only process if initialization is complete and we have a real route change
+        if (!initializationRef.current || !authService.authCheckCompleted) {
+            return;
+        }
 
-        // Only handle location changes, not auth state changes
+        // Only handle actual location changes, not initial load
         if (lastLocationRef.current !== location.pathname) {
             console.log('🗺️ Layout: Route changed from', lastLocationRef.current, 'to', location.pathname);
             lastLocationRef.current = location.pathname;
 
             // Handle pending invites only on route change when user is authenticated
-            if (store?.isAuthenticated && !store?.authLoading && authService.authCheckCompleted) {
+            if (store?.isAuthenticated && !store?.authLoading) {
                 const pendingInvite = sessionStorage.getItem('pending_invite');
                 if (pendingInvite) {
                     console.log('🎫 Processing pending invite after route change:', pendingInvite);
@@ -67,9 +84,10 @@ export const Layout = () => {
                 }
             }
         }
-    }, [location.pathname, store?.isAuthenticated]); // Only depend on route and auth status
+    }, [location.pathname, store?.isAuthenticated]); // 🔧 Only depend on route and final auth status
 
-    // REMOVED: All the conflicting authentication monitoring effects that were causing loops
+    // 🔧 CRITICAL: Remove all other useEffects that were monitoring auth state
+    // Those were causing the infinite loops by triggering re-initialization
 
     return (
         <div className="flex flex-col min-h-screen">

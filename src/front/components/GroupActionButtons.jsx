@@ -1,35 +1,73 @@
-// src/front/components/GroupActionButtons.jsx
-// FIXED VERSION - Addresses undefined group IDs and improves error handling
+// src/front/components/GroupActionButtons.jsx - ENHANCED with validation helpers
 
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
+import { 
+    validateGroupId, 
+    validateGroupObject, 
+    validateGroupPermissions, 
+    safeGroupOperation,
+    handleGroupError 
+} from '../utils/groupValidation';
 
 const GroupActionButtons = ({ group, user, onGroupUpdate, className = "" }) => {
     const [loading, setLoading] = useState(false);
+    const [actionLoading, setActionLoading] = useState({});
     
-    // CRITICAL FIX: Validate inputs before proceeding
-    if (!group || !group.id || !user || !user.id) {
-        console.error('❌ GroupActionButtons: Missing required props', { 
-            groupId: group?.id, 
-            userId: user?.id,
-            group: !!group,
-            user: !!user
-        });
+    // 🔧 ENHANCED: Comprehensive validation before proceeding
+    const validation = React.useMemo(() => {
+        const errors = [];
+        
+        // Validate group
+        if (!group) {
+            errors.push('Group object is missing');
+        } else {
+            const groupValidation = validateGroupObject(group);
+            if (!groupValidation.isValid) {
+                errors.push(...groupValidation.errors);
+            }
+        }
+        
+        // Validate user
+        if (!user || !user.id) {
+            errors.push('User not authenticated');
+        }
+        
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    }, [group, user]);
+    
+    // Early return for invalid props
+    if (!validation.isValid) {
+        console.error('❌ GroupActionButtons: Validation failed', validation.errors);
         return (
-            <div className={`text-red-300 text-sm p-2 ${className}`}>
-                ⚠️ Invalid group data
+            <div className={`text-red-300 text-sm p-2 border border-red-500/30 rounded-lg bg-red-500/10 ${className}`}>
+                <div className="flex items-center space-x-2">
+                    <span>⚠️</span>
+                    <div>
+                        <div className="font-medium">Invalid Data</div>
+                        <div className="text-xs text-red-200">
+                            {validation.errors.slice(0, 2).join(', ')}
+                            {validation.errors.length > 2 && ` (+${validation.errors.length - 2} more)`}
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
     
     const isCreator = group.creator?.id === user.id;
-    const memberCount = group.current_members || 0;
+    const memberCount = group.current_members || group.members?.length || 0;
 
+    // 🔧 ENHANCED: Better leave group handling with atomic operations
     const handleLeaveGroup = async () => {
-        // ENHANCED: Better validation before action
-        if (!group.id || !user.id) {
-            toast.error('Cannot leave group: Invalid group or user data');
+        // Validate permissions
+        const permissionCheck = validateGroupPermissions(user, group, 'leave');
+        if (!permissionCheck.hasPermission) {
+            toast.error(permissionCheck.reason);
             return;
         }
 
@@ -44,74 +82,70 @@ const GroupActionButtons = ({ group, user, onGroupUpdate, className = "" }) => {
             return;
         }
 
-        setLoading(true);
-        const loadingToast = toast.loading(isCreator ? "Processing..." : "Leaving group...");
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            
-            // CRITICAL FIX: Ensure group.id is valid before making request
-            if (!group.id || group.id === 'undefined') {
-                throw new Error('Invalid group ID');
-            }
-            
-            console.log('🚪 Leaving group:', group.id, 'User:', user.id);
-            
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${group.id}/leave`, {
-                method: 'POST'
-            });
-
-            const data = await response.json();
-            toast.dismiss(loadingToast);
-
-            if (response.ok && data.success) {
-                // Handle different action types from backend
-                switch (data.action) {
-                    case 'left_with_transfer':
-                        toast.success(`✅ Left group. Ownership transferred to ${data.new_creator}.`);
-                        break;
-                    case 'auto_deleted':
-                    case 'auto_deleted_manual':
-                        toast.success(`🗑️ Group was deleted (you were the last member).`);
-                        break;
-                    case 'member_left':
-                        toast.success(`👋 Successfully left "${group.name}".`);
-                        break;
-                    default:
-                        toast.success(data.message || 'Successfully left group');
-                }
+        // Use safe operation wrapper
+        const result = await safeGroupOperation(
+            group.id,
+            async (validatedGroupId) => {
+                setLoading(true);
+                setActionLoading(prev => ({ ...prev, leave: true }));
                 
-                // ENHANCED: Pass the actual group ID to parent
-                if (onGroupUpdate) {
-                    onGroupUpdate('left', data.group_deleted, group.id);
-                }
+                const loadingToast = toast.loading(isCreator ? "Processing..." : "Leaving group...");
                 
-            } else {
-                const errorMessage = data.error || `HTTP ${response.status}`;
-                toast.error(`Failed to leave group: ${errorMessage}`);
-                console.error('Leave group failed:', response.status, data);
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error leaving group:', error);
-            
-            // ENHANCED: Better error messages
-            if (error.message.includes('Invalid group ID')) {
-                toast.error("Invalid group data. Please refresh the page.");
-            } else if (error.message.includes('Network')) {
-                toast.error("Network error. Please check your connection.");
-            } else {
-                toast.error("An unexpected error occurred.");
-            }
-        } finally {
-            setLoading(false);
+                try {
+                    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                    const response = await authService.authenticatedFetch(
+                        `${backendUrl}/api/gaming/groups/${validatedGroupId}/leave`,
+                        { method: 'POST' }
+                    );
+
+                    const data = await response.json();
+                    toast.dismiss(loadingToast);
+
+                    if (response.ok && data.success) {
+                        // Handle different action types from backend
+                        switch (data.action) {
+                            case 'left_with_transfer':
+                                toast.success(`✅ Left group. Ownership transferred to ${data.new_creator}.`);
+                                break;
+                            case 'auto_deleted':
+                            case 'auto_deleted_manual':
+                                toast.success(`🗑️ Group was deleted (you were the last member).`);
+                                break;
+                            case 'member_left':
+                                toast.success(`👋 Successfully left "${group.name}".`);
+                                break;
+                            default:
+                                toast.success(data.message || 'Successfully left group');
+                        }
+                        
+                        return {
+                            action: data.action,
+                            groupDeleted: data.group_deleted,
+                            newCreator: data.new_creator
+                        };
+                    } else {
+                        throw new Error(data.error || `HTTP ${response.status}`);
+                    }
+                } finally {
+                    toast.dismiss(loadingToast);
+                    setLoading(false);
+                    setActionLoading(prev => ({ ...prev, leave: false }));
+                }
+            },
+            'leave group'
+        );
+
+        if (result.success && onGroupUpdate) {
+            onGroupUpdate(result.data.action, result.data.groupDeleted, group.id);
         }
     };
 
+    // 🔧 ENHANCED: Better delete group handling with atomic operations
     const handleDeleteGroup = async () => {
-        // ENHANCED: Better validation
-        if (!group.id || !user.id || !isCreator) {
-            toast.error('Cannot delete group: Invalid permissions or data');
+        // Validate permissions
+        const permissionCheck = validateGroupPermissions(user, group, 'delete');
+        if (!permissionCheck.hasPermission) {
+            toast.error(permissionCheck.reason);
             return;
         }
 
@@ -131,79 +165,142 @@ const GroupActionButtons = ({ group, user, onGroupUpdate, className = "" }) => {
             return;
         }
 
-        setLoading(true);
-        const loadingToast = toast.loading("Deleting group...");
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            
-            // CRITICAL FIX: Validate group ID before request
-            if (!group.id || group.id === 'undefined') {
-                throw new Error('Invalid group ID');
-            }
-            
-            console.log('🗑️ Deleting group:', group.id, 'by user:', user.id);
-            
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${group.id}/delete`, {
-                method: 'DELETE'
-            });
-
-            const data = await response.json();
-            toast.dismiss(loadingToast);
-
-            if (response.ok && data.success) {
-                toast.success(`🗑️ Group "${group.name}" deleted successfully.`);
+        // Use safe operation wrapper
+        const result = await safeGroupOperation(
+            group.id,
+            async (validatedGroupId) => {
+                setLoading(true);
+                setActionLoading(prev => ({ ...prev, delete: true }));
                 
-                // ENHANCED: Pass the actual group ID to parent
-                if (onGroupUpdate) {
-                    onGroupUpdate('deleted', true, group.id);
+                const loadingToast = toast.loading("Deleting group...");
+                
+                try {
+                    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                    const response = await authService.authenticatedFetch(
+                        `${backendUrl}/api/gaming/groups/${validatedGroupId}`,
+                        { method: 'DELETE' }
+                    );
+
+                    const data = await response.json();
+                    toast.dismiss(loadingToast);
+
+                    if (response.ok && data.success) {
+                        toast.success(`🗑️ Group "${group.name}" deleted successfully.`);
+                        return { action: 'deleted', groupDeleted: true };
+                    } else {
+                        throw new Error(data.error || `HTTP ${response.status}`);
+                    }
+                } finally {
+                    toast.dismiss(loadingToast);
+                    setLoading(false);
+                    setActionLoading(prev => ({ ...prev, delete: false }));
                 }
-                
-            } else {
-                const errorMessage = data.error || `HTTP ${response.status}`;
-                toast.error(`Failed to delete group: ${errorMessage}`);
-                console.error('Delete group failed:', response.status, data);
-            }
-        } catch (error) {
-            toast.dismiss(loadingToast);
-            console.error('Error deleting group:', error);
-            
-            // ENHANCED: Better error messages
-            if (error.message.includes('Invalid group ID')) {
-                toast.error("Invalid group data. Please refresh the page.");
-            } else if (error.message.includes('Network')) {
-                toast.error("Network error. Please check your connection.");
-            } else {
-                toast.error("An unexpected error occurred.");
-            }
-        } finally {
-            setLoading(false);
+            },
+            'delete group'
+        );
+
+        if (result.success && onGroupUpdate) {
+            onGroupUpdate('deleted', true, group.id);
         }
     };
 
+    // 🔧 NEW: Handle refresh group data
+    const handleRefreshGroup = async () => {
+        const result = await safeGroupOperation(
+            group.id,
+            async (validatedGroupId) => {
+                setActionLoading(prev => ({ ...prev, refresh: true }));
+                
+                try {
+                    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                    const response = await authService.authenticatedFetch(
+                        `${backendUrl}/api/gaming/groups/${validatedGroupId}`
+                    );
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        toast.success('Group data refreshed');
+                        return data.group;
+                    } else {
+                        throw new Error('Failed to refresh group data');
+                    }
+                } finally {
+                    setActionLoading(prev => ({ ...prev, refresh: false }));
+                }
+            },
+            'refresh group data'
+        );
+
+        if (result.success && onGroupUpdate) {
+            onGroupUpdate('refreshed', false, result.data);
+        }
+    };
+
+    // 🔧 ENHANCED: Better loading states
+    const isAnyActionLoading = loading || Object.values(actionLoading).some(Boolean);
+
     return (
-        <div className={`flex space-x-2 ${className}`}>
+        <div className={`flex flex-wrap gap-2 ${className}`}>
+            {/* REFRESH BUTTON - Available to all members */}
+            <button
+                onClick={handleRefreshGroup}
+                disabled={isAnyActionLoading}
+                className="px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-600/30 text-purple-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1"
+                title="Refresh group data"
+            >
+                <span className={actionLoading.refresh ? 'animate-spin' : ''}>🔄</span>
+                <span className="hidden sm:inline">{actionLoading.refresh ? 'Syncing...' : 'Refresh'}</span>
+            </button>
+
             {/* LEAVE BUTTON - Available to everyone */}
             <button
                 onClick={handleLeaveGroup}
-                disabled={loading}
-                className="flex-1 px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-600/30 text-yellow-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1"
+                disabled={isAnyActionLoading}
+                className="flex-1 min-w-0 px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-600/30 text-yellow-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1"
                 title={isCreator ? "Leave group (may transfer ownership or delete if empty)" : "Leave group"}
             >
                 <span>👋</span>
-                <span>{loading ? '...' : 'Leave'}</span>
+                <span className="truncate">
+                    {actionLoading.leave ? 'Leaving...' : 'Leave'}
+                </span>
             </button>
 
             {/* DELETE BUTTON - Only for creators */}
             {isCreator && (
                 <button
                     onClick={handleDeleteGroup}
-                    disabled={loading}
-                    className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/30 text-red-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center justify-center"
+                    disabled={isAnyActionLoading}
+                    className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/30 text-red-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1"
                     title="Delete group permanently (creator only)"
                 >
-                    <span>{loading ? '⏳' : '🗑️'}</span>
+                    <span>{actionLoading.delete ? '⏳' : '🗑️'}</span>
+                    <span className="hidden sm:inline">
+                        {actionLoading.delete ? 'Deleting...' : 'Delete'}
+                    </span>
                 </button>
+            )}
+
+            {/* 🔧 NEW: Additional Creator Actions */}
+            {isCreator && (
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => toast.info('Edit group feature coming soon!')}
+                        disabled={isAnyActionLoading}
+                        className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-600/30 text-blue-300 rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center justify-center"
+                        title="Edit group settings (coming soon)"
+                    >
+                        <span>⚙️</span>
+                        <span className="hidden lg:inline ml-1">Settings</span>
+                    </button>
+                </div>
+            )}
+            
+            {/* 🔧 ENHANCED: Action Status Indicator */}
+            {isAnyActionLoading && (
+                <div className="flex items-center text-white/60 text-xs">
+                    <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-1"></div>
+                    <span>Processing...</span>
+                </div>
             )}
         </div>
     );

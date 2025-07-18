@@ -1,69 +1,25 @@
-// src/front/pages/GameLibrary.jsx - FIXED GameImage Component
+// src/front/pages/GameLibrary.jsx - UPDATED with Unified Steam Integration
+
 import React, { useState, useEffect } from 'react';
 import useGlobalReducer from '../hooks/useGlobalReducer';
-import authService from '../store/authService.js';
-import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import steamService from '../services/steamService.js';
+import SteamConnectionManager from '../components/SteamConnectionManager';
+import { 
+    formatPlaytime, 
+    formatLastPlayed, 
+    createGameImageFallback, 
+    calculateLibraryStats,
+    filterGames,
+    sortGames,
+    extractGenres 
+} from '../utils/steamUtils.js';
 
-// FIXED GameImage component with robust error handling and Unicode support
-const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
+// Enhanced GameImage component with robust error handling
+const GameImage = ({ src, alt, className = "", fallbackText = "Game", appId }) => {
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
-
-    // FIXED: Unicode-safe btoa alternative
-    const safeBase64Encode = (str) => {
-        try {
-            // First, sanitize the string to only include safe characters
-            const sanitizedStr = str.replace(/[^\w\s-]/g, '').slice(0, 20);
-            
-            // Use TextEncoder to handle Unicode properly
-            const encoder = new TextEncoder();
-            const bytes = encoder.encode(sanitizedStr);
-            const binaryString = String.fromCharCode(...bytes);
-            return btoa(binaryString);
-        } catch (error) {
-            console.warn('Failed to encode string safely:', error);
-            // Fallback to a simple safe string
-            return btoa('Game Image');
-        }
-    };
-
-    // FIXED: Create SVG fallback with Unicode-safe encoding
-    const createSVGFallback = (text) => {
-        // Sanitize text to prevent btoa issues
-        const safeText = text.replace(/[^\w\s-]/g, '').slice(0, 18) || 'Game';
-        
-        const svgContent = `
-            <svg width="460" height="215" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <linearGradient id="gameBg" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
-                        <stop offset="100%" style="stop-color:#334155;stop-opacity:1" />
-                    </linearGradient>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#gameBg)"/>
-                <rect x="15" y="15" width="430" height="185" fill="#475569" stroke="#64748b" stroke-width="1" rx="8" opacity="0.8"/>
-                <text x="50%" y="40%" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="16" font-weight="bold">
-                    🎮 ${safeText}
-                </text>
-                <text x="50%" y="60%" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="12">
-                    Steam Game
-                </text>
-                <text x="50%" y="75%" text-anchor="middle" fill="#64748b" font-family="Arial, sans-serif" font-size="10">
-                    Image Not Available
-                </text>
-            </svg>
-        `;
-        
-        try {
-            // Use the safe base64 encoding method
-            return `data:image/svg+xml;base64,${safeBase64Encode(svgContent)}`;
-        } catch (error) {
-            console.warn('SVG fallback creation failed, using simple data URI:', error);
-            // Ultimate fallback - use URL encoding instead of base64
-            return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`;
-        }
-    };
 
     const handleImageError = () => {
         console.log(`🖼️ Image failed to load: ${src}`);
@@ -79,7 +35,7 @@ const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
     if (imageError) {
         return (
             <img
-                src={createSVGFallback(fallbackText)}
+                src={createGameImageFallback(fallbackText, appId)}
                 alt={alt}
                 className={className}
                 style={{ objectFit: 'cover' }}
@@ -113,231 +69,102 @@ export const GameLibrary = () => {
     
     const [games, setGames] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortBy, setSortBy] = useState('name'); // name, hours, recent
+    const [sortBy, setSortBy] = useState('name');
     const [filterGenre, setFilterGenre] = useState('');
+    const [filterMultiplayer, setFilterMultiplayer] = useState(false);
+    const [stats, setStats] = useState(null);
+
+    const isConnected = user?.steam_connected || user?.is_steam_connected;
 
     useEffect(() => {
-        if (user?.steam_connected) {
+        if (isConnected) {
             fetchGames();
         }
-    }, [user]);
+    }, [isConnected]);
 
+    // Update stats when games change
+    useEffect(() => {
+        if (games.length > 0) {
+            setStats(calculateLibraryStats(games));
+        }
+    }, [games]);
+
+    /**
+     * Fetch games using unified Steam service
+     */
     const fetchGames = async () => {
         setLoading(true);
         setError('');
         
         try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/steam/owned-games`);
+            console.log('📚 Fetching games with unified Steam service...');
+            const result = await steamService.getOwnedGames();
             
-            if (!response.ok) {
-                throw new Error('Failed to load library');
-            }
-            
-            const data = await response.json();
-            console.log('Fetched games:', data);
-            setGames(data.games || []);
+            console.log('✅ Games fetched successfully:', result);
+            setGames(result.games || []);
         } catch (err) {
-            console.error('Error fetching games:', err);
-            setError(err.message);
-            toast.error('Failed to load game library');
+            console.error('❌ Error fetching games:', err);
+            const errorMessage = steamService.getErrorMessage(err);
+            setError(errorMessage);
+            toast.error(`Failed to load library: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSync = async () => {
-        setSyncing(true);
-        setError('');
-        
-        const loadingToast = toast.loading('Syncing Steam library...');
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/steam/sync-games`, {
-                method: 'POST'
-            });
-            
-            if (!response.ok) {
-                throw new Error('Sync failed');
+    /**
+     * Handle user updates from Steam operations
+     */
+    const handleUserUpdate = (updatedUser) => {
+        if (updatedUser) {
+            dispatch({ type: 'set_user', payload: updatedUser });
+            // Refresh games after user update
+            if (updatedUser.steam_connected || updatedUser.is_steam_connected) {
+                fetchGames();
+            } else {
+                // User disconnected, clear games
+                setGames([]);
+                setStats(null);
             }
-            
-            const data = await response.json();
-            toast.dismiss(loadingToast);
-            toast.success(data.message || 'Library synced successfully');
-            
-            // Refresh games after sync
-            await fetchGames();
-            
-            // Update user data to reflect sync
-            if (user) {
-                dispatch({ 
-                    type: 'set_user', 
-                    payload: { 
-                        ...user, 
-                        steam_library_synced_at: new Date().toISOString() 
-                    } 
-                });
-            }
-        } catch (err) {
-            console.error('Error syncing:', err);
-            toast.dismiss(loadingToast);
-            setError(err.message);
-            toast.error('Failed to sync library');
-        } finally {
-            setSyncing(false);
+        } else {
+            // Refresh user profile
+            refreshUserProfile();
         }
     };
 
-    const handleOpenIDConnect = async () => {
+    /**
+     * Refresh user profile
+     */
+    const refreshUserProfile = async () => {
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const returnTo = encodeURIComponent('/game-library');
-            
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/login?return_to=${returnTo}`, {
-                method: 'GET'
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to start Steam connect');
+            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`);
+            if (response.ok) {
+                const data = await response.json();
+                dispatch({ type: 'set_user', payload: data.user });
             }
-            
-            const data = await response.json();
-            window.location.href = data.steam_auth_url;
-        } catch (err) {
-            console.error('Error starting Steam connect:', err);
-            toast.error('Failed to start Steam connection');
-        }
-    };
-
-    const handleManualConnect = async () => {
-        const steamId = prompt('Enter your Steam ID (17-digit number):');
-        if (!steamId || steamId.trim() === '') {
-            return;
-        }
-
-        if (!/^\d{17}$/.test(steamId.trim())) {
-            toast.error('Please enter a valid 17-digit Steam ID');
-            return;
-        }
-
-        const loadingToast = toast.loading('Connecting Steam account...');
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/connect`, {
-                method: 'POST',
-                body: JSON.stringify({ steam_id: steamId.trim() })
-            });
-
-            if (!response.ok) {
-                throw new Error('Connection failed');
-            }
-            
-            const data = await response.json();
-            
-            // Update user in store
-            dispatch({ type: 'set_user', payload: data.user });
-            
-            toast.dismiss(loadingToast);
-            toast.success(`Steam connected! Synced ${data.new_games} new games and updated ${data.updated_games} games.`);
-            
-            // Fetch games after connection
-            await fetchGames();
-        } catch (err) {
-            toast.dismiss(loadingToast);
-            console.error('Error connecting Steam manually:', err);
-            toast.error('Failed to connect Steam account');
-        }
-    };
-
-    const handleDisconnect = async () => {
-        if (!window.confirm('Disconnect Steam? This will clear your game library.')) {
-            return;
-        }
-        
-        const loadingToast = toast.loading('Disconnecting Steam...');
-        
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL;
-            const response = await authService.authenticatedFetch(`${backendUrl}/api/auth/steam/disconnect`, {
-                method: 'POST'
-            });
-            
-            if (!response.ok) {
-                throw new Error('Disconnect failed');
-            }
-            
-            // Refresh user data
-            const profileResponse = await authService.authenticatedFetch(`${backendUrl}/api/auth/profile`);
-            if (profileResponse.ok) {
-                const profileData = await profileResponse.json();
-                dispatch({ type: 'set_user', payload: profileData.user });
-            }
-            
-            setGames([]);
-            setError('');
-            
-            toast.dismiss(loadingToast);
-            toast.success('Steam account disconnected successfully');
-        } catch (err) {
-            toast.dismiss(loadingToast);
-            console.error('Error disconnecting Steam:', err);
-            toast.error('Failed to disconnect Steam');
+        } catch (error) {
+            console.error('Error refreshing profile:', error);
         }
     };
 
     // Filter and sort games
-    const filteredAndSortedGames = games
-        .filter(game => {
-            const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesGenre = !filterGenre || (game.genres && game.genres.includes(filterGenre));
-            return matchesSearch && matchesGenre;
-        })
-        .sort((a, b) => {
-            switch (sortBy) {
-                case 'hours':
-                    return (b.hours_played || 0) - (a.hours_played || 0);
-                case 'recent':
-                    if (!a.last_played && !b.last_played) return 0;
-                    if (!a.last_played) return 1;
-                    if (!b.last_played) return -1;
-                    return new Date(b.last_played) - new Date(a.last_played);
-                case 'name':
-                default:
-                    return a.name.localeCompare(b.name);
-            }
+    const processedGames = React.useMemo(() => {
+        let filtered = filterGames(games, {
+            search: searchTerm,
+            genre: filterGenre,
+            multiplayerOnly: filterMultiplayer
         });
 
-    // Get unique genres for filter
-    const availableGenres = [...new Set(
-        games.flatMap(game => game.genres || [])
-    )].sort();
+        return sortGames(filtered, sortBy);
+    }, [games, searchTerm, sortBy, filterGenre, filterMultiplayer]);
 
-    const formatPlaytime = (minutes) => {
-        if (!minutes || minutes === 0) return 'Never played';
-        const hours = Math.floor(minutes / 60);
-        if (hours < 1) return `${minutes}m`;
-        return `${hours}h ${minutes % 60}m`;
-    };
-
-    const formatLastPlayed = (dateString) => {
-        if (!dateString) return 'Never';
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffTime = Math.abs(now - date);
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        
-        if (diffDays === 0) return 'Today';
-        if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 7) return `${diffDays} days ago`;
-        if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-        if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
-        return `${Math.floor(diffDays / 365)} years ago`;
-    };
+    // Get available genres for filter
+    const availableGenres = React.useMemo(() => {
+        return extractGenres(games);
+    }, [games]);
 
     if (loading) {
         return (
@@ -346,6 +173,7 @@ export const GameLibrary = () => {
                     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
                         <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
                         <p className="text-white text-lg">Loading your game library...</p>
+                        <p className="text-white/60 text-sm mt-2">This may take a moment for large libraries</p>
                     </div>
                 </div>
             </div>
@@ -360,7 +188,7 @@ export const GameLibrary = () => {
                     <div>
                         <h1 className="text-4xl font-bold text-white mb-2">Game Library</h1>
                         <p className="text-white/70">
-                            {user?.steam_connected ? `${games.length} games in your Steam library` : 'Connect your Steam account to view your games'}
+                            {isConnected ? `${games.length} games in your Steam library` : 'Connect your Steam account to view your games'}
                         </p>
                     </div>
                     <button 
@@ -371,42 +199,20 @@ export const GameLibrary = () => {
                     </button>
                 </div>
 
-                {user?.steam_connected ? (
+                {isConnected ? (
                     <>
-                        {/* Controls */}
-                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 mb-8">
-                            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                                <div className="flex items-center space-x-4">
-                                    <div className="flex items-center space-x-2">
-                                        <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                                        <span className="text-white font-medium">Steam Connected</span>
-                                    </div>
-                                    {user.steam_library_synced_at && (
-                                        <span className="text-white/60 text-sm">
-                                            Last synced: {formatLastPlayed(user.steam_library_synced_at)}
-                                        </span>
-                                    )}
-                                </div>
-                                
-                                <div className="flex space-x-3">
-                                    <button 
-                                        onClick={handleSync} 
-                                        disabled={syncing}
-                                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl text-sm transition-colors duration-200 disabled:opacity-50"
-                                    >
-                                        {syncing ? 'Syncing...' : '🔄 Sync Library'}
-                                    </button>
-                                    <button 
-                                        onClick={handleDisconnect}
-                                        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-xl text-sm transition-colors duration-200"
-                                    >
-                                        Disconnect Steam
-                                    </button>
-                                </div>
-                            </div>
+                        {/* Steam Connection Status & Controls */}
+                        <SteamConnectionManager 
+                            user={user}
+                            onUserUpdate={handleUserUpdate}
+                            showLibraryButton={false} // We're already in the library
+                            showSyncButton={true}
+                            className="mb-8"
+                        />
 
-                            {/* Search and Filters */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Search and Filters */}
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6 mb-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div>
                                     <label className="block text-white/70 text-sm mb-2">Search Games</label>
                                     <input
@@ -426,8 +232,9 @@ export const GameLibrary = () => {
                                         className="w-full bg-white/5 border border-white/20 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-coral-500 transition-colors"
                                     >
                                         <option value="name">Name (A-Z)</option>
-                                        <option value="hours">Most Played</option>
+                                        <option value="playtime">Most Played</option>
                                         <option value="recent">Recently Played</option>
+                                        <option value="release_date">Release Date</option>
                                     </select>
                                 </div>
                                 
@@ -444,37 +251,82 @@ export const GameLibrary = () => {
                                         ))}
                                     </select>
                                 </div>
+                                
+                                <div>
+                                    <label className="block text-white/70 text-sm mb-2">Options</label>
+                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={filterMultiplayer}
+                                            onChange={(e) => setFilterMultiplayer(e.target.checked)}
+                                            className="rounded border-white/20 bg-white/5 text-coral-500 focus:ring-coral-500"
+                                        />
+                                        <span className="text-white text-sm">Multiplayer Only</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Results Summary */}
+                            <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between">
+                                <p className="text-white/70 text-sm">
+                                    Showing {processedGames.length} of {games.length} games
+                                    {searchTerm && ` matching "${searchTerm}"`}
+                                    {filterGenre && ` in ${filterGenre}`}
+                                    {filterMultiplayer && ` (multiplayer only)`}
+                                </p>
+                                {(searchTerm || filterGenre || filterMultiplayer) && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchTerm('');
+                                            setFilterGenre('');
+                                            setFilterMultiplayer(false);
+                                        }}
+                                        className="text-coral-400 hover:text-coral-300 text-sm underline"
+                                    >
+                                        Clear filters
+                                    </button>
+                                )}
                             </div>
                         </div>
 
                         {/* Error Display */}
                         {error && (
                             <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300">
-                                {error}
+                                <div className="flex items-center space-x-2">
+                                    <span>⚠️</span>
+                                    <span>{error}</span>
+                                </div>
+                                <button 
+                                    onClick={fetchGames}
+                                    className="mt-2 text-sm underline hover:no-underline"
+                                >
+                                    Try again
+                                </button>
                             </div>
                         )}
 
-                        {/* Games Grid - FIXED with improved GameImage component */}
-                        {filteredAndSortedGames.length > 0 ? (
+                        {/* Games Grid */}
+                        {processedGames.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                {filteredAndSortedGames.map((game) => (
+                                {processedGames.map((game) => (
                                     <div key={game.id || game.steam_appid} className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl overflow-hidden shadow-2xl hover:bg-white/15 transition-all duration-300 group">
                                         <div className="relative">
                                             <GameImage
                                                 src={game.header_image || `https://steamcdn-a.akamaihd.net/steam/apps/${game.steam_appid}/header.jpg`}
                                                 alt={`${game.name} cover`}
                                                 fallbackText={game.name}
+                                                appId={game.steam_appid}
                                                 className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
                                             />
-                                            {game.multiplayer && (
+                                            {(game.multiplayer || game.co_op) && (
                                                 <div className="absolute top-2 right-2 bg-green-500/80 text-white px-2 py-1 rounded-lg text-xs font-medium">
-                                                    Multiplayer
+                                                    {game.co_op ? 'Co-op' : 'Multiplayer'}
                                                 </div>
                                             )}
                                         </div>
                                         
                                         <div className="p-4">
-                                            <h3 className="text-white font-bold text-lg mb-2 line-clamp-2 group-hover:text-coral-300 transition-colors">
+                                            <h3 className="text-white font-bold text-lg mb-2 line-clamp-2 group-hover:text-coral-300 transition-colors leading-tight">
                                                 {game.name}
                                             </h3>
                                             
@@ -514,55 +366,74 @@ export const GameLibrary = () => {
                             </div>
                         ) : (
                             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-12 text-center">
-                                <div className="text-6xl mb-4">🎮</div>
+                                <div className="text-6xl mb-4">
+                                    {searchTerm || filterGenre || filterMultiplayer ? '🔍' : '🎮'}
+                                </div>
                                 <h3 className="text-2xl font-bold text-white mb-4">
-                                    {searchTerm || filterGenre ? 'No games found' : 'No games in library'}
+                                    {searchTerm || filterGenre || filterMultiplayer ? 'No games found' : 'No games in library'}
                                 </h3>
                                 <p className="text-white/70 mb-6">
-                                    {searchTerm || filterGenre 
+                                    {searchTerm || filterGenre || filterMultiplayer 
                                         ? 'Try adjusting your search or filter settings'
-                                        : 'Sync your Steam library to see your games here'
+                                        : 'Your Steam library appears to be empty or sync is needed'
                                     }
                                 </p>
-                                {!searchTerm && !filterGenre && (
-                                    <button 
-                                        onClick={handleSync}
-                                        disabled={syncing}
-                                        className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 disabled:opacity-50"
-                                    >
-                                        {syncing ? 'Syncing...' : 'Sync Steam Library'}
-                                    </button>
+                                {!searchTerm && !filterGenre && !filterMultiplayer && (
+                                    <SteamConnectionManager 
+                                        user={user}
+                                        onUserUpdate={handleUserUpdate}
+                                        showLibraryButton={false}
+                                        showSyncButton={true}
+                                        compact={false}
+                                        className="max-w-md mx-auto"
+                                    />
                                 )}
                             </div>
                         )}
 
-                        {/* Stats Footer */}
-                        {games.length > 0 && (
+                        {/* Library Statistics */}
+                        {stats && games.length > 0 && (
                             <div className="mt-8 backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                                <h3 className="text-xl font-bold text-white mb-4">Library Statistics</h3>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
                                     <div>
-                                        <div className="text-2xl font-bold text-coral-400">{games.length}</div>
+                                        <div className="text-2xl font-bold text-coral-400">{stats.totalGames}</div>
                                         <div className="text-white/70 text-sm">Total Games</div>
                                     </div>
                                     <div>
-                                        <div className="text-2xl font-bold text-marine-400">
-                                            {games.filter(g => g.multiplayer).length}
-                                        </div>
+                                        <div className="text-2xl font-bold text-marine-400">{stats.multiplayerCount}</div>
                                         <div className="text-white/70 text-sm">Multiplayer</div>
                                     </div>
                                     <div>
-                                        <div className="text-2xl font-bold text-green-400">
-                                            {Math.round(games.reduce((sum, g) => sum + (g.playtime_forever || g.hours_played || 0), 0) / 60)}h
-                                        </div>
+                                        <div className="text-2xl font-bold text-green-400">{stats.totalPlaytime}h</div>
                                         <div className="text-white/70 text-sm">Total Playtime</div>
                                     </div>
                                     <div>
-                                        <div className="text-2xl font-bold text-purple-400">
-                                            {availableGenres.length}
-                                        </div>
-                                        <div className="text-white/70 text-sm">Genres</div>
+                                        <div className="text-2xl font-bold text-purple-400">{stats.unplayedCount}</div>
+                                        <div className="text-white/70 text-sm">Unplayed</div>
                                     </div>
                                 </div>
+                                
+                                {stats.mostPlayedGame && (
+                                    <div className="mt-6 pt-6 border-t border-white/10">
+                                        <p className="text-white/70 text-sm mb-2">Most Played Game:</p>
+                                        <div className="flex items-center space-x-3">
+                                            <GameImage
+                                                src={`https://steamcdn-a.akamaihd.net/steam/apps/${stats.mostPlayedGame.steam_appid}/capsule_184x69.jpg`}
+                                                alt={stats.mostPlayedGame.name}
+                                                fallbackText={stats.mostPlayedGame.name}
+                                                appId={stats.mostPlayedGame.steam_appid}
+                                                className="w-16 h-8 rounded object-cover"
+                                            />
+                                            <div>
+                                                <p className="text-white font-medium">{stats.mostPlayedGame.name}</p>
+                                                <p className="text-white/60 text-sm">
+                                                    {formatPlaytime(stats.mostPlayedGame.playtime_forever || stats.mostPlayedGame.hours_played)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </>
@@ -575,21 +446,14 @@ export const GameLibrary = () => {
                             Link your Steam account to automatically sync your game library and find friends to play with.
                         </p>
                         
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <button 
-                                onClick={handleOpenIDConnect}
-                                className="px-8 py-4 bg-gradient-to-r from-coral-500 to-coral-600 hover:from-coral-600 hover:to-coral-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-coral-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
-                            >
-                                🎮 Connect via Steam
-                            </button>
-                            
-                            <button 
-                                onClick={handleManualConnect}
-                                className="px-8 py-4 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-semibold rounded-xl transition-all duration-300"
-                            >
-                                📝 Manual Steam ID
-                            </button>
-                        </div>
+                        <SteamConnectionManager 
+                            user={user}
+                            onUserUpdate={handleUserUpdate}
+                            showLibraryButton={false}
+                            showSyncButton={false}
+                            compact={false}
+                            className="max-w-lg mx-auto"
+                        />
 
                         <div className="mt-8 p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-sm max-w-lg mx-auto">
                             <div className="flex items-start space-x-2">
