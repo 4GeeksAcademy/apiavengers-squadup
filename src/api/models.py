@@ -3,11 +3,19 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey, UniqueConstraint, CheckConstraint, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
+
+# ============================================================================
+# MODERN DATETIME HELPER - REPLACES DEPRECATED datetime.utcnow()
+# ============================================================================
+
+def utc_now():
+    """Modern replacement for deprecated datetime.utcnow()"""
+    return datetime.now(timezone.utc)
 
 user_games = Table(
     'user_games',
@@ -16,7 +24,7 @@ user_games = Table(
     Column('game_id', Integer, ForeignKey('steam_game.id'), primary_key=True),
     Column('hours_played', Integer, default=0),
     Column('last_played', DateTime, nullable=True),
-    Column('added_at', DateTime, default=datetime.utcnow)
+    Column('added_at', DateTime, default=utc_now)
 )
 
 group_members = Table(
@@ -24,9 +32,55 @@ group_members = Table(
     db.Model.metadata,
     Column('user_id', Integer, ForeignKey('user.id'), primary_key=True),
     Column('group_id', Integer, ForeignKey('gaming_group.id'), primary_key=True),
-    Column('joined_at', DateTime, default=datetime.utcnow),
+    Column('joined_at', DateTime, default=utc_now),
     Column('role', String(20), default='member')
 )
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def safe_json_loads(json_string, default=None):
+    """
+    Safely parse JSON string with fallback
+    
+    Args:
+        json_string: String to parse
+        default: Default value if parsing fails
+    
+    Returns:
+        Parsed JSON or default value
+    """
+    if not json_string:
+        return default or []
+    
+    try:
+        if isinstance(json_string, str):
+            return json.loads(json_string)
+        return json_string
+    except (json.JSONDecodeError, TypeError):
+        return default or []
+
+def safe_json_dumps(data):
+    """
+    Safely serialize data to JSON string
+    
+    Args:
+        data: Data to serialize
+    
+    Returns:
+        JSON string or None if serialization fails
+    """
+    try:
+        if data is None:
+            return None
+        return json.dumps(data)
+    except (TypeError, ValueError):
+        return str(data) if data else None
+
+# ============================================================================
+# USER MODEL
+# ============================================================================
 
 class User(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -35,7 +89,7 @@ class User(db.Model):
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
     bio: Mapped[str] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     last_login: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
 
@@ -66,6 +120,17 @@ class User(db.Model):
     votes = relationship('Vote', back_populates='user', cascade='all, delete-orphan')
     favorite_game = relationship('SteamGame', foreign_keys=[favorite_game_id])
 
+    # 🔧 ENHANCED: Compatibility properties
+    @property 
+    def steam_connected_alias(self):
+        """Alias for steam_connected for backward compatibility"""
+        return self.steam_connected or self.is_steam_connected
+    
+    @steam_connected_alias.setter
+    def steam_connected_alias(self, value):
+        self.steam_connected = value
+        self.is_steam_connected = value
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
@@ -82,11 +147,18 @@ class User(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "is_active": self.is_active,
+            
+            # 🔧 ENHANCED: Add both field names for compatibility
             "steam_connected": self.steam_connected or self.is_steam_connected,
+            "is_steam_connected": self.steam_connected or self.is_steam_connected,  # Alias
+            "steam_id": self.steam_id,
             "steam_username": self.steam_username,
             "steam_avatar": self.steam_avatar_url,
+            "steam_avatar_url": self.steam_avatar_url,  # Both field names
+            "steam_profile_url": self.steam_profile_url,
+            
             "gaming_style": self.gaming_style,
-            "favorite_genres": json.loads(self.favorite_genres) if self.favorite_genres else [],
+            "favorite_genres": safe_json_loads(self.favorite_genres, []),
             "total_games": self.total_games or len(self.owned_games) if self.owned_games else 0,
             "total_votes_cast": self.total_votes_cast,
             "gaming_activity_level": self.gaming_activity_level
@@ -103,6 +175,10 @@ class User(db.Model):
             "average_votes_per_session": round(total_votes / unique_sessions, 1) if unique_sessions > 0 else 0,
             "favorite_game": self.favorite_game.serialize() if self.favorite_game else None
         }
+
+# ============================================================================
+# STEAM GAME MODEL
+# ============================================================================
 
 class SteamGame(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -121,40 +197,65 @@ class SteamGame(db.Model):
     min_players: Mapped[int] = mapped_column(Integer, default=1)
     price: Mapped[str] = mapped_column(String(20), nullable=True)
     release_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     
     # Relationships
     owners = relationship('User', secondary=user_games, back_populates='owned_games')
     votes = relationship('Vote', back_populates='game', cascade='all, delete-orphan')
     won_sessions = relationship('GameSession', back_populates='winner_game', foreign_keys='GameSession.winner_game_id')
 
+    def _parse_json_field(self, field):
+        """Helper method to safely parse JSON fields"""
+        if not field:
+            return []
+        try:
+            if isinstance(field, str):
+                return json.loads(field)
+            elif isinstance(field, list):
+                return field
+            else:
+                return field.split(',') if hasattr(field, 'split') else []
+        except (json.JSONDecodeError, AttributeError):
+            return field.split(',') if hasattr(field, 'split') else []
+
     def serialize(self):
         return {
             "id": self.id,
             "steam_appid": self.steam_appid,
+            "appid": self.steam_appid,  # Alias for compatibility
             "name": self.name,
             "short_description": self.short_description,
             "header_image": self.header_image,
             "website": self.website,
-            "genres": json.loads(self.genres) if self.genres else [],
-            "categories": json.loads(self.categories) if self.categories else [],
-            "tags": json.loads(self.tags) if self.tags else [],
+            
+            # 🔧 ENHANCED: Handle JSON parsing safely
+            "genres": self._parse_json_field(self.genres),
+            "categories": self._parse_json_field(self.categories), 
+            "tags": self._parse_json_field(self.tags),
+            
             "multiplayer": self.multiplayer,
             "co_op": self.co_op,
             "max_players": self.max_players,
             "min_players": self.min_players,
             "price": self.price,
             "release_date": self.release_date.isoformat() if self.release_date else None,
-            "owner_count": len(self.owners) if self.owners else 0
+            "owner_count": len(self.owners) if self.owners else 0,
+            
+            # 🔧 ADD: Additional compatibility fields
+            "supported_languages": self._parse_json_field(self.supported_languages)
         }
+
+# ============================================================================
+# GAMING GROUP MODEL
+# ============================================================================
 
 class GamingGroup(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     is_public: Mapped[bool] = mapped_column(Boolean(), default=False)
     max_members: Mapped[int] = mapped_column(Integer, default=10)
     invite_code: Mapped[str] = mapped_column(String(10), unique=True, nullable=True)
@@ -187,7 +288,7 @@ class GamingGroup(db.Model):
             "invite_code": self.invite_code,
             "creator": self.creator.serialize() if self.creator else {"username": "Deleted User", "id": None},
             "members": [member.serialize() for member in self.members] if self.members else [],
-            "preferred_genres": json.loads(self.preferred_genres) if self.preferred_genres else [],
+            "preferred_genres": safe_json_loads(self.preferred_genres, []),
             "gaming_style": self.gaming_style,
             "total_sessions": self.total_sessions,
             "active_sessions": self.active_sessions,
@@ -228,28 +329,35 @@ class GamingGroup(db.Model):
         """Get most popular games based on votes in this group"""
         from sqlalchemy import func
         
-        game_votes = db.session.query(
-            SteamGame.id,
-            SteamGame.name,
-            func.count(Vote.id).label('vote_count'),
-            func.sum(Vote.priority).label('total_points')
-        ).join(Vote).join(GameSession).filter(
-            GameSession.group_id == self.id
-        ).group_by(
-            SteamGame.id
-        ).order_by(
-            func.sum(Vote.priority).desc()
-        ).limit(limit).all()
-        
-        return [
-            {
-                "game_id": game_id,
-                "name": name,
-                "vote_count": vote_count,
-                "total_points": total_points
-            }
-            for game_id, name, vote_count, total_points in game_votes
-        ]
+        try:
+            game_votes = db.session.query(
+                SteamGame.id,
+                SteamGame.name,
+                func.count(Vote.id).label('vote_count'),
+                func.sum(Vote.priority).label('total_points')
+            ).join(Vote).join(GameSession).filter(
+                GameSession.group_id == self.id
+            ).group_by(
+                SteamGame.id
+            ).order_by(
+                func.sum(Vote.priority).desc()
+            ).limit(limit).all()
+            
+            return [
+                {
+                    "game_id": game_id,
+                    "name": name,
+                    "vote_count": vote_count,
+                    "total_points": total_points
+                }
+                for game_id, name, vote_count, total_points in game_votes
+            ]
+        except Exception:
+            return []
+
+# ============================================================================
+# GAME SESSION MODEL
+# ============================================================================
 
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -262,8 +370,8 @@ class GameSession(db.Model):
     scheduled_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default='planning')  # planning, voting, completed, cancelled
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     vote_results: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string for backwards compatibility
     
     # 🚀 ENHANCED LIVE VOTING FIELDS:
@@ -293,7 +401,7 @@ class GameSession(db.Model):
             "status": self.status,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "vote_results": json.loads(self.vote_results) if self.vote_results else {},
+            "vote_results": safe_json_loads(self.vote_results, {}),
             "vote_count": len(self.votes) if self.votes else 0,
             # 🚀 ENHANCED FIELDS:
             "auto_complete_threshold": self.auto_complete_threshold,
@@ -302,10 +410,13 @@ class GameSession(db.Model):
             "winner_votes": self.winner_votes,
             "winner_points": self.winner_points,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "votable_games": json.loads(self.votable_games) if self.votable_games else []
+            "votable_games": safe_json_loads(self.votable_games, [])
         }
 
-# 🚀 ENHANCED VOTE MODEL for Atomic Vote Storage
+# ============================================================================
+# VOTE MODEL - ENHANCED FOR ATOMIC VOTING
+# ============================================================================
+
 class Vote(db.Model):
     """
     Individual vote records for atomic, race-condition-free vote storage.
@@ -316,7 +427,7 @@ class Vote(db.Model):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id', ondelete='CASCADE'), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)  # 1, 2, or 3 points
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     
     # 🔧 CRITICAL: Database-level constraints to prevent race conditions
     __table_args__ = (
@@ -355,64 +466,111 @@ class Vote(db.Model):
             } if self.game else None
         }
     
-    @staticmethod
-    def get_session_results(session_id):
+    @classmethod
+    def get_session_results(cls, session_id):
         """
-        Calculate voting results using SQL aggregation (much faster than JSON parsing)
-        Returns list of games with vote totals, sorted by points
+        🔧 ENHANCED: Calculate voting results with better error handling
         """
-        from sqlalchemy import func
-        
-        results = db.session.query(
-            SteamGame,
-            func.sum(Vote.priority).label('total_points'),
-            func.count(Vote.id).label('vote_count'),
-            func.avg(Vote.priority).label('average_score')
-        ).join(Vote).filter(
-            Vote.session_id == session_id
-        ).group_by(
-            SteamGame.id
-        ).order_by(
-            func.sum(Vote.priority).desc()
-        ).all()
-        
-        return [
-            {
-                "game": game.serialize(),
-                "total_points": int(total_points or 0),
-                "vote_count": int(vote_count or 0),
-                "average_score": float(average_score or 0)
-            }
-            for game, total_points, vote_count, average_score in results
-        ]
+        try:
+            from sqlalchemy import func
+            
+            results = db.session.query(
+                SteamGame,
+                func.sum(cls.priority).label('total_points'),
+                func.count(cls.id).label('vote_count'),
+                func.avg(cls.priority).label('average_score')
+            ).join(cls).filter(
+                cls.session_id == session_id
+            ).group_by(
+                SteamGame.id
+            ).order_by(
+                func.sum(cls.priority).desc()
+            ).all()
+            
+            return [
+                {
+                    "game": game.serialize(),
+                    "total_points": int(total_points or 0),
+                    "vote_count": int(vote_count or 0),
+                    "average_score": round(float(average_score or 0), 2)
+                }
+                for game, total_points, vote_count, average_score in results
+            ]
+        except Exception as e:
+            # Fallback to basic query if complex query fails
+            votes = cls.query.filter_by(session_id=session_id).all()
+            game_scores = {}
+            
+            for vote in votes:
+                game_id = vote.game_id
+                if game_id not in game_scores:
+                    game_scores[game_id] = {
+                        'total_points': 0,
+                        'vote_count': 0,
+                        'voters': set()
+                    }
+                
+                game_scores[game_id]['total_points'] += vote.priority
+                game_scores[game_id]['vote_count'] += 1
+                game_scores[game_id]['voters'].add(vote.user_id)
+            
+            results = []
+            for game_id, scores in game_scores.items():
+                game = SteamGame.query.get(game_id)
+                if game:
+                    results.append({
+                        'game': game.serialize(),
+                        'total_points': scores['total_points'],
+                        'vote_count': len(scores['voters']),
+                        'average_score': round(scores['total_points'] / len(scores['voters']), 2) if scores['voters'] else 0
+                    })
+            
+            # Sort by total points
+            results.sort(key=lambda x: x['total_points'], reverse=True)
+            return results
     
-    @staticmethod
-    def has_user_voted(session_id, user_id):
-        """Check if user has already voted in this session"""
-        return Vote.query.filter_by(
-            session_id=session_id,
-            user_id=user_id
-        ).first() is not None
+    @classmethod
+    def get_voter_count(cls, session_id):
+        """
+        🔧 ENHANCED: Get voter count with error handling
+        """
+        try:
+            from sqlalchemy import func
+            return db.session.query(func.count(func.distinct(cls.user_id))).filter_by(session_id=session_id).scalar() or 0
+        except Exception:
+            # Fallback method
+            unique_users = set()
+            votes = cls.query.filter_by(session_id=session_id).all()
+            for vote in votes:
+                unique_users.add(vote.user_id)
+            return len(unique_users)
     
-    @staticmethod
-    def get_user_votes(session_id, user_id):
-        """Get all votes for a specific user in a session"""
-        return Vote.query.filter_by(
-            session_id=session_id,
-            user_id=user_id
-        ).order_by(Vote.priority.desc()).all()
+    @classmethod
+    def has_user_voted(cls, session_id, user_id):
+        """
+        🔧 ENHANCED: Check if user voted with error handling
+        """
+        try:
+            return cls.query.filter_by(session_id=session_id, user_id=user_id).first() is not None
+        except Exception:
+            return False
     
-    @staticmethod
-    def get_voter_count(session_id):
-        """Get number of unique voters in a session"""
-        return db.session.query(Vote.user_id).filter_by(
-            session_id=session_id
-        ).distinct().count()
+    @classmethod
+    def get_user_votes(cls, session_id, user_id):
+        """
+        🔧 ENHANCED: Get user votes with error handling
+        """
+        try:
+            return cls.query.filter_by(session_id=session_id, user_id=user_id).order_by(cls.priority.desc()).all()
+        except Exception:
+            return []
     
     def __repr__(self):
         return f'<Vote {self.user.username if self.user else self.user_id} -> {self.game.name if self.game else self.game_id} ({self.priority} pts)>'
 
-# 🚀 HELPER FUNCTIONS for easier vote management
+# ============================================================================
+# HELPER FUNCTIONS FOR VOTE MANAGEMENT
+# ============================================================================
 
 def create_vote_transaction(session_id, user_id, game_votes):
     """
@@ -541,8 +699,8 @@ def auto_complete_session_if_ready(session_id):
     if stats and stats['should_auto_complete']:
         # Auto-complete the session
         session.status = 'completed'
-        session.completed_at = datetime.utcnow()
-        session.updated_at = datetime.utcnow()
+        session.completed_at = utc_now()
+        session.updated_at = utc_now()
         
         # Set winner information
         results = stats['results']
