@@ -13,6 +13,7 @@ Gaming group management routes - ENHANCED WITH CRITICAL RATE LIMITING FIXES
 - Improved parameter validation
 - Compatible with enhanced Vote model from models.py
 - FIXED: Modern timezone-aware datetime usage
+- COMPLETE: All existing endpoints + new group management endpoints
 """
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -443,6 +444,384 @@ def get_group_common_games_helper(group_id):
         return []
 
 # ============================================================================
+# GROUP MANAGEMENT ENDPOINTS - NEW ADDITIONS
+# ============================================================================
+
+@gaming.route('/groups', methods=['GET'])
+@limiter.limit("60 per minute")
+@jwt_required()
+def get_user_groups():
+    """Get all gaming groups for the current user"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': 'User not found'
+            }), 404
+        
+        # Get all groups where user is a member
+        user_groups = []
+        
+        # Try relationship-based approach first
+        try:
+            if hasattr(user, 'gaming_groups'):
+                for group in user.gaming_groups:
+                    serialized_group = serialize_group_safe(group)
+                    if serialized_group:
+                        user_groups.append(serialized_group)
+        except:
+            pass
+        
+        # If the relationship doesn't exist or failed, query directly
+        if not user_groups:
+            try:
+                # Query groups where user is a member
+                groups = GamingGroup.query.filter(GamingGroup.members.contains(user)).all()
+                for group in groups:
+                    serialized_group = serialize_group_safe(group)
+                    if serialized_group:
+                        user_groups.append(serialized_group)
+            except Exception as query_error:
+                logging.error(f"Error querying user groups: {query_error}")
+                # Return empty list instead of error
+                user_groups = []
+        
+        return jsonify({
+            'success': True,
+            'groups': user_groups,
+            'count': len(user_groups),
+            'user_id': current_user_id
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error getting user groups: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error while fetching groups',
+            'message': str(e)
+        }), 500
+
+@gaming.route('/groups', methods=['POST'])
+@limiter.limit("10 per minute")
+@jwt_required()
+def create_group():
+    """Create a new gaming group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': 'User not found'
+            }), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Validate required fields
+        name = data.get('name', '').strip()
+        if not name:
+            return jsonify({
+                'success': False,
+                'error': 'Group name is required'
+            }), 400
+        
+        # Check if user already has a group with this name
+        existing_group = GamingGroup.query.filter_by(name=name, creator_id=current_user_id).first()
+        if existing_group:
+            return jsonify({
+                'success': False,
+                'error': 'You already have a group with this name'
+            }), 400
+        
+        # Generate invite code
+        invite_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        
+        # Create new group
+        new_group = GamingGroup(
+            name=name,
+            description=data.get('description', ''),
+            creator_id=current_user_id,
+            max_members=data.get('max_members', 10),
+            is_public=data.get('is_public', False),
+            invite_code=invite_code,
+            created_at=utc_now()
+        )
+        
+        # Add creator as first member
+        new_group.members.append(user)
+        
+        db.session.add(new_group)
+        db.session.commit()
+        
+        # Serialize the created group
+        serialized_group = serialize_group_safe(new_group)
+        
+        logging.info(f"Group '{name}' created by user {user.username} (ID: {current_user_id})")
+        
+        return jsonify({
+            'success': True,
+            'group': serialized_group,
+            'message': 'Group created successfully'
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error creating group: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error while creating group',
+            'message': str(e)
+        }), 500
+
+@gaming.route('/groups/<int:group_id>', methods=['GET'])
+@limiter.limit("60 per minute")
+@jwt_required()
+@validate_group_id
+def get_group_details(group_id):
+    """Get detailed information about a specific group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': 'User not found'
+            }), 404
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({
+                'success': False,
+                'error': 'Group not found'
+            }), 404
+        
+        # Check if user has access to this group
+        if user not in group.members:
+            return jsonify({
+                'success': False,
+                'error': 'You are not a member of this group'
+            }), 403
+        
+        # Serialize group with full details
+        serialized_group = serialize_group_safe(group)
+        if not serialized_group:
+            return jsonify({
+                'success': False,
+                'error': 'Error serializing group data'
+            }), 500
+        
+        # Add additional details
+        serialized_group['is_creator'] = (group.creator_id == current_user_id)
+        serialized_group['user_role'] = 'creator' if group.creator_id == current_user_id else 'member'
+        
+        # Get recent sessions if any
+        recent_sessions = GameSession.query.filter_by(group_id=group_id).order_by(desc(GameSession.created_at)).limit(5).all()
+        serialized_group['recent_sessions'] = [
+            {
+                'id': session.id,
+                'status': session.status,
+                'created_at': session.created_at.isoformat() if session.created_at else None
+            } for session in recent_sessions
+        ]
+        
+        return jsonify({
+            'success': True,
+            'group': serialized_group
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error getting group details for group {group_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error while fetching group details'
+        }), 500
+
+@gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])
+@jwt_required()
+@validate_group_id
+def get_group_common_games(group_id):
+    """Enhanced: Get common games for a group with comprehensive validation"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Find the group with additional validation
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            logging.warning(f"Group {group_id} not found for user {user.id}")
+            return jsonify({
+                'error': 'Group not found',
+                'code': 'GROUP_NOT_FOUND'
+            }), 404
+            
+        # Check if user is a member of the group
+        if user not in group.members:
+            logging.warning(f"User {user.id} attempted to access group {group_id} without membership")
+            return jsonify({
+                'error': 'You are not a member of this group',
+                'code': 'ACCESS_DENIED'
+            }), 403
+            
+        # Get Steam-connected members
+        steam_members = [member for member in group.members if getattr(member, 'steam_connected', False)]
+        
+        if len(steam_members) < 2:
+            return jsonify({
+                'games': [],
+                'message': 'Need at least 2 Steam-connected members to find common games',
+                'steam_connected_count': len(steam_members),
+                'total_members': len(group.members)
+            }), 200
+            
+        # Get user IDs
+        user_ids = [m.id for m in steam_members]
+        
+        # Use steam_service to find common games
+        try:
+            from api.steam_service import steam_service
+            if steam_service:
+                common_games = steam_service.find_common_games(user_ids)
+                # Filter for multiplayer games only
+                multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
+                
+                return jsonify({
+                    'games': multiplayer_games[:20],  # Limit to 20 games
+                    'group_id': group.id,
+                    'steam_connected_count': len(steam_members),
+                    'total_members': len(group.members),
+                    'total_games': len(multiplayer_games)
+                }), 200
+            else:
+                return jsonify({
+                    'error': 'Steam service not available',
+                    'code': 'SERVICE_UNAVAILABLE'
+                }), 503
+        except ImportError:
+            return jsonify({
+                'error': 'Steam service not available',
+                'code': 'SERVICE_UNAVAILABLE'
+            }), 503
+        
+    except Exception as e:
+        logging.error(f"Error getting common games for group {group_id}: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error while fetching common games',
+            'code': 'INTERNAL_ERROR'
+        }), 500
+
+# ============================================================================
+# SESSION MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@gaming.route('/groups/<int:group_id>/sessions', methods=['POST'])
+@limiter.limit("20 per minute")
+@jwt_required()
+@validate_group_id
+def create_voting_session(group_id):
+    """Create a new voting session for a group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        if user not in group.members:
+            return jsonify({'error': 'You are not a member of this group'}), 403
+        
+        # Check if there's already an active session
+        active_session = GameSession.query.filter_by(
+            group_id=group_id, 
+            status='voting'
+        ).first()
+        
+        if active_session:
+            return jsonify({
+                'error': 'There is already an active voting session for this group',
+                'active_session_id': active_session.id
+            }), 400
+        
+        # Create new session
+        new_session = GameSession(
+            group_id=group_id,
+            creator_id=current_user_id,
+            status='voting',
+            created_at=utc_now()
+        )
+        
+        db.session.add(new_session)
+        db.session.commit()
+        
+        logging.info(f"Voting session {new_session.id} created for group {group_id} by user {user.username}")
+        
+        return jsonify({
+            'success': True,
+            'session': {
+                'id': new_session.id,
+                'group_id': group_id,
+                'status': new_session.status,
+                'created_at': new_session.created_at.isoformat(),
+                'creator': {
+                    'id': user.id,
+                    'username': user.username
+                }
+            },
+            'message': 'Voting session created successfully'
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error creating voting session: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@gaming.route('/sessions/<int:session_id>/results', methods=['GET'])
+@limiter.limit("60 per minute")
+@cache_for_seconds(15)
+@jwt_required()
+def get_session_results(session_id):
+    """Get voting results for a session"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        session = GameSession.query.get(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        if user not in session.group.members:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Get results data
+        results_data = get_session_results_data(session_id)
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            **results_data
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error getting session results: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+# ============================================================================
 # RATE LIMITED ENDPOINTS - CRITICAL SSE FIXES
 # ============================================================================
 
@@ -822,99 +1201,9 @@ def get_session_status(session_id):
         }), 500
 
 # ============================================================================
-# INITIALIZE RATE LIMITING FUNCTION
+# VOTING ENDPOINTS
 # ============================================================================
 
-def init_rate_limiting(app):
-    """Initialize rate limiting for the Flask app"""
-    limiter.init_app(app)
-    return limiter
-
-# ============================================================================
-# REST OF YOUR EXISTING ENDPOINTS WITH SAFE IMPLEMENTATIONS
-# ============================================================================
-
-@gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])
-@jwt_required()
-@validate_group_id
-def get_group_common_games(group_id):
-    """Enhanced: Get common games for a group with comprehensive validation"""
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-            
-        # Find the group with additional validation
-        group = GamingGroup.query.get(group_id)
-        if not group:
-            logging.warning(f"Group {group_id} not found for user {user.id}")
-            return jsonify({
-                'error': 'Group not found',
-                'code': 'GROUP_NOT_FOUND'
-            }), 404
-            
-        # Check if user is a member of the group
-        if user not in group.members:
-            logging.warning(f"User {user.id} attempted to access group {group_id} without membership")
-            return jsonify({
-                'error': 'You are not a member of this group',
-                'code': 'ACCESS_DENIED'
-            }), 403
-            
-        # Get Steam-connected members
-        steam_members = [member for member in group.members if getattr(member, 'steam_connected', False)]
-        
-        if len(steam_members) < 2:
-            return jsonify({
-                'games': [],
-                'message': 'Need at least 2 Steam-connected members to find common games',
-                'steam_connected_count': len(steam_members),
-                'total_members': len(group.members)
-            }), 200
-            
-        # Get user IDs
-        user_ids = [m.id for m in steam_members]
-        
-        # Use steam_service to find common games
-        try:
-            from api.steam_service import steam_service
-            if steam_service:
-                common_games = steam_service.find_common_games(user_ids)
-                # Filter for multiplayer games only
-                multiplayer_games = [g for g in common_games if g.get('multiplayer') or g.get('co_op')]
-                
-                return jsonify({
-                    'games': multiplayer_games[:20],  # Limit to 20 games
-                    'group_id': group.id,
-                    'steam_connected_count': len(steam_members),
-                    'total_members': len(group.members),
-                    'total_games': len(multiplayer_games)
-                }), 200
-            else:
-                return jsonify({
-                    'error': 'Steam service not available',
-                    'code': 'SERVICE_UNAVAILABLE'
-                }), 503
-        except ImportError:
-            return jsonify({
-                'error': 'Steam service not available',
-                'code': 'SERVICE_UNAVAILABLE'
-            }), 503
-        
-    except Exception as e:
-        logging.error(f"Error getting common games for group {group_id}: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error while fetching common games',
-            'code': 'INTERNAL_ERROR'
-        }), 500
-
-# ADD MORE OF YOUR EXISTING ENDPOINTS HERE...
-# (Include all your other group management, voting, and session endpoints)
-# Just add the rate limiting decorators where appropriate and use the cached helper functions
-
-# Example for vote submission:
 @gaming.route('/sessions/<int:session_id>/vote', methods=['POST'])
 @limiter.limit("10 per minute")  # Prevent vote spam
 @jwt_required()
@@ -1016,3 +1305,160 @@ def submit_vote(session_id):
     except Exception as e:
         logging.error(f"Error submitting vote: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
+
+@gaming.route('/sessions/<int:session_id>/vote', methods=['GET'])
+@limiter.limit("60 per minute")
+@jwt_required()
+def get_user_vote(session_id):
+    """Get the current user's vote for a session"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        session = GameSession.query.get(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        if user not in session.group.members:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Get user's votes for this session
+        votes = Vote.query.filter_by(
+            session_id=session_id,
+            user_id=current_user_id
+        ).order_by(desc(Vote.priority)).all()
+        
+        if not votes:
+            return jsonify({
+                'success': True,
+                'has_voted': False,
+                'votes': []
+            }), 200
+        
+        # Format votes
+        formatted_votes = []
+        for vote in votes:
+            game = SteamGame.query.get(vote.game_id)
+            formatted_votes.append({
+                'game_id': vote.game_id,
+                'priority': vote.priority,
+                'game': {
+                    'id': game.id,
+                    'name': game.name,
+                    'header_image': getattr(game, 'header_image', ''),
+                    'short_description': getattr(game, 'short_description', '')
+                } if game else None,
+                'created_at': vote.created_at.isoformat() if vote.created_at else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'has_voted': True,
+            'votes': formatted_votes,
+            'vote_count': len(formatted_votes)
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error getting user vote: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+# ============================================================================
+# GROUP MEMBER MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@gaming.route('/groups/join/<invite_code>', methods=['POST'])
+@limiter.limit("20 per minute")
+@jwt_required()
+def join_group_by_invite(invite_code):
+    """Join a group using invite code"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Find group by invite code
+        group = GamingGroup.query.filter_by(invite_code=invite_code).first()
+        if not group:
+            return jsonify({'error': 'Invalid invite code'}), 404
+        
+        # Check if user is already a member
+        if user in group.members:
+            return jsonify({'error': 'You are already a member of this group'}), 400
+        
+        # Check if group is full
+        if len(group.members) >= group.max_members:
+            return jsonify({'error': 'Group is full'}), 400
+        
+        # Add user to group
+        group.members.append(user)
+        db.session.commit()
+        
+        logging.info(f"User {user.username} joined group {group.name} via invite code")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully joined {group.name}',
+            'group': serialize_group_safe(group)
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error joining group: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/<int:group_id>/leave', methods=['POST'])
+@limiter.limit("20 per minute")
+@jwt_required()
+@validate_group_id
+def leave_group(group_id):
+    """Leave a group"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        if user not in group.members:
+            return jsonify({'error': 'You are not a member of this group'}), 400
+        
+        # Don't allow creator to leave if there are other members
+        if group.creator_id == current_user_id and len(group.members) > 1:
+            return jsonify({
+                'error': 'Transfer ownership before leaving the group',
+                'code': 'TRANSFER_OWNERSHIP_REQUIRED'
+            }), 400
+        
+        # Remove user from group
+        group.members.remove(user)
+        
+        # If creator is leaving and they're the only member, delete the group
+        if group.creator_id == current_user_id and len(group.members) == 0:
+            db.session.delete(group)
+            logging.info(f"Group {group.name} deleted as creator {user.username} was the last member")
+        
+        db.session.commit()
+        
+        logging.info(f"User {user.username} left group {group.name}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Successfully left the group'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error leaving group: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+# ============================================================================
+# INITIALIZE RATE LIMITING FUNCTION
+# ============================================================================
+
+def init_rate_limiting(app):
+    """Initialize rate limiting for the Flask app"""
+    limiter.init_app(app)
+    return limiter

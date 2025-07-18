@@ -5,7 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
-import steamService from '../services/steamService.js'; // Import your steamService
+import steamService from '../services/steamService.js';
 import toast from 'react-hot-toast';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -16,7 +16,8 @@ export const Navbar = () => {
     const user = store.user;
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showExploreMenu, setShowExploreMenu] = useState(false);
-    const [isConnectingSteam, setIsConnectingSteam] = useState(false); // Add loading state
+    const [isConnectingSteam, setIsConnectingSteam] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
     const dropdownRef = useRef(null);
@@ -31,14 +32,15 @@ export const Navbar = () => {
 
     const handleToggle = (event) => {
         event.stopPropagation();
+        console.log('Profile button clicked, current showUserMenu:', showUserMenu);
         setShowUserMenu(!showUserMenu);
-        setShowExploreMenu(false); // Close explore menu if open
+        setShowExploreMenu(false);
     };
 
     const handleExploreToggle = (event) => {
         event.stopPropagation();
         setShowExploreMenu(!showExploreMenu);
-        setShowUserMenu(false); // Close user menu if open
+        setShowUserMenu(false);
     };
 
     useEffect(() => {
@@ -63,13 +65,11 @@ export const Navbar = () => {
         navigate('/');
     };
 
-    // 🔧 FIXED: Steam integration using your steamService
     const handleSteamIntegration = async () => {
         console.log('Steam Integration clicked');
         setIsConnectingSteam(true);
         
         try {
-            // Show options to user: OpenID or Manual
             const useOpenID = window.confirm(
                 'Choose Steam connection method:\n\n' +
                 'OK = Use Steam OpenID (Automatic - Recommended)\n' +
@@ -77,11 +77,8 @@ export const Navbar = () => {
             );
 
             if (useOpenID) {
-                // Use Steam OpenID (automatic method)
                 await steamService.connectViaOpenID('/dashboard?steam_connected=true');
-                // Note: This will redirect to Steam, so code below won't execute
             } else {
-                // Manual Steam ID entry
                 const instructions = steamService.showSteamIdInstructions();
                 const steamId = prompt(
                     `${instructions.title}\n\n` +
@@ -99,7 +96,6 @@ export const Navbar = () => {
                 const result = await steamService.connectManually(steamId);
                 
                 if (result.success) {
-                    // Update user state with new Steam connection
                     dispatch({ 
                         type: 'set_user', 
                         payload: result.user 
@@ -138,32 +134,71 @@ export const Navbar = () => {
         setShowUserMenu(false);
     };
 
+    const handlePinToggle = () => {
+        setIsCollapsed(!isCollapsed);
+        // Close any open dropdowns when collapsing
+        if (!isCollapsed) {
+            setShowUserMenu(false);
+            setShowExploreMenu(false);
+        }
+    };
+
     return (
         <nav className="fixed top-4 left-4 right-4 z-50">
-            <div className="navbar-glass">
-                <div className="flex justify-between items-center">
-                    <Link 
-                        to="/"
-                        className="flex items-center space-x-3 group"
+            {/* Collapsed state - just the S logo */}
+            {isCollapsed ? (
+                <div className="flex justify-center">
+                    <button
+                        onClick={handlePinToggle}
+                        className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-300 group"
+                        title="Expand navbar"
                     >
-                        <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                            <span className="text-white font-bold text-lg">S</span>
-                        </div>
-                        <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
-                            SquadUp
-                        </span>
-                    </Link>
+                        <span className="text-white font-bold text-lg group-hover:rotate-12 transition-transform duration-300">S</span>
+                    </button>
+                </div>
+            ) : (
+                /* Full navbar */
+                <div className="navbar-glass" style={{ minWidth: '1200px', margin: '0 auto' }}>
+                    <div className="flex justify-between items-center px-6 py-2">
+                        <div className="flex items-center space-x-4">
+                            <Link 
+                                to="/"
+                                className="flex items-center space-x-3 group"
+                            >
+                                <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                                    <span className="text-white font-bold text-lg">S</span>
+                                </div>
+                                <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
+                                    SquadUp
+                                </span>
+                            </Link>
 
-                    <div className="flex items-center space-x-6">
+                            {/* Pin/Collapse button between logo and navigation */}
+                            <button
+                                onClick={handlePinToggle}
+                                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 flex items-center justify-center text-white/70 hover:text-white transition-all duration-300 ml-2"
+                                title="Collapse Nav"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Much more spacing between navigation items */}
+                        <div className="flex items-center space-x-16">
                         {isAuthenticated ? (
                             <>
                                 <Link to="/dashboard" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
                                     Dashboard
                                 </Link>
-                                <Link to="/sessions" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
+                                <Link to="/groups" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
+                                    Groups
+                                </Link>
+                                <Link to="/sessions" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block whitespace-nowrap">
                                     Find Games
                                 </Link>
-                                <Link to="/game-library" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
+                                <Link to="/game-library" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block whitespace-nowrap">
                                     Game Library
                                 </Link>
                                 <Link to="/friends" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
@@ -235,7 +270,7 @@ export const Navbar = () => {
                         )}
 
                         {isAuthenticated ? (
-                            <div className="flex items-center space-x-4">
+                            <div className="flex items-center space-x-6">
                                 {/* Steam Connection Status Indicator */}
                                 {user && !user.steam_connected && (
                                     <div className="hidden sm:flex items-center space-x-2 px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-lg">
@@ -244,7 +279,7 @@ export const Navbar = () => {
                                     </div>
                                 )}
 
-                                <div className="relative z-[60]">  {/* Increased z-index for stacking context */}
+                                <div className="relative z-[60]">
                                     <button 
                                         onClick={handleToggle}
                                         className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
@@ -340,9 +375,10 @@ export const Navbar = () => {
                                 </GamingLink>
                             </div>
                         )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </nav>
     );
 };

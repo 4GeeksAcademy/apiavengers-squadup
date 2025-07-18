@@ -1,9 +1,10 @@
-# src/app.py - ENHANCED VERSION with Codespace CORS Support
+# src/app.py - ENHANCED VERSION with Codespace CORS Support - FIXED
 
 import os
 import logging
 from datetime import timedelta
 from collections import defaultdict
+from sqlalchemy import text
 
 # Load environment first
 from dotenv import load_dotenv
@@ -89,7 +90,7 @@ except Exception as e:
     print(f"✅ Fallback rate limiting initialized")
 
 # ============================================================================
-# ENHANCED CORS Configuration for GitHub Codespaces
+# ENHANCED CORS Configuration for GitHub Codespaces - FIXED VERSION
 # ============================================================================
 CODESPACE_NAME = os.getenv('CODESPACE_NAME')
 GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')
@@ -110,13 +111,20 @@ def get_codespace_urls():
                 # Frontend (port 3000)
                 urls.extend([
                     f"https://{CODESPACE_NAME}-3000.{domain}",
-                    f"https://{CODESPACE_NAME}-3000.{domain.replace('app.', '')}",
                 ])
                 # Backend (port 3001)
                 urls.extend([
                     f"https://{CODESPACE_NAME}-3001.{domain}",
-                    f"https://{CODESPACE_NAME}-3001.{domain.replace('app.', '')}",
                 ])
+    
+    # Also check if we can extract codespace name from environment variables
+    # Sometimes the full codespace URL is in FRONTEND_URL
+    frontend_url = os.getenv('FRONTEND_URL')
+    if frontend_url and 'github.dev' in frontend_url:
+        urls.append(frontend_url)
+        # Extract backend URL from frontend URL
+        backend_url = frontend_url.replace('-3000.', '-3001.')
+        urls.append(backend_url)
     
     return list(set(urls))
 
@@ -135,12 +143,19 @@ else:
         "https://localhost:3001"
     ]
     
+    # Add environment-specific URLs
+    if os.getenv('FRONTEND_URL'):
+        allowed_origins.append(os.getenv('FRONTEND_URL'))
+    if os.getenv('VITE_BACKEND_URL'):
+        allowed_origins.append(os.getenv('VITE_BACKEND_URL'))
+    
     codespace_urls = get_codespace_urls()
     allowed_origins.extend(codespace_urls)
     
     if codespace_urls:
         print(f"🌐 Codespace URLs added: {codespace_urls}")
 
+# Remove duplicates and empty values
 allowed_origins = list(set([url for url in allowed_origins if url]))
 
 # 🔧 CRITICAL: Enhanced CORS configuration for Codespaces
@@ -167,7 +182,9 @@ CORS(app,
      vary_header=True
 )
 
-print(f"🔧 CORS configured for {len(allowed_origins)} origins")
+print(f"🔧 CORS configured for {len(allowed_origins)} origins:")
+for origin in allowed_origins:
+    print(f"   - {origin}")
 
 # ============================================================================
 # Enhanced JWT Configuration
@@ -347,7 +364,7 @@ app.register_blueprint(steam, url_prefix='/api/steam')
 def health_check():
     """Health check endpoint for monitoring"""
     try:
-        db.session.execute('SELECT 1')
+        db.session.execute(text('SELECT 1'))  # Fixed: wrap in text()
         db_status = "healthy"
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
@@ -406,43 +423,6 @@ def handle_options_and_security():
         # Let Flask-CORS handle OPTIONS automatically
         pass
 
-# Enhanced OPTIONS handlers for specific routes
-@app.route('/api/gaming/<path:path>', methods=['OPTIONS'])
-def handle_gaming_options(path):
-    """Handle OPTIONS requests for gaming routes"""
-    origin = request.headers.get('Origin', '')
-    
-    if origin in allowed_origins:
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Max-Age', '86400')
-        logger.debug(f"🎮 Gaming OPTIONS handled for origin: {origin}")
-        return response
-    
-    logger.warning(f"🚫 Gaming OPTIONS rejected for origin: {origin}")
-    return jsonify({'error': 'CORS not allowed'}), 403
-
-@app.route('/api/auth/<path:path>', methods=['OPTIONS'])
-def handle_auth_options(path):
-    """Handle OPTIONS requests for auth routes"""
-    origin = request.headers.get('Origin', '')
-    
-    if origin in allowed_origins:
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Max-Age', '86400')
-        logger.debug(f"🔐 Auth OPTIONS handled for origin: {origin}")
-        return response
-    
-    logger.warning(f"🚫 Auth OPTIONS rejected for origin: {origin}")
-    return jsonify({'error': 'CORS not allowed'}), 403
-
 @app.after_request
 def after_request(response):
     """Add security headers and manual CORS headers"""
@@ -491,7 +471,7 @@ def close_db(error):
 def api_status():
     """Detailed API status for frontend monitoring"""
     try:
-        db.session.execute('SELECT 1')
+        db.session.execute(text('SELECT 1'))  # Fixed: wrap in text()
         db_latency = "< 50ms"
         
         rate_limiter_storage = redis_url.split('://')[0] if '://' in redis_url else 'memory'
@@ -528,6 +508,8 @@ def api_status():
             'timestamp': utc_now().isoformat(),
             'error': 'Service temporarily unavailable'
         }), 503
+    
+    
 
 @app.route('/api/cors-debug', methods=['GET', 'OPTIONS'])
 @limiter.limit("60 per minute")
@@ -552,6 +534,24 @@ def cors_debug():
     logger.info(f"🔍 CORS Debug - Origin: {origin}, Allowed: {origin in allowed_origins}")
     
     return jsonify(debug_info)
+
+# Add this debug route to help troubleshoot
+@app.route('/api/cors-test', methods=['GET', 'OPTIONS'])
+@limiter.limit("60 per minute")
+def cors_test():
+    """Test CORS configuration"""
+    origin = request.headers.get('Origin', 'No Origin header')
+    
+    return jsonify({
+        'message': 'CORS test successful',
+        'request_origin': origin,
+        'origin_allowed': origin in allowed_origins,
+        'allowed_origins': allowed_origins,
+        'codespace_name': CODESPACE_NAME,
+        'frontend_url_env': os.getenv('FRONTEND_URL'),
+        'backend_url_env': os.getenv('VITE_BACKEND_URL'),
+        'timestamp': utc_now().isoformat()
+    })
 
 # ============================================================================
 # Main Entry Point

@@ -1,4 +1,4 @@
-// src/config/environment.js - ENHANCED CONFIGURATION
+// src/config/environment.js - FIXED CONFIGURATION
 
 /**
  * Environment configuration for GitHub Codespaces and local development
@@ -8,27 +8,42 @@
 // 🔧 CRITICAL: Dynamic environment detection for Codespaces
 const getEnvironmentConfig = () => {
     const isDevelopment = import.meta.env.DEV;
-    const isCodespace = !!(import.meta.env.VITE_CODESPACE_NAME || window.location.hostname.includes('.github.dev'));
     
-    // Get Codespace information
-    const codespaceName = import.meta.env.VITE_CODESPACE_NAME || 
-                         window.location.hostname.split('-')[0] || 
-                         null;
+    // Better Codespace detection
+    const currentHostname = window.location.hostname;
+    const isCodespace = currentHostname.includes('.github.dev') || currentHostname.includes('.app.github.dev');
     
-    const codespacesDomain = import.meta.env.VITE_GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || 
-                            'app.github.dev';
+    // Extract codespace name from current URL
+    let codespaceName = null;
+    if (isCodespace) {
+        // Extract from URL like: bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev
+        const hostParts = currentHostname.split('.');
+        if (hostParts.length >= 3) {
+            const fullPrefix = hostParts[0]; // bookish-funicular-9754qgjjg9743pqr7-3000
+            codespaceName = fullPrefix.replace(/-\d+$/, ''); // Remove port number: bookish-funicular-9754qgjjg9743pqr7
+        }
+    }
+    
+    // Use environment variable as fallback
+    if (!codespaceName) {
+        codespaceName = import.meta.env.VITE_CODESPACE_NAME;
+    }
+    
+    const codespacesDomain = import.meta.env.VITE_GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || 'app.github.dev';
     
     let backendUrl;
     let frontendUrl;
     
     if (isCodespace && codespaceName) {
-        // GitHub Codespaces URLs
-        backendUrl = `https://${codespaceName}-3001.${codespacesDomain}`;
-        frontendUrl = `https://${codespaceName}-3000.${codespacesDomain}`;
+        // GitHub Codespaces URLs - ensure consistent domain
+        const domain = currentHostname.includes('app.github.dev') ? 'app.github.dev' : 'github.dev';
+        backendUrl = `https://${codespaceName}-3001.${domain}`;
+        frontendUrl = `https://${codespaceName}-3000.${domain}`;
         
         console.log('🌐 Codespace Environment Detected:', {
+            currentHostname,
             codespaceName,
-            codespacesDomain,
+            domain,
             backendUrl,
             frontendUrl
         });
@@ -90,8 +105,6 @@ export const fetchWithConfig = async (endpoint, options = {}) => {
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            // 🔧 CRITICAL: Add origin header for Codespaces CORS
-            ...(isCodespace && { 'Origin': frontendUrl }),
             ...options.headers
         },
         // 🔧 CRITICAL: Enable credentials for CORS
@@ -104,7 +117,7 @@ export const fetchWithConfig = async (endpoint, options = {}) => {
         method: defaultOptions.method,
         hasAuth: !!defaultOptions.headers.Authorization,
         isCodespace,
-        origin: defaultOptions.headers.Origin
+        frontendOrigin: frontendUrl
     });
 
     try {
@@ -113,7 +126,7 @@ export const fetchWithConfig = async (endpoint, options = {}) => {
         console.log('📡 Response received:', {
             status: response.status,
             statusText: response.statusText,
-            headers: Object.fromEntries(response.headers.entries())
+            url: response.url
         });
         
         return response;
