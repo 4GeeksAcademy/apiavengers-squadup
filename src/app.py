@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import timedelta, datetime
+from datetime import timedelta
 from collections import defaultdict
 
 # --- This is the correct fix ---
@@ -17,7 +17,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 # Local application imports
-from api.utils import APIException
+from api.utils import APIException, utc_now  # 🔧 FIXED: Import utc_now
 from api.models import db
 from api.routes import api
 from api.auth import auth
@@ -26,10 +26,6 @@ from api.admin import setup_admin
 from api.commands import setup_commands
 from api.steam_auth import steam_auth
 from api.steam import steam
-
-# 🚀 NEW: Import live voting blueprints
-from api.live_events import live_events
-from api.member_status import member_status
 
 # ============================================================================
 # App Initialization & Environment
@@ -260,25 +256,12 @@ def ratelimit_handler(e):
 setup_admin(app)
 setup_commands(app)
 
-# Register blueprints - ENHANCED: Including new live voting blueprints
-app.register_blueprint(api, url_prefix='/api')                              # Main API routes
-app.register_blueprint(auth, url_prefix='/api/auth')                        # Auth routes  
-app.register_blueprint(gaming, url_prefix='/api/gaming')                    # Gaming routes
-app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')            # Steam auth (OpenID)
-app.register_blueprint(steam, url_prefix='/api/steam')                      # Steam API routes (library, sync, etc.)
-
-# 🚀 NEW: Register live voting blueprints
-app.register_blueprint(live_events, url_prefix='/api/live-events')          # Live event broadcasting
-app.register_blueprint(member_status, url_prefix='/api/member-status')      # Member status tracking
-
-print("✅ All blueprints registered successfully:")
-print("   - API routes: /api/*")
-print("   - Auth routes: /api/auth/*")
-print("   - Gaming routes: /api/gaming/*")
-print("   - Steam auth: /api/auth/steam/*")
-print("   - Steam API: /api/steam/*")
-print("   - 🚀 Live events: /api/live-events/*")
-print("   - 🚀 Member status: /api/member-status/*")
+# Register blueprints - FIXED: No duplicate registrations
+app.register_blueprint(api, url_prefix='/api')           # Main API routes
+app.register_blueprint(auth, url_prefix='/api/auth')     # Auth routes  
+app.register_blueprint(gaming, url_prefix='/api/gaming') # Gaming routes
+app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')  # Steam auth (OpenID)
+app.register_blueprint(steam, url_prefix='/api/steam')   # Steam API routes (library, sync, etc.)
 
 # ============================================================================
 # Enhanced Route Configuration & Health Checks
@@ -295,26 +278,12 @@ def health_check():
         logger.error(f"Database health check failed: {e}")
         db_status = "unhealthy"
     
-    # 🚀 NEW: Check live voting system status
-    live_status = "healthy"
-    try:
-        # Simple check for live event storage
-        from api.live_events import event_store, active_connections
-        active_sessions = len(event_store)
-        total_connections = sum(len(conns) for conns in active_connections.values())
-        live_status = "healthy"
-    except Exception as e:
-        logger.error(f"Live voting health check failed: {e}")
-        live_status = "degraded"
-    
     return jsonify({
-        'status': 'healthy' if db_status == "healthy" and live_status == "healthy" else 'degraded',
-        'timestamp': datetime.utcnow().isoformat(),
+        'status': 'healthy' if db_status == "healthy" else 'unhealthy',
+        # 🔧 FIXED: Use utc_now instead of datetime.utcnow()
+        'timestamp': utc_now().isoformat(),
         'environment': ENV,
         'database': db_status,
-        'live_voting': live_status,
-        'live_sessions': active_sessions if live_status == "healthy" else 0,
-        'live_connections': total_connections if live_status == "healthy" else 0,
         'version': '1.0.0'  # Add your app version
     }), 200 if db_status == "healthy" else 503
 
@@ -340,7 +309,7 @@ def serve_any_other_file(path):
         response.cache_control.max_age = 0
         return response
 
-# 🚀 ENHANCED: OPTIONS handling with proper CORS and SSE support
+# Enhanced OPTIONS handling with proper CORS
 @app.before_request
 def handle_options_and_security():
     """Handle OPTIONS requests and add security headers"""
@@ -352,15 +321,9 @@ def handle_options_and_security():
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
         response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
         response.headers.add('Access-Control-Allow-Credentials', 'true')
-        
-        # 🚀 NEW: Special headers for SSE endpoints
-        if request.path.startswith('/api/live-events/') or request.path.startswith('/api/member-status/'):
-            response.headers.add('Cache-Control', 'no-cache')
-            response.headers.add('Connection', 'keep-alive')
-        
         return response
 
-# 🚀 ENHANCED: Add security headers to all responses with SSE support
+# Add security headers to all responses
 @app.after_request
 def after_request(response):
     """Add security headers to all responses"""
@@ -372,19 +335,9 @@ def after_request(response):
     
     # Add cache control for API responses
     if request.path.startswith('/api/'):
-        # 🚀 NEW: Special handling for Server-Sent Events endpoints
-        if request.path.startswith('/api/live-events/') or request.path.startswith('/api/member-status/'):
-            # SSE-specific headers
-            response.headers['Cache-Control'] = 'no-cache'
-            response.headers['Connection'] = 'keep-alive'
-            response.headers['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering for SSE
-            response.headers['Access-Control-Allow-Origin'] = '*'  # Allow SSE from any origin in dev
-            response.headers['Access-Control-Allow-Headers'] = 'Authorization'
-        else:
-            # Regular API endpoints
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     
     return response
 
@@ -397,16 +350,6 @@ def close_db(error):
     if error:
         logger.error(f"Application context error: {error}")
         db.session.rollback()
-
-# 🚀 NEW: Live voting cleanup on app shutdown
-@app.teardown_appcontext  
-def cleanup_live_connections(error):
-    """Clean up live voting connections on shutdown"""
-    try:
-        from api.live_events import cleanup_old_events
-        cleanup_old_events()
-    except Exception as e:
-        logger.error(f"Error during live voting cleanup: {e}")
 
 # ============================================================================
 # Main Entry Point with Enhanced Configuration
@@ -425,11 +368,10 @@ if __name__ == '__main__':
     print(f"🚀 Starting SquadUp server in {ENV} mode on port {PORT}")
     print(f"🔧 Database: {'PostgreSQL' if 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI'] else 'SQLite'}")
     print(f"🛡️  Rate limiting: {'Redis' if 'redis' in redis_url else 'Memory'}")
-    print(f"🔴 Live voting: ENABLED with SSE support")
     
     app.run(
         host='0.0.0.0', 
         port=PORT, 
         debug=DEBUG,
-        threaded=True  # Enable threading for better performance with SSE
+        threaded=True  # Enable threading for better performance
     )

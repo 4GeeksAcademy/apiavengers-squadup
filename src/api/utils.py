@@ -1,4 +1,24 @@
+# src/api/utils.py - Your existing file with modern datetime helper added
+
 from flask import jsonify, url_for
+from datetime import datetime, timezone  # 🔧 ADDED: Import for modern datetime
+
+# ============================================================================
+# MODERN DATETIME HELPER - REPLACES DEPRECATED datetime.utcnow()
+# ============================================================================
+
+def utc_now():
+    """
+    Modern replacement for deprecated datetime.utcnow()
+    
+    Returns timezone-aware UTC datetime object.
+    Compatible with Python 3.7+ (uses timezone.utc for broader compatibility)
+    """
+    return datetime.now(timezone.utc)
+
+# ============================================================================
+# YOUR EXISTING CODE (unchanged)
+# ============================================================================
 
 class APIException(Exception):
     status_code = 400

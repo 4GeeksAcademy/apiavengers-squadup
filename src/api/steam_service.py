@@ -1,12 +1,11 @@
-# src/api/steam_service.py - COMPLETE FIXED VERSION
+# src/api/steam_service.py - COMPLETE FIXED VERSION with modern datetime
 
 import requests
 import json
 import os
-from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from api.models import db, User, SteamGame, user_games
-from api.utils import APIException
+from api.utils import APIException, utc_now  # 🔧 FIXED: Import utc_now
 from dotenv import load_dotenv
 from sqlalchemy import text
 
@@ -150,7 +149,8 @@ class SteamService:
             
             if not steam_games:
                 print("⚠️ No games returned from Steam API")
-                user.steam_library_synced_at = datetime.utcnow()
+                # 🔧 FIXED: Use utc_now instead of datetime.utcnow()
+                user.steam_library_synced_at = utc_now()
                 db.session.commit()
                 return 0, 0
             
@@ -198,6 +198,8 @@ class SteamService:
                 playtime = game_data.get('playtime_forever', 0)
                 last_played = None
                 if game_data.get('rtime_last_played'):
+                    # 🔧 FIXED: Use utc_now for timezone-aware datetime
+                    from datetime import datetime
                     last_played = datetime.fromtimestamp(game_data['rtime_last_played'])
                 
                 try:
@@ -211,7 +213,7 @@ class SteamService:
                             'game_id': game.id,
                             'hours_played': playtime,
                             'last_played': last_played,
-                            'added_at': datetime.utcnow()
+                            'added_at': utc_now()  # 🔧 FIXED: Use utc_now
                         }
                     )
                     print(f"    💾 Added to user library: {game_name}")
@@ -220,8 +222,8 @@ class SteamService:
                     print(f"    ❌ Failed to add to library {game_name}: {db_error}")
                     # Continue with other games even if one fails
             
-            # Update sync timestamp
-            user.steam_library_synced_at = datetime.utcnow()
+            # 🔧 FIXED: Update sync timestamp with utc_now
+            user.steam_library_synced_at = utc_now()
             db.session.commit()
             
             print(f"✅ Library sync completed: {new_games} new games, {updated_games} total games")
@@ -257,6 +259,8 @@ class SteamService:
                 if 'release_date' in details and details['release_date'].get('date'):
                     try:
                         release_str = details['release_date']['date']
+                        # 🔧 FIXED: Keep this as naive datetime since it's just parsing date string
+                        from datetime import datetime
                         game.release_date = datetime.strptime(release_str, '%b %d, %Y')
                     except ValueError:
                         pass

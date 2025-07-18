@@ -9,6 +9,7 @@ Gaming group management routes - COMPLETE ENHANCED VERSION WITH LIVE VOTING
 - Live voting status streams
 - Improved parameter validation
 - Compatible with enhanced Vote model from models.py
+- FIXED: Modern timezone-aware datetime usage
 """
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -21,11 +22,22 @@ import time
 import logging
 import queue
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from sqlalchemy import func, desc
 
 gaming = Blueprint('gaming', __name__)
+
+# ============================================================================
+# MODERN DATETIME HELPER - TIMEZONE AWARE
+# ============================================================================
+
+def utc_now():
+    """
+    Modern timezone-aware UTC datetime helper.
+    Replaces deprecated datetime.utcnow() for Python 3.12+ compatibility.
+    """
+    return datetime.now(timezone.utc)
 
 # ============================================================================
 # SSE MANAGER FOR PROPER CONNECTION HANDLING
@@ -299,7 +311,7 @@ def get_session_results_data(session_id):
     # Auto-complete session if threshold met
     if voting_complete and session.status == 'voting':
         session.status = 'completed'
-        session.updated_at = datetime.utcnow()
+        session.updated_at = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
         
         # Set winner if we have results
         if results:
@@ -323,7 +335,7 @@ def get_session_results_data(session_id):
         'voting_complete': voting_complete,
         'session_status': session.status,
         'winner': results[0] if results and voting_complete else None,
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
     }
 
 
@@ -383,7 +395,7 @@ def get_voter_status_data(session_id):
         'pending_voters': pending_voters,
         'voting_complete': voting_complete,
         'session_status': session.status,
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
     }
 
 
@@ -1148,7 +1160,7 @@ def start_voting_session(group_id):
             raise APIException("No common multiplayer games found for this group", status_code=400)
         
         data = request.get_json() or {}
-        session_name = data.get('session_name', f'Squad Vote - {datetime.now().strftime("%m/%d %H:%M")}')
+        session_name = data.get('session_name', f'Squad Vote - {utc_now().strftime("%m/%d %H:%M")}')  # 🔧 FIXED: Use timezone-aware datetime
         description = data.get('description', 'Vote for the next game to play!')
         
         # Create session with safe attribute setting
@@ -1280,12 +1292,12 @@ def submit_vote(session_id):
                 (total_voters >= total_members * auto_complete_threshold and total_voters >= 2)):
                 session.status = 'completed'
                 if hasattr(session, 'updated_at'):
-                    session.updated_at = datetime.utcnow()
+                    session.updated_at = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
                 logging.info(f"Voting session {session_id} auto-completed: {total_voters}/{total_members} members voted")
             
             # Update session timestamp
             if hasattr(session, 'updated_at'):
-                session.updated_at = datetime.utcnow()
+                session.updated_at = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
             
             # Commit happens automatically with 'with' block
         
@@ -1394,7 +1406,7 @@ def stream_live_results(session_id):
                             'voting_complete': False,
                             'session_status': session.status,
                             'winner': None,
-                            'timestamp': datetime.utcnow().isoformat()
+                            'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
                         }
                     
                     # Check if we should send an update
@@ -1427,7 +1439,7 @@ def stream_live_results(session_id):
                         yield f"data: {json.dumps(results_data)}\n\n"
                         
                         last_voter_count = current_voter_count
-                        last_update_time = datetime.utcnow()
+                        last_update_time = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
                         
                         # Exit if voting is complete
                         if voting_complete:
@@ -1436,7 +1448,7 @@ def stream_live_results(session_id):
                     else:
                         # Send heartbeat
                         if heartbeat_counter % 15 == 0:
-                            yield f"data: {json.dumps({'heartbeat': True, 'timestamp': datetime.utcnow().isoformat()})}\n\n"
+                            yield f"data: {json.dumps({'heartbeat': True, 'timestamp': utc_now().isoformat()})}\n\n"  # 🔧 FIXED: Use timezone-aware datetime
                     
                     heartbeat_counter += 1
                     time.sleep(2)  # Check every 2 seconds
@@ -1537,7 +1549,7 @@ def voter_status_stream(session_id):
                         'pending_voters': [],
                         'voting_complete': False,
                         'session_status': session.status,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
                     }
                 
                 # Send update if there are changes or heartbeat
@@ -1692,7 +1704,7 @@ def close_voting_session(session_id):
         
         session.status = 'completed'
         if hasattr(session, 'updated_at'):
-            session.updated_at = datetime.utcnow()
+            session.updated_at = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
         db.session.commit()
         
         # Get final results
@@ -1897,7 +1909,7 @@ def get_session_status(session_id):
                 'voting_complete': session.status == 'completed',
                 'session_status': session.status,
                 'winner': None,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
             }
             voter_data = {
                 'progress': {'voted': 0, 'total': len(session.group.members), 'percentage': 0},
@@ -1905,7 +1917,7 @@ def get_session_status(session_id):
                 'pending_voters': [],
                 'voting_complete': session.status == 'completed',
                 'session_status': session.status,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
             }
         
         return jsonify({
@@ -1915,7 +1927,7 @@ def get_session_status(session_id):
             "status": session.status,
             "results": status_data,
             "voters": voter_data,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
         }), 200
         
     except APIException as e:
@@ -1955,7 +1967,7 @@ def get_session_voters(session_id):
                 'pending_voters': [],
                 'voting_complete': False,
                 'session_status': session.status,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': utc_now().isoformat()  # 🔧 FIXED: Use timezone-aware datetime
             }
         
         # Get unique voters with their vote details
@@ -2312,12 +2324,12 @@ def submit_vote_enhanced(session_id):
         if total_voters >= total_members:
             session.status = 'completed'
             if hasattr(session, 'updated_at'):
-                session.updated_at = datetime.utcnow()
+                session.updated_at = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
             logging.info(f"Voting session {session_id} auto-completed: all {total_members} members voted")
         
         # Update session timestamp
         if hasattr(session, 'updated_at'):
-            session.updated_at = datetime.utcnow()
+            session.updated_at = utc_now()  # 🔧 FIXED: Use timezone-aware datetime
         
         # Commit all changes
         db.session.commit()

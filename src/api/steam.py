@@ -1,12 +1,11 @@
-# src/api/steam.py - Enhanced with rate limiting and better error handling
+# src/api/steam.py - Enhanced with rate limiting and better error handling - FIXED datetime
 
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from api.models import db, User, SteamGame
 from api.steam_service import steam_service
-from api.utils import APIException
+from api.utils import APIException, utc_now  # 🔧 FIXED: Import utc_now
 from sqlalchemy import text
-from datetime import datetime  # <-- ADD THIS IMPORT
 
 steam = Blueprint('steam', __name__)
 
@@ -126,10 +125,10 @@ def sync_games():
         
         current_app.logger.info(f"Starting manual sync for user {user.username}")
         
-        # Check if user synced recently (prevent excessive API calls)
+        # 🔧 FIXED: Check if user synced recently with utc_now
         if user.steam_library_synced_at:
             from datetime import timedelta
-            if datetime.utcnow() - user.steam_library_synced_at < timedelta(minutes=5):
+            if utc_now() - user.steam_library_synced_at < timedelta(minutes=5):
                 return jsonify({
                     'success': False,
                     'error': 'Recently synced',
@@ -210,7 +209,8 @@ def common_games():
             'steam_connected_users': len(steam_connected_users),
             'common_games_count': len([g for g in games if g.get('is_common', False)]),
             'metadata': {
-                'generated_at': datetime.utcnow().isoformat(),
+                # 🔧 FIXED: Use utc_now instead of datetime.utcnow()
+                'generated_at': utc_now().isoformat(),
                 'user_list': [{'id': u.id, 'username': u.username, 'steam_connected': u.is_steam_connected} for u in users]
             }
         }), 200
@@ -422,7 +422,8 @@ def steam_health():
         return jsonify({
             'status': overall_status,
             'components': health_status,
-            'timestamp': datetime.utcnow().isoformat()
+            # 🔧 FIXED: Use utc_now instead of datetime.utcnow()
+            'timestamp': utc_now().isoformat()
         }), 200 if overall_status == 'healthy' else 503
         
     except Exception as e:
@@ -430,5 +431,6 @@ def steam_health():
         return jsonify({
             'status': 'error',
             'error': str(e),
-            'timestamp': datetime.utcnow().isoformat()
+            # 🔧 FIXED: Use utc_now instead of datetime.utcnow()
+            'timestamp': utc_now().isoformat()
         }), 500

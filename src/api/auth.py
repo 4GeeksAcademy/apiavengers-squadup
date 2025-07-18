@@ -1,8 +1,8 @@
-# src/api/auth.py - Enhanced with rate limiting
+# src/api/auth.py - Enhanced with rate limiting and FIXED datetime usage
 
 from flask import Blueprint, request, jsonify, current_app
 from api.models import db, User  # User model now handles password logic
-from api.utils import APIException
+from api.utils import APIException, utc_now  # 🔧 FIXED: Import utc_now
 from flask_cors import CORS
 from flask_jwt_extended import (
     create_access_token, create_refresh_token, jwt_required,
@@ -10,7 +10,7 @@ from flask_jwt_extended import (
 )
 import re
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy import or_
 
 auth = Blueprint('auth', __name__)
@@ -147,8 +147,8 @@ def login():
             current_app.logger.warning(f"Login attempt for inactive account: {user.username} (IP: {client_ip})")
             raise APIException("Account is deactivated. Please contact support.", status_code=401)
         
-        # Update last login timestamp
-        user.last_login = datetime.utcnow()
+        # 🔧 FIXED: Update last login timestamp
+        user.last_login = utc_now()
         db.session.commit()
         
         # Enhanced token creation with additional claims
