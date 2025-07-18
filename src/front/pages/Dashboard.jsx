@@ -6,6 +6,8 @@ import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 import CreateGroupModal from '../components/CreateGroupModal';
 import { validateGroupId, validateGroupObject, safeGroupOperation, handleGroupError, validateInviteCode } from '../utils/groupValidation';
+import JoinGroupInput from '../components/JoinGroupInput';
+import GroupActionButtons from '../components/GroupActionButtons';
 import toast from 'react-hot-toast';
 
 // Import your existing enhanced components
