@@ -1,4 +1,4 @@
-# src/app.py - FIXED IMPORT PATHS
+# src/app.py - UPDATED WITH LIVE VOTING SYSTEM
 
 import os
 import sys
@@ -42,7 +42,7 @@ try:
     from api.commands import setup_commands
     from api.steam_auth import steam_auth
     from api.steam import steam
-    # NEW: Import live voting system
+    # UPDATED: Import live voting system
     from api.live_voting_system import live_voting
 except ImportError:
     try:
@@ -56,7 +56,7 @@ except ImportError:
         from src.api.commands import setup_commands
         from src.api.steam_auth import steam_auth
         from src.api.steam import steam
-        # NEW: Import live voting system
+        # UPDATED: Import live voting system
         from src.api.live_voting_system import live_voting
     except ImportError as e:
         print(f"Import error: {e}")
@@ -426,7 +426,7 @@ app.register_blueprint(auth, url_prefix='/api/auth')
 app.register_blueprint(gaming, url_prefix='/api/gaming')
 app.register_blueprint(steam_auth, url_prefix='/api/auth/steam')
 
-# NEW: Register live voting blueprint
+# UPDATED: Register live voting blueprint
 try:
     app.register_blueprint(live_voting, url_prefix='/api/live-voting')
     print("✅ Live voting system registered at /api/live-voting")
@@ -441,10 +441,10 @@ except Exception as e:
     print(f"⚠️ Steam blueprint registration failed: {e}")
 
 # ============================================================================
-# SSE Manager Initialization - UPDATED
+# SSE Manager Initialization - UPDATED FOR LIVE VOTING
 # ============================================================================
 class SSEManager:
-    """Global SSE connection manager"""
+    """Global SSE connection manager for live voting"""
     def __init__(self, app):
         self.app = app
         self.connections = defaultdict(set)
@@ -452,16 +452,24 @@ class SSEManager:
     def add_connection(self, session_id, connection_id):
         """Add a new SSE connection"""
         self.connections[session_id].add(connection_id)
+        print(f"📡 SSE connection added: {connection_id} to session {session_id}")
         
     def remove_connection(self, session_id, connection_id):
         """Remove SSE connection"""
         self.connections[session_id].discard(connection_id)
         if not self.connections[session_id]:
             del self.connections[session_id]
+        print(f"📡 SSE connection removed: {connection_id} from session {session_id}")
                 
     def get_connection_count(self, session_id):
         """Get number of active connections for a session"""
         return len(self.connections.get(session_id, set()))
+    
+    def broadcast_to_session(self, session_id, data):
+        """Broadcast data to all connections in a session"""
+        connections = self.connections.get(session_id, set())
+        print(f"📡 Broadcasting to {len(connections)} connections in session {session_id}")
+        return len(connections)
     
     def cleanup_inactive_connections(self):
         """Clean up empty connection sets"""
@@ -473,7 +481,7 @@ class SSEManager:
 try:
     sse_manager = SSEManager(app)
     app.sse_manager = sse_manager
-    print("✅ SSE Manager initialized")
+    print("✅ SSE Manager initialized for live voting")
 except Exception as e:
     print(f"⚠️ SSE Manager initialization failed: {e}")
 
@@ -485,7 +493,7 @@ except Exception as e:
 def health_check():
     """Health check endpoint for monitoring"""
     try:
-        db.session.execute(text('SELECT 1'))  # Fixed: wrap in text()
+        db.session.execute(text('SELECT 1'))
         db_status = "healthy"
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
@@ -624,7 +632,7 @@ def close_db(error):
 def api_status():
     """Detailed API status for frontend monitoring"""
     try:
-        db.session.execute(text('SELECT 1'))  # Fixed: wrap in text()
+        db.session.execute(text('SELECT 1'))
         db_latency = "< 50ms"
         
         rate_limiter_storage = redis_url.split('://')[0] if '://' in redis_url else 'memory'
@@ -724,7 +732,7 @@ if __name__ == '__main__':
     print(f"📡 Live Voting: Available at /api/live-voting")
     
     if hasattr(app, 'sse_manager'):
-        print(f"📡 SSE Manager: Initialized and ready")
+        print(f"📡 SSE Manager: Initialized and ready for live voting")
     else:
         print(f"⚠️ SSE Manager: Not available")
     

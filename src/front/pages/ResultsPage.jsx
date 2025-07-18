@@ -1,13 +1,12 @@
-// src/front/pages/ResultsPage.jsx - PHASE 5 IMPLEMENTATION: Enhanced with SSE Manager
+// src/front/pages/ResultsPage.jsx - CLEANED UP VERSION
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import authService from '../store/authService';
 import toast from 'react-hot-toast';
 import GameImage from '../components/GameImage';
-import VoterStatusPanel from '../components/VoterStatusPanel';
 
-// 🚀 PHASE 5: Import standardized components and enhanced SSE
+// 🚀 PHASE 5: Import standardized components
 import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
 import { 
     PageErrorState, 
@@ -15,7 +14,6 @@ import {
     NotFoundErrorState,
     PermissionErrorState 
 } from '../components/ErrorState';
-import SSEManager from '../services/sseManager';
 
 const ResultsPage = () => {
     const { sessionId } = useParams();
@@ -28,7 +26,7 @@ const ResultsPage = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [groupMembers, setGroupMembers] = useState([]);
     
-    // 🚀 PHASE 5: Enhanced connection state
+    // Enhanced connection state
     const [connectionState, setConnectionState] = useState({
         isConnected: false,
         isReconnecting: false,
@@ -38,9 +36,10 @@ const ResultsPage = () => {
         updateCount: 0
     });
     
-    // SSE Manager ref
-    const sseManagerRef = useRef(null);
+    // SSE and polling refs
+    const eventSourceRef = useRef(null);
     const pollIntervalRef = useRef(null);
+    const maxReconnectAttempts = 5;
 
     useEffect(() => {
         console.log('🏆 Enhanced ResultsPage: Component mounted for session:', sessionId);
@@ -57,7 +56,7 @@ const ResultsPage = () => {
 
     const initializeResults = async () => {
         await fetchResults();
-        setupEnhancedLiveUpdates();
+        setupLiveUpdates();
         setupPollingFallback();
     };
 
@@ -110,28 +109,26 @@ const ResultsPage = () => {
         }
     };
 
-    const setupEnhancedLiveUpdates = () => {
+    const setupLiveUpdates = () => {
         if (!sessionId) return;
         
         const backendUrl = import.meta.env.VITE_BACKEND_URL;
-        const endpoint = `${backendUrl}/api/gaming/sessions/${sessionId}/live-results`;
+        const token = authService.getAccessToken();
         
-        console.log('🔌 Setting up enhanced live results updates...');
+        if (!token) {
+            console.error('No token available for SSE connection');
+            return;
+        }
         
-        // 🚀 PHASE 5: Create SSE Manager with enhanced options for results page
-        const sseManager = new SSEManager(endpoint, {
-            maxRetries: 6,
-            retryDelay: 5000,
-            heartbeatTimeout: 60000, // Longer timeout for results page
-            reconnectMultiplier: 1.2,
-            maxReconnectDelay: 45000
-        });
+        const url = `${backendUrl}/api/live-voting/sessions/${sessionId}/live-stream?token=${encodeURIComponent(token)}`;
         
-        sseManagerRef.current = sseManager;
+        console.log('🔌 Setting up live results updates...', url);
         
-        // Connection established
-        sseManager.on('connected', (data) => {
-            console.log('✅ Enhanced results live updates connected');
+        const eventSource = new EventSource(url);
+        eventSourceRef.current = eventSource;
+        
+        eventSource.onopen = () => {
+            console.log('✅ Live results updates connected');
             setConnectionState(prev => ({
                 ...prev,
                 isConnected: true,
@@ -144,86 +141,57 @@ const ResultsPage = () => {
                 duration: 2000,
                 icon: '📊'
             });
-        });
+        };
         
-        // Connection lost
-        sseManager.on('disconnected', () => {
-            console.log('📡 Live results updates disconnected');
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleLiveResultsUpdate(data);
+            } catch (error) {
+                console.error('Error parsing SSE message:', error);
+            }
+        };
+        
+        eventSource.onerror = (error) => {
+            console.error('❌ Live results stream error:', error);
             setConnectionState(prev => ({
                 ...prev,
                 isConnected: false,
-                isReconnecting: false
-            }));
-        });
-        
-        // Reconnection scheduled
-        sseManager.on('reconnectScheduled', (data) => {
-            console.log(`🔄 Reconnecting results in ${data.delay}ms (attempt ${data.retryCount})`);
-            setConnectionState(prev => ({
-                ...prev,
-                isReconnecting: true,
-                retryCount: data.retryCount
+                error: 'Connection error'
             }));
             
-            if (data.retryCount <= 2) {
-                toast.loading(`Reconnecting live results... (${data.retryCount}/${data.maxRetries})`, {
-                    duration: Math.min(data.delay - 500, 5000)
+            if (connectionState.retryCount < maxReconnectAttempts) {
+                const delay = Math.min(1000 * Math.pow(2, connectionState.retryCount), 30000);
+                console.log(`🔄 Reconnecting results in ${delay}ms (attempt ${connectionState.retryCount + 1})`);
+                
+                setConnectionState(prev => ({
+                    ...prev,
+                    isReconnecting: true,
+                    retryCount: prev.retryCount + 1
+                }));
+                
+                setTimeout(() => {
+                    eventSource.close();
+                    setupLiveUpdates();
+                }, delay);
+            } else {
+                console.log('❌ Max reconnection attempts reached for results');
+                setConnectionState(prev => ({
+                    ...prev,
+                    isReconnecting: false,
+                    error: 'Live updates unavailable'
+                }));
+                
+                toast.error('Live updates unavailable. Using manual refresh.', {
+                    duration: 5000,
+                    icon: '⚠️'
                 });
             }
-        });
-        
-        // Data message received
-        sseManager.on('message', handleEnhancedResultsUpdate);
-        
-        // Heartbeat received
-        sseManager.on('heartbeat', (data) => {
-            setConnectionState(prev => ({
-                ...prev,
-                lastUpdate: new Date(data.timestamp).toISOString()
-            }));
-        });
-        
-        // Connection error
-        sseManager.on('error', (data) => {
-            console.error('❌ Live results connection error:', data);
-            setConnectionState(prev => ({
-                ...prev,
-                error: 'Connection error',
-                retryCount: data.retryCount
-            }));
-        });
-        
-        // Max retries reached
-        sseManager.on('maxRetriesReached', (data) => {
-            console.log('❌ Max reconnection attempts reached for results');
-            setConnectionState(prev => ({
-                ...prev,
-                isReconnecting: false,
-                error: 'Live updates unavailable'
-            }));
-            
-            toast.error('Live updates unavailable. Using manual refresh.', {
-                duration: 5000,
-                icon: '⚠️'
-            });
-        });
-        
-        // Authentication error
-        sseManager.on('authError', () => {
-            console.error('🔐 Authentication error for live results');
-            toast.error('Authentication expired. Please refresh the page.');
-            setConnectionState(prev => ({
-                ...prev,
-                error: 'Authentication required'
-            }));
-        });
-        
-        // Start the connection
-        sseManager.connect();
+        };
     };
 
-    const handleEnhancedResultsUpdate = (data) => {
-        console.log('📊 Enhanced results update:', data);
+    const handleLiveResultsUpdate = (data) => {
+        console.log('📊 Live results update:', data);
         
         setConnectionState(prev => ({
             ...prev,
@@ -335,19 +303,19 @@ const ResultsPage = () => {
     };
 
     const handleReconnectLive = () => {
-        if (sseManagerRef.current) {
-            sseManagerRef.current.forceReconnect();
-            toast.loading('Reconnecting live updates...', { duration: 2000 });
-        } else {
-            setupEnhancedLiveUpdates();
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
         }
+        setConnectionState(prev => ({ ...prev, retryCount: 0 }));
+        setupLiveUpdates();
+        toast.loading('Reconnecting live updates...', { duration: 2000 });
     };
 
     const cleanup = () => {
-        if (sseManagerRef.current) {
-            console.log('🧹 Cleaning up enhanced SSE Manager...');
-            sseManagerRef.current.destroy();
-            sseManagerRef.current = null;
+        if (eventSourceRef.current) {
+            console.log('🧹 Cleaning up SSE connection...');
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
         }
         if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
@@ -395,7 +363,7 @@ const ResultsPage = () => {
         }
     };
 
-    // 🚀 PHASE 5: Use standardized PageLoadingState
+    // Use standardized PageLoadingState
     if (loading) {
         return <PageLoadingState 
             message="Loading enhanced results..." 
@@ -403,7 +371,7 @@ const ResultsPage = () => {
         />;
     }
 
-    // 🚀 PHASE 5: Enhanced error handling with specific error states
+    // Enhanced error handling with specific error states
     if (error) {
         if (error.includes('not found') || error.includes('Session not found')) {
             return <NotFoundErrorState 
@@ -446,7 +414,7 @@ const ResultsPage = () => {
                                     }
                                 </p>
                                 
-                                {/* Enhanced connection status */}
+                                {/* Connection status */}
                                 <div className="mb-4 flex items-center justify-center space-x-4">
                                     <div className="text-white/60 text-sm">
                                         {results?.total_voters || 0} of {results?.total_members || 0} members have voted
@@ -489,15 +457,25 @@ const ResultsPage = () => {
                             </div>
                         </div>
 
-                        {/* Sidebar with voter status */}
+                        {/* Simple member status sidebar */}
                         <div className="space-y-6">
-                            {sessionId && (
-                                <VoterStatusPanel 
-                                    sessionId={sessionId}
-                                    groupMembers={groupMembers}
-                                    showDetailedView={true}
-                                />
-                            )}
+                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                                <h4 className="text-white font-semibold mb-4 flex items-center">
+                                    <span className="text-xl mr-2">👥</span>
+                                    Voting Status
+                                </h4>
+                                
+                                <div className="space-y-3">
+                                    {groupMembers.map(member => (
+                                        <div key={member.id} className="flex items-center justify-between">
+                                            <span className="text-white text-sm">{member.username}</span>
+                                            <span className="text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-300">
+                                                Pending
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -515,7 +493,7 @@ const ResultsPage = () => {
                 <div className="text-center mb-8">
                     <div className="flex items-center justify-center mb-4">
                         <h1 className="text-4xl md:text-5xl font-bold text-white">
-                            🏆 Enhanced Live Results
+                            🏆 Live Results
                         </h1>
                         {refreshing && (
                             <div className="ml-4 w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -725,13 +703,24 @@ const ResultsPage = () => {
 
                     {/* Enhanced Sidebar */}
                     <div className="space-y-6">
-                        {sessionId && (
-                            <VoterStatusPanel 
-                                sessionId={sessionId}
-                                groupMembers={groupMembers}
-                                showDetailedView={true}
-                            />
-                        )}
+                        {/* Simple member status panel */}
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                            <h4 className="text-white font-semibold mb-4 flex items-center">
+                                <span className="text-xl mr-2">👥</span>
+                                Voting Status
+                            </h4>
+                            
+                            <div className="space-y-3">
+                                {groupMembers.map(member => (
+                                    <div key={member.id} className="flex items-center justify-between">
+                                        <span className="text-white text-sm">{member.username}</span>
+                                        <span className="text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-300">
+                                            Pending
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                         
                         {/* Enhanced Connection Info Panel */}
                         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
