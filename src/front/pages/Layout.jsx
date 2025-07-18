@@ -86,9 +86,6 @@ export const Layout = () => {
         }
     }, [location.pathname, store?.isAuthenticated]); // 🔧 Only depend on route and final auth status
 
-    // 🔧 CRITICAL: Remove all other useEffects that were monitoring auth state
-    // Those were causing the infinite loops by triggering re-initialization
-
     return (
         <div className="flex flex-col min-h-screen">
             {/* Enhanced Gaming-themed Toaster */}

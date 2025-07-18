@@ -1,98 +1,108 @@
-// src/front/Routes.jsx - UPDATED with Live Voting Route
+// src/front/routes.jsx - FIXED import/export issues
 
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
+import { Layout } from './pages/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
-// Import pages
+// Import pages - using default imports since they're default exports
 import { Home } from './pages/Home';
 import { Demo } from './pages/Demo';
 import { Login } from './pages/Login';
 import { SignUp } from './pages/SignUp';
 import { Profile } from './pages/Profile';
-import { Dashboard } from './pages/Dashboard';
+import Dashboard from './pages/Dashboard'; // 🔧 FIX: Default import, not named import
 import { GameLibrary } from './pages/GameLibrary';
-import FindGames from './pages/FindGames';
+import FindGames from './pages/FindGames'; // 🔧 FIX: Default import
 import Friends from './pages/Friends';
 import JoinGroup from './pages/JoinGroup';
-import GroupPage from './pages/GroupPage';
+import GroupPage from './pages/GroupPage'; // 🔧 FIX: Default import
 import ResultsPage from './pages/ResultsPage';
 
-// NEW: Import Live Voting Session
-import LiveVotingSession from './components/LiveVotingSession';
-
-const AppRoutes = () => {
-  return (
-    <Routes>
-      {/* Public routes */}
-      <Route path="/" element={<Home />} />
-      <Route path="/demo" element={<Demo />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<SignUp />} />
+export const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,
+    children: [
+      // Public routes
+      {
+        index: true,
+        element: <Home />
+      },
+      {
+        path: "demo",
+        element: <Demo />
+      },
+      {
+        path: "login",
+        element: <Login />
+      },
+      {
+        path: "signup",
+        element: <SignUp />
+      },
       
-      {/* Join group route - can be accessed without being logged in, but will redirect to login if needed */}
-      <Route path="/join/:inviteCode" element={<JoinGroup />} />
+      // Join group route - can be accessed without being logged in, but will redirect to login if needed
+      {
+        path: "join/:inviteCode",
+        element: <JoinGroup />
+      },
       
-      {/* Protected routes */}
-      <Route path="/dashboard" element={
-        <ProtectedRoute><Dashboard /></ProtectedRoute>
-      } />
+      // Protected routes
+      {
+        path: "dashboard",
+        element: <ProtectedRoute><Dashboard /></ProtectedRoute>
+      },
+      {
+        path: "profile", 
+        element: <ProtectedRoute><Profile /></ProtectedRoute>
+      },
+      {
+        path: "game-library",
+        element: <ProtectedRoute><GameLibrary /></ProtectedRoute>
+      },
+      {
+        path: "find-games",
+        element: <ProtectedRoute><FindGames /></ProtectedRoute>
+      },
+      {
+        path: "sessions", // Alternative path for find-games
+        element: <ProtectedRoute><FindGames /></ProtectedRoute>
+      },
+      {
+        path: "friends",
+        element: <ProtectedRoute><Friends /></ProtectedRoute>
+      },
+      {
+        path: "groups/:groupId",
+        element: <ProtectedRoute><GroupPage /></ProtectedRoute>
+      },
+      {
+        path: "groups", // Alternative path that redirects to dashboard
+        element: <ProtectedRoute><Dashboard /></ProtectedRoute>
+      },
+      {
+        path: "results/:sessionId",
+        element: <ProtectedRoute><ResultsPage /></ProtectedRoute>
+      },
       
-      <Route path="/profile" element={
-        <ProtectedRoute><Profile /></ProtectedRoute>
-      } />
-      
-      <Route path="/game-library" element={
-        <ProtectedRoute><GameLibrary /></ProtectedRoute>
-      } />
-      
-      <Route path="/find-games" element={
-        <ProtectedRoute><FindGames /></ProtectedRoute>
-      } />
-      
-      <Route path="/friends" element={
-        <ProtectedRoute><Friends /></ProtectedRoute>
-      } />
-      
-      <Route path="/groups/:groupId" element={
-        <ProtectedRoute><GroupPage /></ProtectedRoute>
-      } />
-      
-      <Route path="/results/:sessionId" element={
-        <ProtectedRoute><ResultsPage /></ProtectedRoute>
-      } />
-      
-      {/* NEW: Live Voting Route */}
-      <Route path="/live-voting/:sessionId" element={
-        <ProtectedRoute><LiveVotingSession /></ProtectedRoute>
-      } />
-      
-      {/* Alternative paths for better UX */}
-      <Route path="/sessions" element={
-        <ProtectedRoute><FindGames /></ProtectedRoute>
-      } />
-      
-      <Route path="/groups" element={
-        <ProtectedRoute><Dashboard /></ProtectedRoute>
-      } />
-      
-      {/* 404 - Catch all route */}
-      <Route path="*" element={
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-            <h1 className="text-4xl font-bold text-white mb-4">404</h1>
-            <p className="text-white/70 mb-6">Page not found</p>
-            <a 
-              href="/dashboard" 
-              className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
-            >
-              Go to Dashboard
-            </a>
+      // 404 - Catch all route
+      {
+        path: "*",
+        element: (
+          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
+              <h1 className="text-4xl font-bold text-white mb-4">404</h1>
+              <p className="text-white/70 mb-6">Page not found</p>
+              <a 
+                href="/dashboard" 
+                className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
+              >
+                Go to Dashboard
+              </a>
+            </div>
           </div>
-        </div>
-      } />
-    </Routes>
-  );
-};
-
-export default AppRoutes;
+        )
+      }
+    ]
+  }
+]);

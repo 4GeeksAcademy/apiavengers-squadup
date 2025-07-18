@@ -4,7 +4,15 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
-import LoadingState from './LoadingState';
+
+const LoadingState = ({ message }) => (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="text-center">
+            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-white/70">{message}</p>
+        </div>
+    </div>
+);
 
 const ProtectedRoute = ({ children }) => {
     const { store } = useGlobalReducer();

@@ -1,4 +1,4 @@
-// src/front/utils/groupValidation.js - Group validation utility functions for Phase 5
+// src/front/utils/groupValidation.js - Group validation utility functions
 
 /**
  * Validates a group ID to ensure it's a valid integer
@@ -313,110 +313,11 @@ export const validateInviteCode = (inviteCode) => {
   };
 };
 
-/**
- * Validate group creation data
- * @param {object} groupData - The group data to validate
- * @returns {object} - Validation result
- */
-export const validateGroupCreation = (groupData) => {
-  const errors = [];
-  
-  if (!groupData || typeof groupData !== 'object') {
-    return {
-      isValid: false,
-      errors: ['Group data is required']
-    };
-  }
-  
-  // Validate name
-  if (!groupData.name || typeof groupData.name !== 'string') {
-    errors.push('Group name is required');
-  } else {
-    const trimmedName = groupData.name.trim();
-    if (trimmedName.length < 2) {
-      errors.push('Group name must be at least 2 characters long');
-    } else if (trimmedName.length > 50) {
-      errors.push('Group name must be less than 50 characters');
-    }
-  }
-  
-  // Validate description (optional)
-  if (groupData.description && typeof groupData.description === 'string') {
-    if (groupData.description.trim().length > 500) {
-      errors.push('Group description must be less than 500 characters');
-    }
-  }
-  
-  // Validate max members (optional)
-  if (groupData.max_members !== undefined) {
-    const maxMembers = parseInt(groupData.max_members, 10);
-    if (isNaN(maxMembers) || maxMembers < 2 || maxMembers > 50) {
-      errors.push('Max members must be between 2 and 50');
-    }
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-};
-
-/**
- * Debounce function for API calls
- * @param {function} func - Function to debounce
- * @param {number} wait - Wait time in milliseconds
- * @returns {function} - Debounced function
- */
-export const debounce = (func, wait) => {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-};
-
-/**
- * Create a retry mechanism for failed operations
- * @param {function} operation - The operation to retry
- * @param {number} maxRetries - Maximum number of retries
- * @param {number} delay - Delay between retries (ms)
- * @returns {function} - Function that executes with retry logic
- */
-export const withRetry = (operation, maxRetries = 3, delay = 1000) => {
-  return async (...args) => {
-    let lastError;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await operation(...args);
-      } catch (error) {
-        lastError = error;
-        console.warn(`Attempt ${attempt} failed:`, error.message);
-        
-        if (attempt < maxRetries) {
-          // Exponential backoff
-          const waitTime = delay * Math.pow(2, attempt - 1);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
-      }
-    }
-    
-    throw lastError;
-  };
-};
-
 export default {
   validateGroupId,
   validateGroupObject,
   validateGroupPermissions,
   safeGroupOperation,
   handleGroupError,
-  validateInviteCode,
-  validateGroupCreation,
-  debounce,
-  withRetry
+  validateInviteCode
 };

@@ -1,94 +1,24 @@
-// src/front/pages/FindGames.jsx - PHASE 5 IMPLEMENTATION: Standardized UI/UX Components
+// src/front/pages/FindGames.jsx - FIXED with proper GameImage import
 
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
 
-// 🚀 PHASE 5: Import standardized components
-import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
-import { NetworkErrorState, SteamErrorState } from '../components/ErrorState';
+// 🔧 FIX 5: Import GameImage component instead of defining inline
+import GameImage from '../components/GameImage';
 
 const FindGames = () => {
     const { store } = useGlobalReducer();
     const [commonGames, setCommonGames] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null); // 🚀 PHASE 5: Enhanced error state
-    const [fetchError, setFetchError] = useState(null); // 🚀 PHASE 5: Specific fetch error
+    const [error, setError] = useState(null);
+    const [fetchError, setFetchError] = useState(null);
     const [filters, setFilters] = useState({
         genre: '',
         multiplayer: false,
         minCoverage: 0
     });
-
-    // Inline GameImage component with robust error handling
-    const GameImage = ({ src, alt, className = "", fallbackText = "Game" }) => {
-        const [imageError, setImageError] = useState(false);
-        const [imageLoading, setImageLoading] = useState(true);
-
-        // Create a simple inline SVG fallback
-        const createSVGFallback = (text) => {
-            const svgContent = `
-                <svg width="460" height="215" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
-                            <stop offset="100%" style="stop-color:#334155;stop-opacity:1" />
-                        </linearGradient>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#bg)"/>
-                    <rect x="15" y="15" width="430" height="185" fill="#475569" stroke="#64748b" stroke-width="1" rx="8" opacity="0.8"/>
-                    <text x="50%" y="45%" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="18" font-weight="bold">
-                        🎮 ${text.slice(0, 18)}
-                    </text>
-                    <text x="50%" y="65%" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="14">
-                        Gaming Content
-                    </text>
-                    <circle cx="50" cy="50" r="20" fill="#64748b" opacity="0.3"/>
-                    <circle cx="410" cy="165" r="15" fill="#64748b" opacity="0.3"/>
-                    <rect x="50" y="150" width="60" height="20" fill="#64748b" opacity="0.3" rx="4"/>
-                </svg>
-            `;
-            return `data:image/svg+xml;base64,${btoa(svgContent)}`;
-        };
-
-        const handleImageError = () => {
-            setImageError(true);
-            setImageLoading(false);
-        };
-
-        const handleImageLoad = () => {
-            setImageLoading(false);
-            setImageError(false);
-        };
-
-        if (imageError) {
-            return (
-                <img
-                    src={createSVGFallback(fallbackText)}
-                    alt={alt}
-                    className={className}
-                />
-            );
-        }
-
-        return (
-            <>
-                {imageLoading && (
-                    <div className={`${className} bg-slate-700 flex items-center justify-center animate-pulse`}>
-                        <span className="text-slate-400 text-2xl">⏳</span>
-                    </div>
-                )}
-                <img
-                    src={src}
-                    alt={alt}
-                    className={`${className} ${imageLoading ? 'hidden' : 'block'}`}
-                    onError={handleImageError}
-                    onLoad={handleImageLoad}
-                />
-            </>
-        );
-    };
 
     // Enhanced mock data with reliable CDN images for demo purposes
     const mockGames = [
@@ -145,42 +75,6 @@ const FindGames = () => {
             genres: ["FPS", "Tactical", "Competitive"],
             multiplayer: true,
             short_description: "The legendary tactical FPS returns with enhanced graphics and gameplay"
-        },
-        {
-            id: 7,
-            name: "Fall Guys",
-            header_image: "https://cdn.akamai.steamstatic.com/steam/apps/1097150/header.jpg",
-            ownership_stats: { owners: 2, coverage_percentage: 50 },
-            genres: ["Party", "Platformer", "Battle Royale"],
-            multiplayer: true,
-            short_description: "Colorful battle royale party game with obstacle courses and mini-games"
-        },
-        {
-            id: 8,
-            name: "Dead by Daylight",
-            header_image: "https://cdn.akamai.steamstatic.com/steam/apps/381210/header.jpg",
-            ownership_stats: { owners: 3, coverage_percentage: 75 },
-            genres: ["Horror", "Survival", "Asymmetric"],
-            multiplayer: true,
-            short_description: "Asymmetric survival horror where one player hunts four survivors"
-        },
-        {
-            id: 9,
-            name: "Overwatch 2",
-            header_image: "https://cdn.akamai.steamstatic.com/steam/apps/2357570/header.jpg",
-            ownership_stats: { owners: 4, coverage_percentage: 100 },
-            genres: ["Hero Shooter", "FPS", "Team-based"],
-            multiplayer: true,
-            short_description: "Team-based hero shooter with diverse characters and abilities"
-        },
-        {
-            id: 10,
-            name: "Phasmophobia",
-            header_image: "https://cdn.akamai.steamstatic.com/steam/apps/739630/header.jpg",
-            ownership_stats: { owners: 3, coverage_percentage: 75 },
-            genres: ["Horror", "Co-op", "Investigation"],
-            multiplayer: true,
-            short_description: "Cooperative ghost hunting horror game with realistic investigation tools"
         }
     ];
 
@@ -188,7 +82,6 @@ const FindGames = () => {
         fetchCommonGames();
     }, [store.user]);
 
-    // 🚀 PHASE 5: Enhanced fetchCommonGames with better error handling
     const fetchCommonGames = async () => {
         console.log('🎮 Fetching common games...');
         setLoading(true);
@@ -295,7 +188,6 @@ const FindGames = () => {
         }
     };
 
-    // 🚀 PHASE 5: Enhanced retry function
     const handleRetry = () => {
         fetchCommonGames();
     };
@@ -330,9 +222,15 @@ const FindGames = () => {
         return 'Partial Match';
     };
 
-    // 🚀 PHASE 5: Use standardized PageLoadingState
     if (loading) {
-        return <PageLoadingState message="Finding games you can play together..." />;
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-white/70">Finding games you can play together...</p>
+                </div>
+            </div>
+        );
     }
 
     return (
@@ -385,16 +283,32 @@ const FindGames = () => {
                     </div>
                 )}
 
-                {/* 🚀 PHASE 5: Enhanced error display for fetch errors */}
+                {/* Enhanced error display for fetch errors */}
                 {fetchError && (
-                    <div className="mb-6">
-                        <NetworkErrorState 
-                            error={fetchError}
-                            onRetry={handleRetry}
-                            onRefresh={() => window.location.reload()}
-                            helpText="Check your Steam connection and group memberships."
-                            className="max-w-2xl mx-auto"
-                        />
+                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                        <div className="flex items-start space-x-2 mb-3">
+                            <span className="text-red-400 text-xl">⚠️</span>
+                            <div className="flex-1">
+                                <span className="text-red-300 font-medium block">Connection Error</span>
+                                <p className="text-red-200 text-sm mt-1">{fetchError}</p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={handleRetry}
+                                className="px-4 py-2 bg-red-500/30 hover:bg-red-500/50 text-red-200 rounded-lg text-sm transition-colors"
+                            >
+                                🔄 Try Again
+                            </button>
+                            
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="px-4 py-2 bg-blue-500/30 hover:bg-blue-500/50 text-blue-200 rounded-lg text-sm transition-colors"
+                            >
+                                Refresh Page
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -452,7 +366,7 @@ const FindGames = () => {
                                 {store.user?.steam_connected ? 'Available Games' : 'Demo Games'} ({filteredGames.length})
                             </h2>
                             <div className="text-white/60 text-sm">
-                                {filteredGames.filter(g => g.ownership_stats.coverage_percentage === 100).length} perfect matches
+                                {filteredGames.filter(g => g.ownership_stats?.coverage_percentage === 100).length} perfect matches
                             </div>
                         </div>
                         

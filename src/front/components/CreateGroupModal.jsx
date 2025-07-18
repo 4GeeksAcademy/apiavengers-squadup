@@ -1,9 +1,9 @@
-// src/front/components/CreateGroupModal.jsx - ENHANCED with validation
+// src/front/components/CreateGroupModal.jsx - FIXED with onSubmit prop handling
 
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 
-const CreateGroupModal = ({ isOpen, onClose, onSubmit }) => {
+const CreateGroupModal = ({ isOpen, onClose, onSubmit, onGroupCreated }) => {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -65,7 +65,7 @@ const CreateGroupModal = ({ isOpen, onClose, onSubmit }) => {
         }
     };
 
-    // 🔧 ENHANCED: Form submission with error handling
+    // 🔧 FIX 2: Enhanced form submission with error handling
     const handleSubmit = async (e) => {
         e.preventDefault();
         
@@ -87,18 +87,28 @@ const CreateGroupModal = ({ isOpen, onClose, onSubmit }) => {
             
             console.log('🚀 Creating group with data:', groupData);
             
-            await onSubmit(groupData);
+            // Use onSubmit if provided, otherwise onGroupCreated (backward compatibility)
+            const submitHandler = onSubmit || onGroupCreated;
             
-            // Reset form on success
-            setFormData({
-                name: '',
-                description: '',
-                isPublic: false,
-                maxMembers: 10
-            });
-            setErrors({});
-            
-            toast.success('Group created successfully!');
+            if (submitHandler) {
+                const result = await submitHandler(groupData);
+                
+                // Only close modal if submission was successful
+                if (result !== false) { // Allow handler to return false to prevent closing
+                    setFormData({
+                        name: '',
+                        description: '',
+                        isPublic: false,
+                        maxMembers: 10
+                    });
+                    setErrors({});
+                    onClose();
+                    toast.success('Group created successfully!');
+                }
+            } else {
+                console.error('No submit handler provided to CreateGroupModal');
+                toast.error('Configuration error: No submit handler');
+            }
         } catch (error) {
             console.error('❌ Error creating group:', error);
             toast.error(error.message || 'Failed to create group');
@@ -283,21 +293,6 @@ const CreateGroupModal = ({ isOpen, onClose, onSubmit }) => {
                                 </label>
                             </div>
                         </div>
-                    </div>
-
-                    {/* Features Preview */}
-                    <div className="bg-white/5 rounded-xl p-4">
-                        <h4 className="text-white font-medium mb-2 flex items-center">
-                            <span className="mr-2">✨</span>
-                            Your group will include:
-                        </h4>
-                        <ul className="text-white/70 text-sm space-y-1">
-                            <li>🎮 Game library comparison</li>
-                            <li>🗳️ Democratic game voting</li>
-                            <li>📊 Live voting results</li>
-                            <li>🔗 Easy invite sharing</li>
-                            <li>👥 Member management</li>
-                        </ul>
                     </div>
 
                     {/* Actions */}
