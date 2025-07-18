@@ -1,384 +1,400 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { GamingLink } from './GamingAnimations';
+// src/front/pages/Dashboard.jsx - FIXED hooks issue + enhanced components
+
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
-import authService from '../store/authService.js';
-import steamService from '../services/steamService.js';
+import authService from '../store/authService';
 import toast from 'react-hot-toast';
 
-gsap.registerPlugin(ScrollTrigger);
+// 🔧 FIX 1: Import the enhanced components
+import JoinGroupInput from '../components/JoinGroupInput';
+import GroupActionButtons from '../components/GroupActionButtons';
+import CreateGroupModal from '../components/CreateGroupModal';
+import CommonGamesList from '../components/CommonGamesList';
 
-export const Navbar = () => {
-    const { store, dispatch } = useGlobalReducer();
-    const isAuthenticated = store.isAuthenticated;
+const Dashboard = () => {
+    const { store } = useGlobalReducer();
+    // 🔧 FIX: Declare ALL hooks first, before any conditional logic
+    const [groups, setGroups] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+    // 🔧 FIX: Get user AFTER hooks are declared
     const user = store.user;
-    const [showUserMenu, setShowUserMenu] = useState(false);
-    const [showExploreMenu, setShowExploreMenu] = useState(false);
-    const [isConnectingSteam, setIsConnectingSteam] = useState(false);
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const location = useLocation();
-    const navigate = useNavigate();
-    const dropdownRef = useRef(null);
-    const exploreDropdownRef = useRef(null);
-
-    const authPages = ['/login', '/signup'];
-    const isAuthPage = authPages.includes(location.pathname);
-
-    if (isAuthPage) {
-        return null;
-    }
-
-    const handleToggle = (event) => {
-        event.stopPropagation();
-        console.log('Profile button clicked, current showUserMenu:', showUserMenu);
-        setShowUserMenu(!showUserMenu);
-        setShowExploreMenu(false);
-    };
-
-    const handleExploreToggle = (event) => {
-        event.stopPropagation();
-        setShowExploreMenu(!showExploreMenu);
-        setShowUserMenu(false);
-    };
 
     useEffect(() => {
-        const handleOutsideClick = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setShowUserMenu(false);
-            }
-            if (exploreDropdownRef.current && !exploreDropdownRef.current.contains(event.target)) {
-                setShowExploreMenu(false);
-            }
-        };
-        if (showUserMenu || showExploreMenu) {
-            document.addEventListener('click', handleOutsideClick);
+        if (user) {
+            fetchUserGroups();
+        } else {
+            setLoading(false);
         }
-        return () => document.removeEventListener('click', handleOutsideClick);
-    }, [showUserMenu, showExploreMenu]);
+    }, [user]);
 
-    const handleLogout = () => {
-        console.log('Logout clicked');
-        dispatch({ type: 'logout' });
-        setShowUserMenu(false);
-        navigate('/');
-    };
-
-    const handleSteamIntegration = async () => {
-        console.log('Steam Integration clicked');
-        setIsConnectingSteam(true);
+    const fetchUserGroups = async () => {
+        setLoading(true);
+        setError(null);
         
         try {
-            const useOpenID = window.confirm(
-                'Choose Steam connection method:\n\n' +
-                'OK = Use Steam OpenID (Automatic - Recommended)\n' +
-                'Cancel = Enter Steam ID manually'
-            );
-
-            if (useOpenID) {
-                await steamService.connectViaOpenID('/dashboard?steam_connected=true');
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                setGroups(data.groups || []);
+                console.log('✅ Fetched user groups:', data.groups?.length || 0);
             } else {
-                const instructions = steamService.showSteamIdInstructions();
-                const steamId = prompt(
-                    `${instructions.title}\n\n` +
-                    `${instructions.steps.join('\n')}\n\n` +
-                    `Example: ${instructions.example}\n\n` +
-                    `Note: ${instructions.note}\n\n` +
-                    'Enter your 17-digit Steam ID:'
-                );
-
-                if (!steamId) {
-                    setIsConnectingSteam(false);
-                    return;
-                }
-
-                const result = await steamService.connectManually(steamId);
-                
-                if (result.success) {
-                    dispatch({ 
-                        type: 'set_user', 
-                        payload: result.user 
-                    });
-                    
-                    toast.success(
-                        `Steam connected! ${result.newGames} games added to your library.`
-                    );
-                    
-                    setShowUserMenu(false);
-                } else {
-                    throw new Error(result.error || 'Failed to connect Steam account');
-                }
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to fetch groups');
             }
-        } catch (error) {
-            console.error('Steam integration failed:', error);
-            const friendlyError = steamService.getErrorMessage(error);
-            toast.error(friendlyError);
+        } catch (err) {
+            console.error('❌ Error fetching groups:', err);
+            setError(err.message);
         } finally {
-            setIsConnectingSteam(false);
+            setLoading(false);
         }
     };
 
-    const handleProfileClick = () => {
-        console.log('Profile Settings clicked');
-        setShowUserMenu(false);
+    const handleGroupCreated = (newGroup) => {
+        console.log('🎉 New group created:', newGroup);
+        setGroups(prev => [...prev, newGroup]);
+        toast.success(`Group "${newGroup.name}" created successfully!`);
     };
 
-    const handleDashboardClick = () => {
-        console.log('Dashboard clicked');
-        setShowUserMenu(false);
+    const handleGroupJoined = (joinedGroup) => {
+        console.log('🎉 Joined group:', joinedGroup);
+        setGroups(prev => [...prev, joinedGroup]);
+        toast.success(`Joined "${joinedGroup.name}"!`);
     };
 
-    const handleFindGamesClick = () => {
-        console.log('Find Games clicked');
-        setShowUserMenu(false);
-    };
-
-    const handlePinToggle = () => {
-        setIsCollapsed(!isCollapsed);
-        // Close any open dropdowns when collapsing
-        if (!isCollapsed) {
-            setShowUserMenu(false);
-            setShowExploreMenu(false);
+    const handleGroupUpdate = (action, groupDeleted, groupIdOrData) => {
+        console.log('🔄 Group update:', { action, groupDeleted, groupIdOrData });
+        
+        switch (action) {
+            case 'deleted':
+            case 'auto_deleted':
+            case 'auto_deleted_manual':
+                setGroups(prev => prev.filter(g => g.id !== groupIdOrData));
+                break;
+            case 'left_with_transfer':
+            case 'member_left':
+                setGroups(prev => prev.filter(g => g.id !== groupIdOrData));
+                break;
+            case 'refreshed':
+                if (typeof groupIdOrData === 'object') {
+                    setGroups(prev => prev.map(g => g.id === groupIdOrData.id ? groupIdOrData : g));
+                } else {
+                    fetchUserGroups();
+                }
+                break;
+            default:
+                fetchUserGroups();
         }
     };
+
+    // 🔧 FIX: Loading check AFTER all hooks
+    if (loading && groups.length === 0) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 flex items-center justify-center">
+                <div className="text-white text-center">
+                    <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+                    <p>Loading your gaming dashboard...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // 🔧 FIX: User check AFTER hooks and loading
+    if (!user) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 flex items-center justify-center">
+                <div className="text-white text-center">
+                    <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+                    <p>Loading user data...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <nav className="fixed top-4 left-4 right-4 z-50">
-            {/* Collapsed state - just the S logo */}
-            {isCollapsed ? (
-                <div className="flex justify-center">
-                    <button
-                        onClick={handlePinToggle}
-                        className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-300 group"
-                        title="Expand navbar"
-                    >
-                        <span className="text-white font-bold text-lg group-hover:rotate-12 transition-transform duration-300">S</span>
-                    </button>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
+            <div className="max-w-6xl mx-auto">
+                
+                {/* Header Section */}
+                <div className="text-center mb-12">
+                    <h1 className="text-5xl font-bold text-white mb-4 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
+                        Gaming Dashboard
+                    </h1>
+                    <p className="text-white/70 text-lg">
+                        Welcome back, {user?.username || 'Gamer'}! Ready to find your next adventure?
+                    </p>
                 </div>
-            ) : (
-                /* Full navbar */
-                <div className="navbar-glass" style={{ minWidth: '1200px', margin: '0 auto' }}>
-                    <div className="flex justify-between items-center px-6 py-2">
-                        <div className="flex items-center space-x-4">
-                            <Link 
-                                to="/"
-                                className="flex items-center space-x-3 group"
-                            >
-                                <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                                    <span className="text-white font-bold text-lg">S</span>
-                                </div>
-                                <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
-                                    SquadUp
-                                </span>
-                            </Link>
 
-                            {/* Pin/Collapse button between logo and navigation */}
-                            <button
-                                onClick={handlePinToggle}
-                                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 flex items-center justify-center text-white/70 hover:text-white transition-all duration-300 ml-2"
-                                title="Collapse Nav"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                                </svg>
-                            </button>
+                {/* Quick Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 text-center">
+                        <div className="text-3xl font-bold text-cyan-400 mb-2">{groups.length}</div>
+                        <div className="text-white/70">Gaming Groups</div>
+                    </div>
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 text-center">
+                        <div className="text-3xl font-bold text-purple-400 mb-2">
+                            {user?.steam_connected ? '✅' : '⚠️'}
                         </div>
-
-                        {/* Much more spacing between navigation items */}
-                        <div className="flex items-center space-x-16">
-                        {isAuthenticated ? (
-                            <>
-                                <Link to="/dashboard" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
-                                    Dashboard
-                                </Link>
-                                <Link to="/groups" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
-                                    Groups
-                                </Link>
-                                <Link to="/sessions" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block whitespace-nowrap">
-                                    Find Games
-                                </Link>
-                                <Link to="/game-library" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block whitespace-nowrap">
-                                    Game Library
-                                </Link>
-                                <Link to="/friends" className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block">
-                                    Friends
-                                </Link>
-                            </>
-                        ) : (
-                            <div className="relative z-[60]">
-                                <button
-                                    onClick={handleExploreToggle}
-                                    className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block"
-                                >
-                                    Explore
-                                </button>
-                                
-                                {showExploreMenu && (
-                                    <div 
-                                        ref={exploreDropdownRef}
-                                        className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`} 
-                                        style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}  
-                                        onClick={(e) => e.stopPropagation()}
-                                    >  
-                                        {/* Profile (Home) */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                            <div className="flex items-center mb-4">
-                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                    <span className="text-xl">👤</span>
-                                                </div>
-                                                <h3 className="text-xl font-bold text-white">Profile</h3>
-                                            </div>
-                                            <p className="text-white/70">Manage your gaming profile, connect Steam, and view your game library.</p>
-                                        </div>
-                                        
-                                        {/* Features */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                            <div className="flex items-center mb-4">
-                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                    <span className="text-xl">⚙️</span>
-                                                </div>
-                                                <h3 className="text-xl font-bold text-white">Features</h3>
-                                            </div>
-                                            <p className="text-white/70">Create account, link Steam to sync games, create/join groups, vote on common games, and play the winner!</p>
-                                        </div>
-                                        
-                                        {/* Gaming */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                            <div className="flex items-center mb-4">
-                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                    <span className="text-xl">🎮</span>
-                                                </div>
-                                                <h3 className="text-xl font-bold text-white">Gaming</h3>
-                                            </div>
-                                            <p className="text-white/70">Stay tuned!</p>
-                                        </div>
-                                        
-                                        {/* Community */}
-                                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                            <div className="flex items-center mb-4">
-                                                <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                    <span className="text-xl">👥</span>
-                                                </div>
-                                                <h3 className="text-xl font-bold text-white">Community</h3>
-                                            </div>
-                                            <p className="text-white/70">Stay tuned!</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {isAuthenticated ? (
-                            <div className="flex items-center space-x-6">
-                                {/* Steam Connection Status Indicator */}
-                                {user && !user.steam_connected && (
-                                    <div className="hidden sm:flex items-center space-x-2 px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-lg">
-                                        <span className="text-orange-300 text-sm">🎮</span>
-                                        <span className="text-orange-300 text-sm font-medium">Connect Steam</span>
-                                    </div>
-                                )}
-
-                                <div className="relative z-[60]">
-                                    <button 
-                                        onClick={handleToggle}
-                                        className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
-                                    >
-                                        {user?.avatar_url ? (
-                                            <img src={user.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full" />
-                                        ) : (
-                                            <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center">
-                                                <span className="text-white font-bold text-sm">
-                                                    {user?.username?.[0]?.toUpperCase() || 'U'}
-                                                </span>
-                                            </div>
-                                        )}
-                                        <span className="text-white font-medium hidden sm:block">
-                                            Profile
-                                        </span>
-                                        <svg className={`w-4 h-4 text-white/60 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </button>
-                                    
-                                    <div 
-                                        ref={dropdownRef}
-                                        className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} 
-                                        style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}  
-                                        onClick={(e) => e.stopPropagation()}
-                                    >  
-                                        <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>👤</span>
-                                                <span>Profile Settings</span>
-                                            </span>
-                                        </Link>
-                                        <Link to="/dashboard" className="dropdown-item" onClick={handleDashboardClick}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>📊</span>
-                                                <span>Dashboard</span>
-                                            </span>
-                                        </Link>
-                                        <Link to="/sessions" className="dropdown-item" onClick={handleFindGamesClick}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>🎮</span>
-                                                <span>Find Games</span>
-                                            </span>
-                                        </Link>
-                                        
-                                        {/* Enhanced Steam Integration Button */}
-                                        <button 
-                                            className="dropdown-item" 
-                                            onClick={handleSteamIntegration}
-                                            disabled={isConnectingSteam}
-                                        >
-                                            <span className="flex items-center space-x-2">
-                                                {isConnectingSteam ? (
-                                                    <>
-                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                                        <span>Connecting...</span>
-                                                    </>
-                                                ) : user?.steam_connected ? (
-                                                    <>
-                                                        <span>✅</span>
-                                                        <span>Steam Connected</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <span>🔗</span>
-                                                        <span>Connect Steam</span>
-                                                    </>
-                                                )}
-                                            </span>
-                                        </button>
-                                        
-                                        <hr className="my-2 border-white/20" />
-                                        <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
-                                            <span className="flex items-center space-x-2">
-                                                <span>🚪</span>
-                                                <span>Logout</span>
-                                            </span>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex items-center space-x-3">
-                                <Link to="/login" className="text-white/80 hover:text-white transition-colors duration-300 font-medium">
-                                    Login
-                                </Link>
-                                <GamingLink
-                                    to="/signup"
-                                    variant="primary"
-                                >
-                                    Sign Up
-                                </GamingLink>
-                            </div>
-                        )}
+                        <div className="text-white/70">Steam Status</div>
+                    </div>
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 text-center">
+                        <div className="text-3xl font-bold text-green-400 mb-2">
+                            {user?.total_games || 0}
                         </div>
+                        <div className="text-white/70">Games in Library</div>
                     </div>
                 </div>
+
+                {/* Steam Connection Status */}
+                {!user?.steam_connected && (
+                    <div className="mb-8 p-6 bg-orange-500/10 border border-orange-500/30 rounded-2xl">
+                        <div className="flex items-center space-x-4">
+                            <div className="text-4xl">🎮</div>
+                            <div className="flex-1">
+                                <h3 className="text-xl font-semibold text-orange-300 mb-2">
+                                    Connect Your Steam Account
+                                </h3>
+                                <p className="text-orange-200 mb-4">
+                                    Link your Steam account to sync your game library and find common games with friends!
+                                </p>
+                                <Link 
+                                    to="/profile"
+                                    className="inline-flex px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors duration-200"
+                                >
+                                    Connect Steam Now
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Error Display */}
+                {error && (
+                    <div className="mb-8 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                        <div className="flex items-start space-x-2 mb-3">
+                            <span className="text-red-400 text-xl">⚠️</span>
+                            <div className="flex-1">
+                                <span className="text-red-300 font-medium block">Error Loading Groups</span>
+                                <p className="text-red-200 text-sm mt-1">{error}</p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={fetchUserGroups}
+                                className="px-4 py-2 bg-red-500/30 hover:bg-red-500/50 text-red-200 rounded-lg text-sm transition-colors"
+                            >
+                                🔄 Try Again
+                            </button>
+                            
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="px-4 py-2 bg-blue-500/30 hover:bg-blue-500/50 text-blue-200 rounded-lg text-sm transition-colors"
+                            >
+                                Refresh Page
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                    <button
+                        onClick={() => setIsCreateModalOpen(true)}
+                        className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2"
+                    >
+                        <span>👥</span>
+                        <span>Create New Group</span>
+                    </button>
+                    
+                    <Link 
+                        to="/sessions"
+                        className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2"
+                    >
+                        <span>🎮</span>
+                        <span>Find Games</span>
+                    </Link>
+                    
+                    <Link 
+                        to="/game-library"
+                        className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2"
+                    >
+                        <span>📚</span>
+                        <span>Game Library</span>
+                    </Link>
+                </div>
+
+                {/* Your Gaming Groups */}
+                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 mb-8">
+                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
+                        <span className="mr-3">👥</span>
+                        Your Gaming Groups
+                    </h2>
+                    
+                    {loading ? (
+                        <div className="text-center py-8">
+                            <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+                            <p className="text-white/70">Loading your groups...</p>
+                        </div>
+                    ) : groups.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {groups.map(group => (
+                                <div key={group.id} className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all duration-300">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-xl font-semibold text-white">{group.name}</h3>
+                                        <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-sm">
+                                            {group.current_members || group.members?.length || 0} members
+                                        </span>
+                                    </div>
+                                    
+                                    {group.description && (
+                                        <p className="text-white/70 text-sm mb-4">{group.description}</p>
+                                    )}
+                                    
+                                    <div className="flex items-center justify-between text-sm text-white/60 mb-4">
+                                        <span>
+                                            {group.creator?.username === user?.username ? '👑 Your Group' : `Created by ${group.creator?.username || 'Unknown'}`}
+                                        </span>
+                                        <span>
+                                            {group.is_public ? '🌐 Public' : '🔒 Private'}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between">
+                                        <Link 
+                                            to={`/groups/${group.id}`}
+                                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors duration-200"
+                                        >
+                                            View Group
+                                        </Link>
+                                        
+                                        {/* 🔧 FIX 1: Use GroupActionButtons component */}
+                                        <GroupActionButtons 
+                                            group={group}
+                                            user={user}
+                                            onGroupUpdate={handleGroupUpdate}
+                                            className="flex-1 ml-3"
+                                        />
+                                    </div>
+                                    
+                                    {/* Show invite code for group creators */}
+                                    {group.creator?.username === user?.username && group.invite_code && (
+                                        <div className="mt-4 p-3 bg-black/20 rounded-lg">
+                                            <div className="text-xs text-white/60 mb-1">Invite Code:</div>
+                                            <div className="font-mono text-sm text-white">{group.invite_code}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-8">
+                            <div className="text-4xl mb-4">👥</div>
+                            <h3 className="text-xl font-bold text-white mb-2">No Groups Yet</h3>
+                            <p className="text-white/70 mb-6">
+                                Create your first gaming group or join an existing one to get started!
+                            </p>
+                            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                <button
+                                    onClick={() => setIsCreateModalOpen(true)}
+                                    className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
+                                >
+                                    Create First Group
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* 🔧 FIX 1: Add JoinGroupInput component */}
+                <div className="mb-8">
+                    <JoinGroupInput onGroupJoined={handleGroupJoined} />
+                </div>
+
+                {/* Common Games Preview */}
+                {groups.length > 0 && groups[0] && (
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
+                        <CommonGamesList groupId={groups[0].id} />
+                    </div>
+                )}
+
+                {/* Quick Actions */}
+                <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
+                    <h2 className="text-2xl font-bold text-white mb-6">Quick Actions</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <Link 
+                            to="/friends"
+                            className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                        >
+                            <span className="text-2xl">👥</span>
+                            <div>
+                                <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Find Friends</h4>
+                                <p className="text-white/60 text-sm">Connect with other gamers</p>
+                            </div>
+                        </Link>
+                        
+                        <Link 
+                            to="/profile"
+                            className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                        >
+                            <span className="text-2xl">⚙️</span>
+                            <div>
+                                <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Profile Settings</h4>
+                                <p className="text-white/60 text-sm">Manage your account</p>
+                            </div>
+                        </Link>
+                        
+                        <Link 
+                            to="/sessions"
+                            className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                        >
+                            <span className="text-2xl">🎯</span>
+                            <div>
+                                <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Start Session</h4>
+                                <p className="text-white/60 text-sm">Begin game voting</p>
+                            </div>
+                        </Link>
+                    </div>
+                </div>
+            </div>
+
+            {/* 🔧 FIX 3: Enhanced CreateGroupModal with proper onSubmit */}
+            {isCreateModalOpen && (
+                <CreateGroupModal
+                    isOpen={isCreateModalOpen}
+                    onClose={() => setIsCreateModalOpen(false)}
+                    onSubmit={async (groupData) => {
+                        try {
+                            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                            const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`, {
+                                method: 'POST',
+                                body: JSON.stringify(groupData)
+                            });
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                handleGroupCreated(data.group);
+                                setIsCreateModalOpen(false);
+                                return true; // Success
+                            } else {
+                                const errorData = await response.json();
+                                throw new Error(errorData.error || 'Failed to create group');
+                            }
+                        } catch (error) {
+                            console.error('❌ Error in group creation:', error);
+                            toast.error(error.message);
+                            return false; // Prevent modal from closing
+                        }
+                    }}
+                />
             )}
-        </nav>
+        </div>
     );
 };
+
+export default Dashboard;

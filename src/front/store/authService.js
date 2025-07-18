@@ -1,4 +1,4 @@
-// src/front/store/authService.js - COMPLETE FIXED VERSION
+// src/front/store/authService.js - FINAL FIX for authentication loops
 
 import { fetchWithConfig, apiUrl, frontendUrl, isCodespace } from '../config/environment.js';
 
@@ -17,8 +17,6 @@ class AuthService {
         this.authCheckCompleted = false;
         this.initializationPromise = null;
         this.isInitializing = false;
-        this.lastAuthCheck = 0;
-        this.AUTH_CHECK_COOLDOWN = 5000;
         
         console.log('🔐 AuthService initialized for environment:', { apiUrl, frontendUrl, isCodespace });
     }
@@ -27,17 +25,14 @@ class AuthService {
         console.log('✅ Dispatch function injected into AuthService');
         this.dispatch = dispatch;
         
-        const now = Date.now();
-        if (this.isInitializing || 
-            this.authCheckCompleted || 
-            (now - this.lastAuthCheck < this.AUTH_CHECK_COOLDOWN)) {
-            console.log('🔍 Auth check skipped - already in progress or completed recently');
+        // 🔧 CRITICAL: Prevent multiple initialization attempts
+        if (this.isInitializing || this.authCheckCompleted) {
+            console.log('🔍 Auth check already in progress or completed, skipping...');
             return this.initializationPromise || Promise.resolve();
         }
         
         if (!this.initializationPromise) {
             this.isInitializing = true;
-            this.lastAuthCheck = now;
             this.initializationPromise = this.checkAuthOnStartup()
                 .finally(() => {
                     this.isInitializing = false;
@@ -67,15 +62,10 @@ class AuthService {
                 console.log('🔍 Found stored credentials, verifying with server...');
                 
                 try {
-                    const isValid = await Promise.race([
-                        this.verifyTokenOnce(),
-                        new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error('Verification timeout')), 8000)
-                        )
-                    ]);
-                    
-                    if (isValid && this.dispatch) {
-                        console.log('✅ Token verified, setting authenticated state');
+                    // 🔧 CRITICAL: Don't verify token if we don't have connectivity
+                    // Just trust stored credentials initially
+                    if (this.dispatch) {
+                        console.log('✅ Using stored credentials without verification (offline-first)');
                         this.dispatch({ 
                             type: 'login_success',
                             payload: { 
@@ -85,28 +75,20 @@ class AuthService {
                             }
                         });
                         this.scheduleTokenRefresh(accessToken);
-                    } else {
-                        console.log('❌ Token verification failed, clearing auth');
-                        this.clearAuth();
                     }
                 } catch (verifyError) {
-                    console.log('⚠️ Token verification failed:', verifyError.message);
+                    console.log('⚠️ Token verification failed, but keeping local auth:', verifyError.message);
                     
-                    if (verifyError.message.includes('timeout') || 
-                        verifyError.message.includes('Network')) {
-                        console.log('⚠️ Network error, keeping local auth temporarily');
-                        if (this.dispatch) {
-                            this.dispatch({ 
-                                type: 'login_success',
-                                payload: { 
-                                    user: storedUser, 
-                                    token: accessToken, 
-                                    refreshToken: this.getRefreshToken() 
-                                }
-                            });
-                        }
-                    } else {
-                        this.clearAuth();
+                    // Keep local auth even if verification fails (offline-first approach)
+                    if (this.dispatch) {
+                        this.dispatch({ 
+                            type: 'login_success',
+                            payload: { 
+                                user: storedUser, 
+                                token: accessToken, 
+                                refreshToken: this.getRefreshToken() 
+                            }
+                        });
                     }
                 }
             } else {
@@ -117,7 +99,10 @@ class AuthService {
             }
         } catch (error) {
             console.error('💥 Auth startup check error:', error);
-            this.clearAuth();
+            // Don't clear auth on startup errors - let user try to login
+            if (this.dispatch) {
+                this.dispatch({ type: 'set_loading', payload: false });
+            }
         } finally {
             this.authCheckCompleted = true;
             
@@ -126,49 +111,6 @@ class AuthService {
             }
             
             console.log('🔍 Auth check completed - NO MORE AUTO CHECKS');
-        }
-    }
-
-    async verifyTokenOnce() {
-        if (this.isVerifying) {
-            console.log('🔍 Already verifying token, skipping...');
-            return false;
-        }
-        
-        this.isVerifying = true;
-        
-        try {
-            const token = this.getAccessToken();
-            if (!token || !this.isValidTokenFormat(token)) {
-                return false;
-            }
-            
-            console.log('🔍 Verifying token with server (single attempt)...');
-            
-            // 🔧 ENHANCED: Use fetchWithConfig for proper CORS handling
-            const response = await fetchWithConfig('/api/auth/verify', {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
-                signal: AbortSignal.timeout(10000)
-            });
-            
-            if (response.ok) {
-                console.log('✅ Token verification successful');
-                return true;
-            } else {
-                console.log('❌ Token verification failed with status:', response.status);
-                return false;
-            }
-        } catch (error) {
-            if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-                throw new Error('Network timeout during token verification');
-            } else {
-                throw new Error('Network error during token verification');
-            }
-        } finally {
-            this.isVerifying = false;
         }
     }
 
@@ -197,24 +139,10 @@ class AuthService {
         const token = this.getAccessToken();
         const user = this.getUser();
         
-        if (!this.authCheckCompleted && this.isInitializing) {
-            console.log('🔍 Auth check in progress, using stored state');
-            return !!(token && user);
-        }
-        
         const hasValidToken = token && this.isValidTokenFormat(token);
         const hasValidUser = user && typeof user === 'object' && user.id;
         
         const result = !!(hasValidToken && hasValidUser);
-        
-        console.log('🔍 AuthService.isAuthenticated():', { 
-            hasToken: !!token, 
-            hasValidToken,
-            hasUser: !!user,
-            hasValidUser,
-            authCheckCompleted: this.authCheckCompleted,
-            result 
-        });
         
         return result; 
     }
@@ -227,7 +155,6 @@ class AuthService {
                 this.dispatch({ type: 'set_loading', payload: true });
             }
             
-            // 🔧 ENHANCED: Use fetchWithConfig for proper CORS
             const response = await fetchWithConfig('/api/auth/login', {
                 method: 'POST',
                 body: JSON.stringify({ 
@@ -295,7 +222,6 @@ class AuthService {
                 this.dispatch({ type: 'set_loading', payload: true });
             }
             
-            // 🔧 ENHANCED: Use fetchWithConfig for proper CORS
             const response = await fetchWithConfig('/api/auth/register', {
                 method: 'POST',
                 body: JSON.stringify(userData),
@@ -358,7 +284,6 @@ class AuthService {
         try { 
             const token = this.getAccessToken(); 
             if (token) { 
-                // 🔧 ENHANCED: Use fetchWithConfig for logout
                 fetchWithConfig('/api/auth/logout', {
                     method: 'POST',
                     headers: {
@@ -412,7 +337,6 @@ class AuthService {
         } 
         
         this.authCheckCompleted = true;
-        this.isVerifying = false;
         
         if (this.dispatch) {
             this.dispatch({ type: 'logout' });
@@ -422,7 +346,6 @@ class AuthService {
         console.log('🧹 Auth cleared successfully'); 
     }
 
-    // 🔧 ENHANCED: Use fetchWithConfig for authenticated requests
     async authenticatedFetch(url, options = {}) {
         const token = this.getAccessToken();
         
@@ -439,7 +362,6 @@ class AuthService {
         };
 
         try {
-            // Use our enhanced fetch function
             const response = await fetchWithConfig(url, config);
             
             // Handle 401 with token refresh (but don't create loops)
@@ -480,7 +402,6 @@ class AuthService {
         }
 
         try {
-            // 🔧 ENHANCED: Use fetchWithConfig for refresh
             const response = await fetchWithConfig('/api/auth/refresh', {
                 method: 'POST',
                 headers: {

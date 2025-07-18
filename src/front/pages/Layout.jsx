@@ -1,8 +1,8 @@
-// src/front/pages/Layout.jsx - CRITICAL FIXES to prevent authentication loops
+// src/front/pages/Layout.jsx - FINAL FIX for authentication loops
 
 import React, { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { Navbar } from "../components/Navbar";
+import Navbar from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import authService from "../store/authService";
@@ -12,79 +12,67 @@ export const Layout = () => {
     const { store, dispatch } = useGlobalReducer();
     const location = useLocation();
     
-    // 🔧 CRITICAL FIX: Use ref to prevent multiple initializations
-    const initializationRef = useRef(false);
-    const lastLocationRef = useRef(location.pathname);
-    const initPromiseRef = useRef(null); // Track the initialization promise
+    // 🔧 CRITICAL FIX: Prevent multiple initialization attempts
+    const hasInitialized = useRef(false);
+    const isInitializing = useRef(false);
 
-    // 🔧 CRITICAL FIX: Single initialization effect that only runs once
+    // 🔧 CRITICAL FIX: Only initialize ONCE on mount
     useEffect(() => {
-        // CRITICAL: Check if already initialized
-        if (initializationRef.current) {
-            console.log('🏗️ Layout: Already initialized, skipping...');
+        // Prevent multiple initialization attempts
+        if (hasInitialized.current || isInitializing.current) {
+            console.log('🏗️ Layout: Already initialized or initializing, skipping...');
             return;
         }
 
-        // CRITICAL: Check if authService already completed auth check
+        // Check if authService already completed its check
         if (authService.authCheckCompleted) {
-            console.log('🏗️ Layout: AuthService already completed check, skipping...');
-            initializationRef.current = true;
+            console.log('🏗️ Layout: AuthService already completed, marking as initialized');
+            hasInitialized.current = true;
             return;
         }
 
-        console.log('🏗️ Layout: Starting one-time initialization...');
-        initializationRef.current = true;
+        console.log('🏗️ Layout: Starting ONE-TIME authentication initialization...');
+        isInitializing.current = true;
 
         const initializeAuth = async () => {
             try {
-                console.log('💉 Injecting dispatch into authService...');
-                
-                // 🔧 CRITICAL: Store the initialization promise to prevent concurrent calls
-                if (!initPromiseRef.current) {
-                    initPromiseRef.current = authService.setDispatch(dispatch);
+                // Only inject dispatch if not already done
+                if (!authService.dispatch) {
+                    console.log('💉 Injecting dispatch into authService...');
+                    await authService.setDispatch(dispatch);
+                } else {
+                    console.log('💉 Dispatch already injected, skipping...');
                 }
                 
-                await initPromiseRef.current;
-                console.log('✅ Layout initialization complete');
+                console.log('✅ Layout authentication initialization complete');
             } catch (error) {
                 console.error('❌ Layout initialization error:', error);
-                if (dispatch) {
-                    dispatch({ type: 'logout' });
-                    dispatch({ type: 'set_loading', payload: false });
-                }
+                // Don't clear auth on initialization errors - let the user try to login
+            } finally {
+                hasInitialized.current = true;
+                isInitializing.current = false;
             }
         };
 
         initializeAuth();
     }, []); // 🔧 CRITICAL: Empty dependency array - only run once
 
-    // 🔧 IMPROVED: Separate effect for handling route changes and pending invites only
+    // 🔧 Handle pending invites separately (no auth dependency)
     useEffect(() => {
-        // Only process if initialization is complete and we have a real route change
-        if (!initializationRef.current || !authService.authCheckCompleted) {
-            return;
-        }
-
-        // Only handle actual location changes, not initial load
-        if (lastLocationRef.current !== location.pathname) {
-            console.log('🗺️ Layout: Route changed from', lastLocationRef.current, 'to', location.pathname);
-            lastLocationRef.current = location.pathname;
-
-            // Handle pending invites only on route change when user is authenticated
-            if (store?.isAuthenticated && !store?.authLoading) {
-                const pendingInvite = sessionStorage.getItem('pending_invite');
-                if (pendingInvite) {
-                    console.log('🎫 Processing pending invite after route change:', pendingInvite);
-                    sessionStorage.removeItem('pending_invite');
-                    
-                    // Small delay to ensure navigation is complete
-                    setTimeout(() => {
-                        window.location.href = `/join/${pendingInvite}`;
-                    }, 100);
-                }
+        // Only handle pending invites when user is authenticated and not loading
+        if (store?.isAuthenticated && !store?.authLoading) {
+            const pendingInvite = sessionStorage.getItem('pending_invite');
+            if (pendingInvite) {
+                console.log('🎫 Processing pending invite:', pendingInvite);
+                sessionStorage.removeItem('pending_invite');
+                
+                // Small delay to ensure navigation is complete
+                setTimeout(() => {
+                    window.location.href = `/join/${pendingInvite}`;
+                }, 100);
             }
         }
-    }, [location.pathname, store?.isAuthenticated]); // 🔧 Only depend on route and final auth status
+    }, [store?.isAuthenticated, store?.authLoading]);
 
     return (
         <div className="flex flex-col min-h-screen">
