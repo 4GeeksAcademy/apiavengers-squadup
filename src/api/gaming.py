@@ -1,12 +1,13 @@
-# src/api/gaming.py - SIMPLIFIED VERSION that integrates with live_voting_system.py
+# src/api/gaming.py - FIXED VERSION with all missing endpoints and correct relationship usage
 
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from api.models import db, User, GamingGroup, GameSession, SteamGame, Vote
+from api.models import db, User, GamingGroup, GameSession, SteamGame, Vote, user_games  # FIXED: Added user_games import
 from api.utils import APIException, utc_now
 import secrets
 import string
 import json
+from sqlalchemy import func
 
 gaming = Blueprint('gaming', __name__)
 
@@ -25,9 +26,9 @@ def get_user_groups():
         if not user:
             return jsonify({'success': False, 'error': 'User not found'}), 404
         
-        # Get user's groups using the correct relationship name
+        # FIXED: Use the primary 'groups' relationship
         user_groups = []
-        for group in user.member_of_groups:  # Use correct relationship name
+        for group in user.groups:  # Changed from member_of_groups to groups
             group_data = {
                 'id': group.id,
                 'name': group.name,
@@ -163,7 +164,7 @@ def get_group_details(group_id):
                     'id': member.id,
                     'username': member.username,
                     'avatar_url': member.avatar_url or member.steam_avatar_url,
-                    'steam_connected': member.is_steam_connected,
+                    'steam_connected': member.steam_connected or member.is_steam_connected,
                     'total_games': member.total_games or 0
                 } for member in group.members
             ],
@@ -254,13 +255,107 @@ def leave_group(group_id):
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 # ============================================================================
-# MISSING ENDPOINTS THAT ACTIONS.JS EXPECTS
+# MISSING ENDPOINTS THAT FRONTEND EXPECTS - ADDED
 # ============================================================================
+
+@gaming.route('/groups/validate-invite/<invite_code>', methods=['GET'])
+@jwt_required()
+def validate_invite_code(invite_code):
+    """ADDED: Validate invite code - required by JoinGroup.jsx"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        group = GamingGroup.query.filter_by(invite_code=invite_code).first()
+        if not group:
+            return jsonify({
+                'success': False, 
+                'valid': False,
+                'error': 'Invalid invite code'
+            }), 404
+        
+        # Check if user is already a member
+        is_member = user in group.members
+        
+        # Check if group is full
+        is_full = len(group.members) >= group.max_members
+        
+        can_join = not is_member and not is_full
+        
+        return jsonify({
+            'success': True,
+            'valid': True,
+            'can_join': can_join,
+            'group': {
+                'id': group.id,
+                'name': group.name,
+                'description': group.description,
+                'current_members': len(group.members),
+                'max_members': group.max_members,
+                'creator': {
+                    'id': group.creator.id if group.creator else None,
+                    'username': group.creator.username if group.creator else 'Unknown'
+                }
+            },
+            'user_status': {
+                'is_member': is_member,
+                'can_join': can_join,
+                'reason': 'Already a member' if is_member else 'Group is full' if is_full else 'Can join'
+            }
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error validating invite code: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+@gaming.route('/groups/<int:group_id>/validate-invite/<invite_code>', methods=['GET'])
+@jwt_required()
+def validate_group_invite_code(group_id, invite_code):
+    """ADDED: Validate invite code for specific group - alternative endpoint"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        group = GamingGroup.query.get(group_id)
+        if not group:
+            return jsonify({'success': False, 'error': 'Group not found'}), 404
+        
+        if group.invite_code != invite_code:
+            return jsonify({
+                'success': False,
+                'valid': False,
+                'error': 'Invalid invite code for this group'
+            }), 400
+        
+        is_member = user in group.members
+        is_full = len(group.members) >= group.max_members
+        can_join = not is_member and not is_full
+        
+        return jsonify({
+            'success': True,
+            'valid': True,
+            'can_join': can_join,
+            'group': group.serialize(),
+            'user_status': {
+                'is_member': is_member,
+                'can_join': can_join
+            }
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error validating group invite: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @gaming.route('/groups/<int:group_id>/transfer-ownership/<int:new_owner_id>', methods=['POST'])
 @jwt_required()
 def transfer_group_ownership(group_id, new_owner_id):
-    """Transfer group ownership to another member"""
+    """ADDED: Transfer group ownership to another member"""
     try:
         current_user_id = get_jwt_identity()
         
@@ -297,7 +392,7 @@ def transfer_group_ownership(group_id, new_owner_id):
 @gaming.route('/groups/<int:group_id>/kick/<int:user_id>', methods=['POST'])
 @jwt_required()
 def kick_group_member(group_id, user_id):
-    """Kick a member from the group"""
+    """ADDED: Kick a member from the group"""
     try:
         current_user_id = get_jwt_identity()
         
@@ -354,7 +449,7 @@ def get_group_members(group_id):
                 'id': member.id,
                 'username': member.username,
                 'avatar_url': member.avatar_url or member.steam_avatar_url,
-                'steam_connected': member.is_steam_connected,
+                'steam_connected': member.steam_connected or member.is_steam_connected,
                 'steam_id': member.steam_id,
                 'total_games': member.total_games or 0,
                 'is_creator': member.id == group.creator_id,
@@ -398,8 +493,9 @@ def start_group_vote(group_id):
         
         # Check if there's already an active session
         active_session = GameSession.query.filter_by(
-            group_id=group_id, 
-            status__in=['planning', 'voting']
+            group_id=group_id
+        ).filter(
+            GameSession.status.in_(['planning', 'voting'])
         ).first()
         
         if active_session:
@@ -498,7 +594,7 @@ def get_active_session(group_id):
 @gaming.route('/groups/<int:group_id>/common-games', methods=['GET'])
 @jwt_required()
 def get_group_common_games(group_id):
-    """Get common games for a group from synced Steam libraries"""
+    """FIXED: Get common games for a group from synced Steam libraries"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
@@ -511,7 +607,7 @@ def get_group_common_games(group_id):
             return jsonify({'success': False, 'error': 'Access denied'}), 403
         
         # Get Steam-connected members
-        steam_members = [m for m in group.members if m.is_steam_connected and m.steam_id]
+        steam_members = [m for m in group.members if (m.steam_connected or m.is_steam_connected) and m.steam_id]
         
         if len(steam_members) < 2:
             return jsonify({
@@ -522,10 +618,7 @@ def get_group_common_games(group_id):
                 'total_members': len(group.members)
             }), 200
         
-        # Get common games using database query
-        from sqlalchemy import func
-        from api.models import user_games
-        
+        # FIXED: Get common games using database query with imported user_games table
         user_ids = [m.id for m in steam_members]
         
         # Find games owned by ALL steam members and are multiplayer
@@ -605,7 +698,7 @@ def get_session_results(session_id):
 @gaming.route('/sessions/<int:session_id>/my-votes', methods=['GET'])
 @jwt_required()
 def get_my_session_votes(session_id):
-    """Get current user's votes for a session"""
+    """ADDED: Get current user's votes for a session - required by frontend"""
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)

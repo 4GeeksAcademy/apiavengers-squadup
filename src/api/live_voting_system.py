@@ -1,8 +1,8 @@
-# src/api/live_voting_system.py - COMPLETE LIVE VOTING SYSTEM WITH SSE
+# src/api/live_voting_system.py - FIXED VERSION with correct imports
 
 from flask import Blueprint, request, jsonify, Response, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity, decode_token
-from api.models import db, User, GamingGroup, GameSession, SteamGame, Vote
+from api.models import db, User, GamingGroup, GameSession, SteamGame, Vote, user_games  # FIXED: Added user_games import
 from api.utils import APIException, utc_now
 import json
 import time
@@ -32,7 +32,7 @@ class LiveVotingManager:
         self.session_states = {}  # session_id -> current_state
         self.session_data = {}    # session_id -> session_data_cache
         
-        # Event history for reconnections
+        # Event history for reconnections (with cleanup)
         self.event_history = defaultdict(list)  # session_id -> [events]
         
         print("🎮 LiveVotingManager initialized")
@@ -59,16 +59,19 @@ class LiveVotingManager:
             }, exclude_user=user_id)
     
     def remove_connection(self, session_id, user_id):
-        """Remove SSE connection"""
+        """Remove SSE connection with cleanup"""
         with self.connection_lock:
             if session_id in self.session_connections:
                 self.session_connections[session_id].pop(user_id, None)
                 
                 if not self.session_connections[session_id]:
-                    del self.session_connections[session_id]
                     # Clean up session data if no connections
+                    del self.session_connections[session_id]
                     self.session_states.pop(session_id, None)
                     self.session_data.pop(session_id, None)
+                    # Clean up old event history
+                    if session_id in self.event_history:
+                        del self.event_history[session_id]
                 else:
                     # Broadcast user disconnected
                     self.broadcast_to_session(session_id, {
@@ -84,7 +87,7 @@ class LiveVotingManager:
         """Broadcast event to all users in a session"""
         with self.connection_lock:
             if session_id in self.session_connections:
-                # Add to event history
+                # Add to event history with cleanup
                 self._add_to_event_history(session_id, event_data)
                 
                 dead_connections = []
@@ -103,23 +106,23 @@ class LiveVotingManager:
                     self.remove_connection(session_id, user_id)
     
     def _add_to_event_history(self, session_id, event_data):
-        """Add event to history for reconnections"""
+        """Add event to history with automatic cleanup"""
         self.event_history[session_id].append({
             **event_data,
             'timestamp': utc_now().isoformat()
         })
         
-        # Keep only last 50 events
-        if len(self.event_history[session_id]) > 50:
-            self.event_history[session_id] = self.event_history[session_id][-50:]
+        # FIXED: Keep only last 20 events to prevent memory leaks
+        if len(self.event_history[session_id]) > 20:
+            self.event_history[session_id] = self.event_history[session_id][-20:]
     
     def _send_event_history(self, session_id, user_id):
         """Send recent events to reconnecting user"""
         if session_id in self.event_history and user_id in self.session_connections[session_id]:
             connection_queue = self.session_connections[session_id][user_id]
             
-            # Send last 10 events
-            recent_events = self.event_history[session_id][-10:]
+            # Send last 5 events only
+            recent_events = self.event_history[session_id][-5:]
             for event in recent_events:
                 try:
                     connection_queue.put_nowait({
@@ -155,10 +158,7 @@ live_voting_manager = LiveVotingManager()
 
 @live_voting.route('/sessions/<int:session_id>/live-stream')
 def live_voting_stream(session_id):
-    """
-    Main SSE endpoint for live voting
-    Handles: lobby -> voting -> results flow
-    """
+    """Main SSE endpoint for live voting"""
     # Validate token from query params
     token = request.args.get('token')
     if not token:
@@ -204,7 +204,7 @@ def live_voting_stream(session_id):
     
     def generate_live_stream():
         app = current_app._get_current_object()
-        connection_queue = queue.Queue(maxsize=100)
+        connection_queue = queue.Queue(maxsize=50)  # Reduced queue size
         
         with app.app_context():
             try:
@@ -302,7 +302,7 @@ def get_lobby_state(session_id, user_id):
                 'id': member.id,
                 'username': member.username,
                 'avatar_url': member.avatar_url or member.steam_avatar_url,
-                'steam_connected': member.is_steam_connected,
+                'steam_connected': member.steam_connected or member.is_steam_connected,
                 'is_ready': True,  # In lobby, everyone is "ready"
                 'total_games': member.total_games or 0
             }
@@ -459,19 +459,19 @@ def get_results_state(session_id, user_id):
         return {'state': 'results', 'error': str(e)}
 
 def get_group_common_games(group_id):
-    """Get common multiplayer games for a group from synced Steam libraries"""
+    """FIXED: Get common multiplayer games for a group from synced Steam libraries"""
     try:
         group = GamingGroup.query.get(group_id)
         if not group:
             return []
         
         # Get Steam-connected members
-        steam_members = [m for m in group.members if m.is_steam_connected and m.steam_id]
+        steam_members = [m for m in group.members if (m.steam_connected or m.is_steam_connected) and m.steam_id]
         
         if len(steam_members) < 2:
             return []
         
-        # Get common games using SQL for efficiency
+        # FIXED: Use imported user_games table - now works correctly
         user_ids = [m.id for m in steam_members]
         
         # Find games owned by ALL steam members
