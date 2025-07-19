@@ -58,3 +58,119 @@ img {
 img:not([src]) {
     display: none;
 }
+
+/* Additional CSS to complement your existing Tailwind setup */
+/* Add this to your existing CSS file */
+
+@layer utilities {
+  /* Enhanced dropdown animations that work with your existing classes */
+  .dropdown-enter {
+    @apply opacity-0 scale-95 -translate-y-2;
+  }
+  
+  .dropdown-enter-active {
+    @apply opacity-100 scale-100 translate-y-0 transition-all duration-300 ease-out;
+  }
+  
+  .dropdown-exit {
+    @apply opacity-100 scale-100 translate-y-0;
+  }
+  
+  .dropdown-exit-active {
+    @apply opacity-0 scale-95 -translate-y-2 transition-all duration-200 ease-in;
+  }
+
+  /* Ensure proper z-index stacking for dropdowns */
+  .z-60 {
+    z-index: 60;
+  }
+  
+  .z-70 {
+    z-index: 70;
+  }
+
+  /* Enhanced glass effect specifically for navbar */
+  .navbar-glass-enhanced {
+    @apply glass-effect;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.37),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+
+  /* Magnetic hover effect for interactive elements */
+  .magnetic-hover {
+    @apply transition-transform duration-300 ease-out;
+  }
+  
+  .magnetic-hover:hover {
+    @apply scale-102;
+  }
+
+  /* Smooth focus states for accessibility */
+  .focus-visible-ring {
+    @apply focus-visible:ring-2 focus-visible:ring-coral-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-discord-800 focus-visible:outline-none;
+  }
+}
+
+/* Ensure dropdowns work correctly with pointer events */
+.dropdown-active {
+  pointer-events: auto !important;
+}
+
+.dropdown-inactive {
+  pointer-events: none !important;
+}
+
+/* Smooth transitions for explore menu grid */
+.explore-grid-item {
+  @apply transition-all duration-300 ease-out;
+}
+
+.explore-grid-item:hover {
+  @apply transform scale-102 shadow-depth-2;
+}
+
+/* Animation delays for staggered effects */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+
+/* Ensure consistent spacing and sizing */
+.navbar-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Override any conflicting styles for your navbar specifically */
+nav .glass-effect {
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+}
+
+/* Ensure proper text rendering */
+.navbar-text {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar for dropdown content if needed */
+.dropdown-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.dropdown-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.dropdown-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+}
+
+.dropdown-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}

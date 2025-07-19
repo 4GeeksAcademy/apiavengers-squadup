@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
-import steamService from '../services/steamService.js';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Avatar from '../components/Avatar';

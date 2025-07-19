@@ -1,8 +1,8 @@
-// src/front/pages/Layout.jsx - Updated with proper Navbar integration
+// src/front/pages/Layout.jsx - FINAL FIX for authentication loops
 
 import React, { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { Navbar } from "../components/Navbar"; // Updated import with named export
+import Navbar from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import authService from "../store/authService";
@@ -75,7 +75,7 @@ export const Layout = () => {
     }, [store?.isAuthenticated, store?.authLoading]);
 
     return (
-        <div className="min-h-screen flex flex-col">
+        <div className="flex flex-col min-h-screen">
             {/* Enhanced Gaming-themed Toaster */}
             <Toaster 
                 position="top-center"
@@ -128,15 +128,10 @@ export const Layout = () => {
                 }}
             />
 
-            {/* Fixed Navbar */}
             <Navbar />
-            
-            {/* Main content with proper spacing to account for fixed navbar */}
-            <main className="flex-grow pt-24 pb-8">
-                {/* pt-24 accounts for the fixed navbar (top-4 + navbar height + padding) */}
+            <main className="flex-grow">
                 <Outlet />
             </main>
-            
             <Footer />
         </div>
     );

@@ -50,6 +50,19 @@ def generate_sitemap(app):
             if "/admin/" not in url:
                 links.append(url)
 
+# src/api/utils.py - Add environment validator
+def validate_environment():
+    required_vars = [
+        'DATABASE_URL',
+        'JWT_SECRET_KEY', 
+        'STEAM_API_KEY',
+        'FRONTEND_URL'
+    ]
+    
+    missing = [var for var in required_vars if not os.getenv(var)]
+    if missing:
+        raise EnvironmentError(f"Missing required environment variables: {missing}")
+
     links_html = "".join(["<li><a href='" + y + "'>" + y + "</a></li>" for y in links])
     return """
         <div style="text-align: center;">

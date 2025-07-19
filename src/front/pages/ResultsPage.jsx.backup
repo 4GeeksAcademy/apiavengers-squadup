@@ -15,7 +15,7 @@ import {
     PermissionErrorState 
 } from '../components/ErrorState';
 
-export const ResultsPage = () => {
+const ResultsPage = () => {
     const { sessionId } = useParams();
     const navigate = useNavigate();
     
@@ -812,3 +812,4 @@ export const ResultsPage = () => {
     );
 };
 
+export default ResultsPage;

@@ -1,4 +1,4 @@
-// src/front/hooks/useAuth.js - FIXED VERSION with correct import
+// src/front/hooks/useAuth.js - FIXED VERSION with proper compatibility
 
 import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -8,7 +8,7 @@ import { testConnectivity } from '../config/environment';
 
 /**
  * Enhanced authentication hook with proper state management
- * and environment integration for GitHub Codespaces
+ * and full compatibility with global store
  */
 export const useAuth = () => {
     const { store, dispatch } = useGlobalReducer();
@@ -17,7 +17,7 @@ export const useAuth = () => {
     const initializationRef = useRef(false);
     const connectivityTestedRef = useRef(false);
 
-    // Extract auth state
+    // Extract auth state with proper defaults
     const {
         isAuthenticated = false,
         user = null,
@@ -26,18 +26,18 @@ export const useAuth = () => {
         token = null
     } = store || {};
 
-    // 🔧 CRITICAL: Initialize auth service with dispatch on first render
+    // CRITICAL: Initialize auth service with dispatch on first render
     useEffect(() => {
         if (!initializationRef.current && dispatch) {
             console.log('🔗 Initializing auth service with dispatch...');
             initializationRef.current = true;
             
-            // Set dispatch and start auth check
+            // Set dispatch and let authService handle the auth check
             authService.setDispatch(dispatch);
         }
     }, [dispatch]);
 
-    // 🔧 CRITICAL: Test connectivity on mount for Codespaces
+    // Test connectivity on mount for GitHub Codespaces
     useEffect(() => {
         if (!connectivityTestedRef.current) {
             connectivityTestedRef.current = true;
@@ -64,7 +64,7 @@ export const useAuth = () => {
         }
     }, [dispatch]);
 
-    // 🔧 Enhanced login function with error handling
+    // Enhanced login function with proper error handling
     const login = useCallback(async (credentials, remember = false) => {
         console.log('🔐 useAuth.login called');
         
@@ -105,7 +105,7 @@ export const useAuth = () => {
         }
     }, [dispatch, navigate, location.state]);
 
-    // 🔧 Enhanced register function
+    // Enhanced register function
     const register = useCallback(async (userData, remember = false) => {
         console.log('📝 useAuth.register called');
         
@@ -145,7 +145,7 @@ export const useAuth = () => {
         }
     }, [dispatch, navigate]);
 
-    // 🔧 Enhanced logout function
+    // Enhanced logout function
     const logout = useCallback(async () => {
         console.log('🚪 useAuth.logout called');
         
@@ -166,7 +166,7 @@ export const useAuth = () => {
         }
     }, [dispatch, navigate]);
 
-    // 🔧 Refresh token function
+    // Refresh token function
     const refreshToken = useCallback(async () => {
         try {
             await authService.refreshTokenSilently();
@@ -177,7 +177,7 @@ export const useAuth = () => {
         }
     }, []);
 
-    // 🔧 Update user profile function
+    // Update user profile function
     const updateUser = useCallback((updatedUser) => {
         console.log('👤 Updating user in useAuth hook:', updatedUser);
         dispatch({
@@ -186,12 +186,12 @@ export const useAuth = () => {
         });
     }, [dispatch]);
 
-    // 🔧 Clear auth error function
+    // Clear auth error function
     const clearError = useCallback(() => {
         dispatch({ type: 'clear_error' });
     }, [dispatch]);
 
-    // 🔧 Check if user has specific permissions
+    // Check if user has specific permissions
     const hasPermission = useCallback((permission) => {
         if (!user) return false;
         
@@ -206,7 +206,7 @@ export const useAuth = () => {
         }
     }, [user]);
 
-    // 🔧 Get authentication status with details
+    // Get authentication status with details
     const getAuthStatus = useCallback(() => {
         return {
             isAuthenticated,
@@ -219,7 +219,7 @@ export const useAuth = () => {
         };
     }, [isAuthenticated, authLoading, authError, user, token]);
 
-    // 🔧 Wait for auth initialization
+    // Wait for auth initialization
     const waitForAuth = useCallback(async () => {
         if (authService.authCheckCompleted) {
             return getAuthStatus();

@@ -1,22 +1,22 @@
-// src/front/routes.jsx - FIXED import/export issues
+// src/front/routes.jsx - FULLY CORRECTED VERSION
 
 import { createBrowserRouter } from 'react-router-dom';
 import { Layout } from './pages/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
-// Import pages - using default imports since they're default exports
+// ✅ FIXED: All imports now use named imports for consistency
 import { Home } from './pages/Home';
 import { Demo } from './pages/Demo';
 import { Login } from './pages/Login';
 import { SignUp } from './pages/SignUp';
 import { Profile } from './pages/Profile';
-import Dashboard from './pages/Dashboard'; // 🔧 FIX: Default import, not named import
+import { Dashboard } from './pages/Dashboard';
 import { GameLibrary } from './pages/GameLibrary';
-import FindGames from './pages/FindGames'; // 🔧 FIX: Default import
-import Friends from './pages/Friends';
-import JoinGroup from './pages/JoinGroup';
-import GroupPage from './pages/GroupPage'; // 🔧 FIX: Default import
-import ResultsPage from './pages/ResultsPage';
+import { FindGames } from './pages/FindGames';
+import { Friends } from './pages/Friends';
+import { JoinGroup } from './pages/JoinGroup';
+import { GroupPage } from './pages/GroupPage';
+import { ResultsPage } from './pages/ResultsPage';
 
 export const router = createBrowserRouter([
   {

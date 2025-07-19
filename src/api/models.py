@@ -125,11 +125,12 @@ class User(db.Model):
         if not self.steam_library_synced_at:
             return True, "Ready to sync"
         
-        now = datetime.utcnow()
+        now = utc_now() # 🔧 FIXED: Use utc_now for timezone-aware datetime
         last_synced = self.steam_library_synced_at
         
-        if hasattr(last_synced, 'tzinfo') and last_synced.tzinfo is not None:
-            last_synced = last_synced.astimezone(pytz.UTC).replace(tzinfo=None)
+        # Ensure last_synced is timezone-aware for comparison
+        if last_synced.tzinfo is None:
+            last_synced = last_synced.replace(tzinfo=timezone.utc)
         
         time_since_sync = now - last_synced
         cooldown_period = timedelta(minutes=5)
@@ -146,11 +147,11 @@ class User(db.Model):
         if not self.steam_id or not self.steam_library_synced_at:
             return 0
         
-        now = datetime.utcnow()
+        now = utc_now() # 🔧 FIXED: Use utc_now
         last_synced = self.steam_library_synced_at
-        
-        if hasattr(last_synced, 'tzinfo') and last_synced.tzinfo is not None:
-            last_synced = last_synced.astimezone(pytz.UTC).replace(tzinfo=None)
+
+        if last_synced.tzinfo is None:
+            last_synced = last_synced.replace(tzinfo=timezone.utc)
         
         time_since_sync = now - last_synced
         cooldown_period = timedelta(minutes=5)
@@ -163,7 +164,7 @@ class User(db.Model):
 
     def update_steam_sync_time(self):
         """Update the last Steam sync timestamp to now"""
-        self.steam_library_synced_at = datetime.utcnow()
+        self.steam_library_synced_at = utc_now() # 🔧 FIXED: Use utc_now
 
     def get_steam_sync_status(self):
         """Get comprehensive Steam sync status information"""
@@ -205,7 +206,6 @@ class User(db.Model):
             "is_steam_connected": self.steam_connected or self.is_steam_connected,
             "steam_id": self.steam_id,
             "steam_username": self.steam_username,
-            "steam_avatar": self.steam_avatar_url,
             "steam_avatar_url": self.steam_avatar_url,
             "steam_profile_url": self.steam_profile_url,
             
@@ -246,18 +246,7 @@ class SteamGame(db.Model):
     won_sessions = relationship('GameSession', back_populates='winner_game', foreign_keys='GameSession.winner_game_id')
 
     def _parse_json_field(self, field):
-        """Helper method to safely parse JSON fields"""
-        if not field:
-            return []
-        try:
-            if isinstance(field, str):
-                return json.loads(field)
-            elif isinstance(field, list):
-                return field
-            else:
-                return field.split(',') if hasattr(field, 'split') else []
-        except (json.JSONDecodeError, AttributeError):
-            return field.split(',') if hasattr(field, 'split') else []
+        return safe_json_loads(field, [])
 
     def serialize(self):
         return {
@@ -337,33 +326,33 @@ class GamingGroup(db.Model):
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     
-    # FIXED: Required relationships
+    # 🔧 FIXED: Required relationships
     group_id: Mapped[int] = mapped_column(Integer, ForeignKey('gaming_group.id', ondelete='CASCADE'), nullable=False)
-    creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)  # ADDED
+    creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)
     
-    # FIXED: Core session fields matching gaming.py expectations
+    # 🔧 FIXED: Core session fields matching gaming.py expectations
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
-    session_name: Mapped[str] = mapped_column(String(200), nullable=False, default='Voting Session')  # ADDED
-    description: Mapped[str] = mapped_column(Text, nullable=True)  # ADDED
+    session_name: Mapped[str] = mapped_column(String(200), nullable=False, default='Voting Session')
+    description: Mapped[str] = mapped_column(Text, nullable=True)
     scheduled_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default='planning')
+    status: Mapped[str] = mapped_column(String(20), default='planning') # planning -> voting -> completed -> archived
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     vote_results: Mapped[str] = mapped_column(Text, nullable=True)
     
-    # ADDED: Enhanced live voting fields that gaming.py expects
-    auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)  # ADDED
-    max_choices: Mapped[int] = mapped_column(Integer, default=3)  # ADDED
+    # 🔧 ADDED: Enhanced live voting fields that gaming.py expects
+    auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)
+    max_choices: Mapped[int] = mapped_column(Integer, default=3)
     winner_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
     winner_votes: Mapped[int] = mapped_column(Integer, default=0)
     winner_points: Mapped[int] = mapped_column(Integer, default=0)
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     votable_games: Mapped[str] = mapped_column(Text, nullable=True)
     
-    # FIXED: Complete relationships
+    # 🔧 FIXED: Complete relationships
     group = relationship('GamingGroup', back_populates='sessions')
-    creator = relationship('User', back_populates='created_sessions', foreign_keys=[creator_id])  # ADDED
+    creator = relationship('User', back_populates='created_sessions', foreign_keys=[creator_id])
     game = relationship('SteamGame', foreign_keys=[game_id])
     winner_game = relationship('SteamGame', foreign_keys=[winner_game_id])
     votes = relationship('Vote', back_populates='session', cascade='all, delete-orphan')
@@ -398,7 +387,6 @@ class GameSession(db.Model):
 # ============================================================================
 
 class Vote(db.Model):
-    """Individual vote records for atomic, race-condition-free vote storage"""
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(Integer, ForeignKey('game_session.id', ondelete='CASCADE'), nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
@@ -406,9 +394,8 @@ class Vote(db.Model):
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     
-    # FIXED: Better constraints that allow vote changes
+    # 🔧 FIXED: Better constraints that allow vote changes
     __table_args__ = (
-        # RELAXED: Allow users to vote multiple times for different games or change votes
         UniqueConstraint('session_id', 'user_id', 'game_id', name='unique_user_game_vote'),
         CheckConstraint('priority >= 1 AND priority <= 3', name='valid_priority'),
         {'mysql_charset': 'utf8mb4'}
@@ -420,7 +407,6 @@ class Vote(db.Model):
     game = relationship('SteamGame', back_populates='votes')
     
     def serialize(self):
-        """Serialize vote for API responses"""
         return {
             "id": self.id,
             "session_id": self.session_id,
@@ -429,103 +415,45 @@ class Vote(db.Model):
             "priority": self.priority,
             "points": self.priority,
             "created_at": self.created_at.isoformat(),
-            "user": {
-                "id": self.user.id,
-                "username": self.user.username,
-                "avatar_url": self.user.avatar_url or self.user.steam_avatar_url
-            } if self.user else None,
-            "game": {
-                "id": self.game.id,
-                "name": self.game.name,
-                "header_image": self.game.header_image
-            } if self.game else None
+            "user": { "id": self.user.id, "username": self.user.username } if self.user else None,
+            "game": { "id": self.game.id, "name": self.game.name } if self.game else None
         }
     
     @classmethod
     def get_session_results(cls, session_id):
-        """Calculate voting results with better error handling"""
-        try:
-            from sqlalchemy import func
-            
-            results = db.session.query(
-                SteamGame,
-                func.sum(cls.priority).label('total_points'),
-                func.count(cls.id).label('vote_count'),
-                func.avg(cls.priority).label('average_score')
-            ).join(cls).filter(
-                cls.session_id == session_id
-            ).group_by(
-                SteamGame.id
-            ).order_by(
-                func.sum(cls.priority).desc()
-            ).all()
-            
-            return [
-                {
-                    "game": game.serialize(),
-                    "total_points": int(total_points or 0),
-                    "vote_count": int(vote_count or 0),
-                    "average_score": round(float(average_score or 0), 2)
-                }
-                for game, total_points, vote_count, average_score in results
-            ]
-        except Exception as e:
-            # Fallback to basic query if complex query fails
-            votes = cls.query.filter_by(session_id=session_id).all()
-            game_scores = {}
-            
-            for vote in votes:
-                game_id = vote.game_id
-                if game_id not in game_scores:
-                    game_scores[game_id] = {
-                        'total_points': 0,
-                        'vote_count': 0,
-                        'voters': set()
-                    }
-                
-                game_scores[game_id]['total_points'] += vote.priority
-                game_scores[game_id]['vote_count'] += 1
-                game_scores[game_id]['voters'].add(vote.user_id)
-            
-            results = []
-            for game_id, scores in game_scores.items():
-                game = SteamGame.query.get(game_id)
-                if game:
-                    results.append({
-                        'game': game.serialize(),
-                        'total_points': scores['total_points'],
-                        'vote_count': len(scores['voters']),
-                        'average_score': round(scores['total_points'] / len(scores['voters']), 2) if scores['voters'] else 0
-                    })
-            
-            results.sort(key=lambda x: x['total_points'], reverse=True)
-            return results
+        from sqlalchemy import func
+        results = db.session.query(
+            SteamGame,
+            func.sum(cls.priority).label('total_points'),
+            func.count(cls.id).label('vote_count'),
+            func.avg(cls.priority).label('average_score')
+        ).join(cls).filter(
+            cls.session_id == session_id
+        ).group_by(
+            SteamGame.id
+        ).order_by(
+            func.sum(cls.priority).desc()
+        ).all()
+        
+        return [
+            {
+                "game": game.serialize(),
+                "total_points": int(total_points or 0),
+                "vote_count": int(vote_count or 0),
+                "average_score": round(float(average_score or 0), 2)
+            }
+            for game, total_points, vote_count, average_score in results
+        ]
     
     @classmethod
     def get_voter_count(cls, session_id):
-        """Get voter count with error handling"""
-        try:
-            from sqlalchemy import func
-            return db.session.query(func.count(func.distinct(cls.user_id))).filter_by(session_id=session_id).scalar() or 0
-        except Exception:
-            unique_users = set()
-            votes = cls.query.filter_by(session_id=session_id).all()
-            for vote in votes:
-                unique_users.add(vote.user_id)
-            return len(unique_users)
+        from sqlalchemy import func
+        return db.session.query(func.count(func.distinct(cls.user_id))).filter_by(session_id=session_id).scalar() or 0
     
     @classmethod
     def has_user_voted(cls, session_id, user_id):
-        """Check if user voted with error handling"""
-        try:
-            return cls.query.filter_by(session_id=session_id, user_id=user_id).first() is not None
-        except Exception:
-            return False
+        return cls.query.filter_by(session_id=session_id, user_id=user_id).first() is not None
     
     @classmethod
     def get_user_votes(cls, session_id, user_id):
-        """Get user votes with error handling"""
-        try:
-            return cls.query.filter_by(session_id=session_id, user_id=user_id).order_by(cls.priority.desc()).all()
-        except Exception:
-            return []
+        return cls.query.filter_by(session_id=session_id, user_id=user_id).order_by(cls.priority.desc()).all()

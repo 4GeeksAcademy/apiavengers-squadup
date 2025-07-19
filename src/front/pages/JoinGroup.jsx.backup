@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import authService from '../store/authService';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 
-export const JoinGroup = () => {
+const JoinGroup = () => {
     const { inviteCode } = useParams();
     const navigate = useNavigate();
     const { store } = useGlobalReducer();
@@ -235,3 +235,4 @@ export const JoinGroup = () => {
     );
 };
 
+export default JoinGroup;
