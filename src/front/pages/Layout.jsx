@@ -1,8 +1,9 @@
-// src/front/pages/Layout.jsx - Updated with proper Navbar integration
+// src/front/pages/Layout.jsx - FIXED VERSION with correct Navbar import
 
 import React, { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { Navbar } from "../components/Navbar"; // Updated import with named export
+// ✅ FIXED: Changed from named import to default import
+import Navbar from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import authService from "../store/authService";
@@ -128,7 +129,7 @@ export const Layout = () => {
                 }}
             />
 
-            {/* Fixed Navbar */}
+            {/* Fixed Navbar - Now using default import */}
             <Navbar />
             
             {/* Main content with proper spacing to account for fixed navbar */}

@@ -1,11 +1,13 @@
-// src/front/pages/JoinGroup.jsx - FIXED VERSION
+// src/front/pages/JoinGroup.jsx - FIXED VERSION with proper exports
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import authService from '../store/authService';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 
-export const JoinGroup = () => {
+// ✅ FIXED: Changed from named export to both named AND default export for compatibility
+const JoinGroup = () => {
     const { inviteCode } = useParams();
     const navigate = useNavigate();
     const { store } = useGlobalReducer();
@@ -235,3 +237,6 @@ export const JoinGroup = () => {
     );
 };
 
+// ✅ FIXED: Export as both named and default for maximum compatibility
+export { JoinGroup };
+export default JoinGroup;

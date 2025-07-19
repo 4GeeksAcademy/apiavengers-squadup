@@ -1,244 +1,259 @@
-// src/config/environment.js - FIXED CONFIGURATION
+// src/front/config/environment.js - Missing environment configuration
 
 /**
- * Environment configuration for GitHub Codespaces and local development
- * Handles dynamic URL detection and API configuration
+ * Environment configuration for SquadUp frontend
+ * Handles development, production, and GitHub Codespaces environments
  */
 
-// 🔧 CRITICAL: Dynamic environment detection for Codespaces
-const getEnvironmentConfig = () => {
-    const isDevelopment = import.meta.env.DEV;
+// Check if we're running in GitHub Codespaces
+export const isCodespace = !!(
+  import.meta.env.VITE_CODESPACE_NAME || 
+  import.meta.env.CODESPACE_NAME ||
+  typeof window !== 'undefined' && window.__CODESPACE_NAME__
+);
+
+// Check if we're in development mode
+export const isDevelopment = import.meta.env.DEV;
+
+// Check if we're in production mode
+export const isProduction = import.meta.env.PROD;
+
+// Get the backend URL with fallback logic
+export const apiUrl = (() => {
+  // Priority 1: Explicit backend URL from environment
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  
+  // Priority 2: Codespace auto-detection
+  if (isCodespace) {
+    const codespaceName = import.meta.env.VITE_CODESPACE_NAME || 
+                         import.meta.env.CODESPACE_NAME ||
+                         window.__CODESPACE_NAME__;
+    const domain = import.meta.env.VITE_GITHUB_CODESPACES_DOMAIN || 
+                   import.meta.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN ||
+                   window.__GITHUB_CODESPACES_DOMAIN__;
     
-    // Better Codespace detection
-    const currentHostname = window.location.hostname;
-    const isCodespace = currentHostname.includes('.github.dev') || currentHostname.includes('.app.github.dev');
+    if (codespaceName && domain) {
+      return `https://${codespaceName}-3001.${domain}`;
+    }
+  }
+  
+  // Priority 3: Development fallback
+  if (isDevelopment) {
+    return 'http://localhost:3001';
+  }
+  
+  // Priority 4: Production fallback (same origin)
+  return window.location.origin;
+})();
+
+// Get the frontend URL with fallback logic
+export const frontendUrl = (() => {
+  // Priority 1: Explicit frontend URL from environment
+  if (import.meta.env.VITE_FRONTEND_URL) {
+    return import.meta.env.VITE_FRONTEND_URL;
+  }
+  
+  // Priority 2: Codespace auto-detection
+  if (isCodespace) {
+    const codespaceName = import.meta.env.VITE_CODESPACE_NAME || 
+                         import.meta.env.CODESPACE_NAME ||
+                         window.__CODESPACE_NAME__;
+    const domain = import.meta.env.VITE_GITHUB_CODESPACES_DOMAIN || 
+                   import.meta.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN ||
+                   window.__GITHUB_CODESPACES_DOMAIN__;
     
-    // Extract codespace name from current URL
-    let codespaceName = null;
-    if (isCodespace) {
-        // Extract from URL like: bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev
-        const hostParts = currentHostname.split('.');
-        if (hostParts.length >= 3) {
-            const fullPrefix = hostParts[0]; // bookish-funicular-9754qgjjg9743pqr7-3000
-            codespaceName = fullPrefix.replace(/-\d+$/, ''); // Remove port number: bookish-funicular-9754qgjjg9743pqr7
-        }
+    if (codespaceName && domain) {
+      return `https://${codespaceName}-3000.${domain}`;
+    }
+  }
+  
+  // Priority 3: Browser current origin
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  
+  // Priority 4: Development fallback
+  return 'http://localhost:3000';
+})();
+
+/**
+ * Enhanced fetch wrapper with automatic configuration for different environments
+ * Handles CORS, credentials, and headers properly for Codespaces and local development
+ */
+export const fetchWithConfig = async (url, options = {}) => {
+  // Determine if this is a cross-origin request
+  const isCrossOrigin = url.startsWith('http') && !url.startsWith(frontendUrl);
+  
+  // Default headers
+  const defaultHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    ...options.headers
+  };
+  
+  // Add CORS headers for Codespaces
+  if (isCodespace && isCrossOrigin) {
+    defaultHeaders['Origin'] = frontendUrl;
+    defaultHeaders['Access-Control-Request-Method'] = options.method || 'GET';
+  }
+  
+  // Default fetch options
+  const defaultOptions = {
+    method: 'GET',
+    credentials: 'include', // Always include credentials for authentication
+    headers: defaultHeaders,
+    ...options
+  };
+  
+  // Special handling for FormData (remove Content-Type to let browser set it)
+  if (options.body instanceof FormData) {
+    delete defaultOptions.headers['Content-Type'];
+  }
+  
+  try {
+    console.log(`🌐 Making ${defaultOptions.method} request to:`, url);
+    console.log(`🏠 Environment: ${isCodespace ? 'Codespace' : isDevelopment ? 'Development' : 'Production'}`);
+    
+    const response = await fetch(url, defaultOptions);
+    
+    console.log(`📡 Response: ${response.status} ${response.statusText}`);
+    
+    return response;
+  } catch (error) {
+    console.error(`❌ Fetch error for ${url}:`, error);
+    
+    // Enhanced error messages for common issues
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error('Network error: Unable to connect to server. Check your internet connection.');
     }
     
-    // Use environment variable as fallback
-    if (!codespaceName) {
-        codespaceName = import.meta.env.VITE_CODESPACE_NAME;
+    if (error.message.includes('CORS')) {
+      throw new Error('CORS error: Server configuration issue. Please contact support.');
     }
     
-    const codespacesDomain = import.meta.env.VITE_GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || 'app.github.dev';
+    throw error;
+  }
+};
+
+/**
+ * Create a configured fetch function for API calls
+ * Automatically prepends the API URL if needed
+ */
+export const createApiClient = (baseUrl = apiUrl) => {
+  return (endpoint, options = {}) => {
+    const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+    return fetchWithConfig(url, options);
+  };
+};
+
+// Default API client instance
+export const apiClient = createApiClient();
+
+/**
+ * Environment-specific configuration object
+ */
+export const config = {
+  // URLs
+  apiUrl,
+  frontendUrl,
+  
+  // Environment flags
+  isCodespace,
+  isDevelopment,
+  isProduction,
+  
+  // Feature flags based on environment
+  features: {
+    // Enable debug logs in development
+    debugLogs: isDevelopment,
     
-    let backendUrl;
-    let frontendUrl;
+    // Enable service worker in production
+    serviceWorker: isProduction,
     
-    if (isCodespace && codespaceName) {
-        // GitHub Codespaces URLs - ensure consistent domain
-        const domain = currentHostname.includes('app.github.dev') ? 'app.github.dev' : 'github.dev';
-        backendUrl = `https://${codespaceName}-3001.${domain}`;
-        frontendUrl = `https://${codespaceName}-3000.${domain}`;
-        
-        console.log('🌐 Codespace Environment Detected:', {
-            currentHostname,
-            codespaceName,
-            domain,
-            backendUrl,
-            frontendUrl
-        });
-    } else if (isDevelopment) {
-        // Local development
-        backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-        frontendUrl = 'http://localhost:3000';
-        
-        console.log('💻 Local Development Environment:', {
-            backendUrl,
-            frontendUrl
-        });
-    } else {
-        // Production - use environment variables or defaults
-        backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-        frontendUrl = window.location.origin;
-        
-        console.log('🚀 Production Environment:', {
-            backendUrl,
-            frontendUrl
-        });
+    // Enable hot reload in development
+    hotReload: isDevelopment,
+    
+    // Enable analytics in production
+    analytics: isProduction,
+    
+    // Enable error reporting in production
+    errorReporting: isProduction,
+    
+    // Enable Steam integration (always on for now)
+    steamIntegration: true,
+    
+    // Enable live voting features
+    liveVoting: true,
+    
+    // Enable admin features (could be based on user role)
+    adminFeatures: isDevelopment
+  },
+  
+  // API configuration
+  api: {
+    timeout: 30000, // 30 seconds
+    retries: 3,
+    retryDelay: 1000,
+    
+    // Steam API specific config
+    steam: {
+      // Steam Web API has rate limits
+      rateLimit: {
+        requests: 100,
+        window: 300000 // 5 minutes
+      }
     }
+  },
+  
+  // UI configuration
+  ui: {
+    // Animation preferences
+    animations: {
+      enabled: true,
+      duration: 300,
+      easing: 'ease-in-out'
+    },
     
-    return {
-        isDevelopment,
-        isCodespace,
-        isProduction: !isDevelopment,
-        codespaceName,
-        codespacesDomain,
-        backendUrl,
-        frontendUrl,
-        apiUrl: backendUrl
-    };
-};
-
-// Get configuration once
-const config = getEnvironmentConfig();
-
-// Export configuration
-export const {
-    isDevelopment,
-    isCodespace,
-    isProduction,
-    codespaceName,
-    codespacesDomain,
-    backendUrl,
-    frontendUrl,
-    apiUrl
-} = config;
-
-/**
- * Enhanced fetch wrapper with proper CORS and authentication headers
- */
-export const fetchWithConfig = async (endpoint, options = {}) => {
-    const url = endpoint.startsWith('http') ? endpoint : `${apiUrl}${endpoint}`;
+    // Toast notification settings
+    notifications: {
+      position: 'top-center',
+      duration: 5000,
+      maxVisible: 3
+    },
     
-    const defaultOptions = {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            ...options.headers
-        },
-        // 🔧 CRITICAL: Enable credentials for CORS
-        credentials: 'include',
-        ...options
-    };
-
-    console.log('📡 Making request:', {
-        url,
-        method: defaultOptions.method,
-        hasAuth: !!defaultOptions.headers.Authorization,
-        isCodespace,
-        frontendOrigin: frontendUrl
-    });
-
-    try {
-        const response = await fetch(url, defaultOptions);
-        
-        console.log('📡 Response received:', {
-            status: response.status,
-            statusText: response.statusText,
-            url: response.url
-        });
-        
-        return response;
-    } catch (error) {
-        console.error('📡 Fetch error:', {
-            url,
-            error: error.message,
-            isCodespace,
-            config: isCodespace ? { codespaceName, codespacesDomain } : null
-        });
-        throw error;
+    // Loading states
+    loading: {
+      minDuration: 500, // Minimum loading time to prevent flicker
+      timeout: 10000    // Maximum loading time before error
     }
+  }
 };
 
 /**
- * API endpoint helpers
+ * Log current environment configuration (development only)
  */
-export const getApiEndpoint = (path) => {
-    const cleanPath = path.startsWith('/') ? path : `/${path}`;
-    return `${apiUrl}${cleanPath}`;
-};
-
-/**
- * Test connectivity to backend
- */
-export const testConnectivity = async () => {
-    try {
-        console.log('🔍 Testing backend connectivity...');
-        
-        const response = await fetchWithConfig('/api/status', {
-            method: 'GET',
-            // Add timeout for connectivity test
-            signal: AbortSignal.timeout(10000)
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            console.log('✅ Backend connectivity test passed:', data);
-            return { success: true, data };
-        } else {
-            console.error('❌ Backend connectivity test failed:', response.status);
-            return { success: false, error: `HTTP ${response.status}` };
-        }
-    } catch (error) {
-        console.error('❌ Backend connectivity test error:', error);
-        return { success: false, error: error.message };
-    }
-};
-
-/**
- * WebSocket configuration for live features
- */
-export const getWebSocketConfig = () => {
-    const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
-    const wsUrl = apiUrl.replace(/^https?/, wsProtocol);
-    
-    return {
-        wsUrl,
-        options: {
-            // Add authentication headers for WebSocket if needed
-            ...(isCodespace && { origin: frontendUrl })
-        }
-    };
-};
-
-/**
- * CORS configuration helper
- */
-export const getCorsConfig = () => {
-    return {
-        origin: frontendUrl,
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: [
-            'Content-Type',
-            'Authorization',
-            'X-Requested-With',
-            'Accept',
-            'Origin'
-        ]
-    };
-};
-
-/**
- * Debug information
- */
-export const getDebugInfo = () => {
-    return {
-        ...config,
-        userAgent: navigator.userAgent,
-        location: {
-            href: window.location.href,
-            origin: window.location.origin,
-            hostname: window.location.hostname
-        },
-        timestamp: new Date().toISOString()
-    };
-};
-
-// 🔧 CRITICAL: Initialize environment on load
 if (isDevelopment) {
-    console.log('🔧 Environment Configuration:', getDebugInfo());
-    
-    // Test connectivity on startup in development
-    testConnectivity().then(result => {
-        if (result.success) {
-            console.log('✅ Initial connectivity test passed');
-        } else {
-            console.warn('⚠️ Initial connectivity test failed:', result.error);
-        }
-    });
+  console.group('🌐 Environment Configuration');
+  console.log('API URL:', apiUrl);
+  console.log('Frontend URL:', frontendUrl);
+  console.log('Is Codespace:', isCodespace);
+  console.log('Is Development:', isDevelopment);
+  console.log('Is Production:', isProduction);
+  console.log('Features:', config.features);
+  console.groupEnd();
 }
 
-// Export default configuration
-export default config;
+// Export everything as default as well for convenience
+export default {
+  isCodespace,
+  isDevelopment,
+  isProduction,
+  apiUrl,
+  frontendUrl,
+  fetchWithConfig,
+  createApiClient,
+  apiClient,
+  config
+};

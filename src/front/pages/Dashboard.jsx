@@ -1,4 +1,4 @@
-// src/front/pages/Dashboard.jsx - FIXED with correct hook order and safe data access
+// src/front/pages/Dashboard.jsx - FIXED VERSION with all imports resolved
 
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
@@ -12,8 +12,7 @@ import GroupActionButtons from '../components/GroupActionButtons';
 import CreateGroupModal from '../components/CreateGroupModal';
 import CommonGamesList from '../components/CommonGamesList';
 import { PageLoadingState } from '../components/LoadingState';
-import { ErrorState } from '../components/ErrorState';
-
+import ErrorState from '../components/ErrorState';
 
 const Dashboard = () => {
     // ✅ FIX: ALL hooks are declared at the top of the component function.
@@ -102,7 +101,13 @@ const Dashboard = () => {
 
     // If there is no authenticated user after loading.
     if (!user) {
-        return <ErrorState type="permission" title="Authentication Required" message="Please log in to view your dashboard." />;
+        return (
+            <ErrorState 
+                type="permission" 
+                title="Authentication Required" 
+                message="Please log in to view your dashboard." 
+            />
+        );
     }
 
     return (
@@ -163,7 +168,13 @@ const Dashboard = () => {
                 )}
 
                 {/* Error Display */}
-                {error && <ErrorState type="api" onRetry={fetchUserGroups} error={{ message: error }} />}
+                {error && (
+                    <ErrorState 
+                        type="api" 
+                        onRetry={fetchUserGroups} 
+                        error={{ message: error }} 
+                    />
+                )}
 
                 {/* Your Gaming Groups */}
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 mb-8">
@@ -245,8 +256,50 @@ const Dashboard = () => {
                         <CommonGamesList groupId={groups[0].id} />
                     </div>
                 )}
+
+                {/* Quick Actions for when there are no groups */}
+                {groups.length === 0 && !loading && (
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 mb-8">
+                        <h2 className="text-2xl font-bold text-white mb-6">Quick Actions</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <Link 
+                                to="/find-games"
+                                className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                            >
+                                <span className="text-2xl">🎮</span>
+                                <div>
+                                    <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Find Games</h4>
+                                    <p className="text-white/60 text-sm">Discover common games</p>
+                                </div>
+                            </Link>
+                            
+                            <button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                            >
+                                <span className="text-2xl">➕</span>
+                                <div>
+                                    <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Create Group</h4>
+                                    <p className="text-white/60 text-sm">Start a new squad</p>
+                                </div>
+                            </button>
+                            
+                            <Link 
+                                to="/profile"
+                                className="flex items-center space-x-3 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
+                            >
+                                <span className="text-2xl">⚙️</span>
+                                <div>
+                                    <h4 className="text-white font-medium group-hover:text-coral-300 transition-colors">Settings</h4>
+                                    <p className="text-white/60 text-sm">Manage your profile</p>
+                                </div>
+                            </Link>
+                        </div>
+                    </div>
+                )}
             </div>
 
+            {/* Create Group Modal */}
             {isCreateModalOpen && (
                 <CreateGroupModal
                     isOpen={isCreateModalOpen}
