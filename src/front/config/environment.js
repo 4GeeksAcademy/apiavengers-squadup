@@ -1,15 +1,15 @@
-// src/front/config/environment.js - Missing environment configuration
+// src/front/config/environment.js - COMPLETE ENHANCED VERSION
 
 /**
- * Environment configuration for SquadUp frontend
- * Handles development, production, and GitHub Codespaces environments
+ * Complete environment configuration for SquadUp frontend
+ * Handles JWT authentication, development, production, and GitHub Codespaces environments
  */
 
 // Check if we're running in GitHub Codespaces
 export const isCodespace = !!(
   import.meta.env.VITE_CODESPACE_NAME || 
   import.meta.env.CODESPACE_NAME ||
-  typeof window !== 'undefined' && window.__CODESPACE_NAME__
+  (typeof window !== 'undefined' && window.__CODESPACE_NAME__)
 );
 
 // Check if we're in development mode
@@ -29,10 +29,10 @@ export const apiUrl = (() => {
   if (isCodespace) {
     const codespaceName = import.meta.env.VITE_CODESPACE_NAME || 
                          import.meta.env.CODESPACE_NAME ||
-                         window.__CODESPACE_NAME__;
+                         (typeof window !== 'undefined' && window.__CODESPACE_NAME__);
     const domain = import.meta.env.VITE_GITHUB_CODESPACES_DOMAIN || 
                    import.meta.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN ||
-                   window.__GITHUB_CODESPACES_DOMAIN__;
+                   (typeof window !== 'undefined' && window.__GITHUB_CODESPACES_DOMAIN__);
     
     if (codespaceName && domain) {
       return `https://${codespaceName}-3001.${domain}`;
@@ -45,7 +45,11 @@ export const apiUrl = (() => {
   }
   
   // Priority 4: Production fallback (same origin)
-  return window.location.origin;
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  
+  return 'http://localhost:3001';
 })();
 
 // Get the frontend URL with fallback logic
@@ -59,10 +63,10 @@ export const frontendUrl = (() => {
   if (isCodespace) {
     const codespaceName = import.meta.env.VITE_CODESPACE_NAME || 
                          import.meta.env.CODESPACE_NAME ||
-                         window.__CODESPACE_NAME__;
+                         (typeof window !== 'undefined' && window.__CODESPACE_NAME__);
     const domain = import.meta.env.VITE_GITHUB_CODESPACES_DOMAIN || 
                    import.meta.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN ||
-                   window.__GITHUB_CODESPACES_DOMAIN__;
+                   (typeof window !== 'undefined' && window.__GITHUB_CODESPACES_DOMAIN__);
     
     if (codespaceName && domain) {
       return `https://${codespaceName}-3000.${domain}`;
@@ -80,7 +84,7 @@ export const frontendUrl = (() => {
 
 /**
  * Enhanced fetch wrapper with automatic configuration for different environments
- * Handles CORS, credentials, and headers properly for Codespaces and local development
+ * and comprehensive JWT/authentication support
  */
 export const fetchWithConfig = async (url, options = {}) => {
   // Determine if this is a cross-origin request
@@ -96,7 +100,9 @@ export const fetchWithConfig = async (url, options = {}) => {
   // Add CORS headers for Codespaces
   if (isCodespace && isCrossOrigin) {
     defaultHeaders['Origin'] = frontendUrl;
-    defaultHeaders['Access-Control-Request-Method'] = options.method || 'GET';
+    if (options.method && options.method !== 'GET') {
+      defaultHeaders['Access-Control-Request-Method'] = options.method;
+    }
   }
   
   // Default fetch options
@@ -112,17 +118,25 @@ export const fetchWithConfig = async (url, options = {}) => {
     delete defaultOptions.headers['Content-Type'];
   }
   
+  // Construct full URL if relative
+  const fullUrl = url.startsWith('http') ? url : `${apiUrl}${url}`;
+  
   try {
-    console.log(`🌐 Making ${defaultOptions.method} request to:`, url);
-    console.log(`🏠 Environment: ${isCodespace ? 'Codespace' : isDevelopment ? 'Development' : 'Production'}`);
+    console.log(`🌐 Making ${defaultOptions.method} request to:`, fullUrl);
+    if (isDevelopment) {
+      console.log(`🏠 Environment: ${isCodespace ? 'Codespace' : 'Development'}`);
+      console.log(`📡 Headers:`, Object.keys(defaultOptions.headers));
+    }
     
-    const response = await fetch(url, defaultOptions);
+    const response = await fetch(fullUrl, defaultOptions);
     
-    console.log(`📡 Response: ${response.status} ${response.statusText}`);
+    if (isDevelopment) {
+      console.log(`📡 Response: ${response.status} ${response.statusText}`);
+    }
     
     return response;
   } catch (error) {
-    console.error(`❌ Fetch error for ${url}:`, error);
+    console.error(`❌ Fetch error for ${fullUrl}:`, error);
     
     // Enhanced error messages for common issues
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -133,8 +147,76 @@ export const fetchWithConfig = async (url, options = {}) => {
       throw new Error('CORS error: Server configuration issue. Please contact support.');
     }
     
+    if (error.name === 'AbortError') {
+      throw new Error('Request was cancelled or timed out.');
+    }
+    
     throw error;
   }
+};
+
+/**
+ * Test backend connectivity
+ */
+export const testConnectivity = async () => {
+  try {
+    console.log('🔍 Testing backend connectivity...');
+    
+    const response = await fetchWithConfig('/api/health', {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000) // 10 second timeout
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('✅ Backend connectivity confirmed:', data);
+      return { 
+        success: true, 
+        status: data.status,
+        timestamp: data.timestamp,
+        jwtConfigured: data.jwt_configured,
+        environment: data.environment
+      };
+    } else {
+      throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.error('❌ Backend connectivity test failed:', error);
+    return { 
+      success: false, 
+      error: error.message,
+      recommendation: getConnectivityRecommendation(error)
+    };
+  }
+};
+
+/**
+ * Get connectivity troubleshooting recommendations
+ */
+const getConnectivityRecommendation = (error) => {
+  const message = error.message.toLowerCase();
+  
+  if (message.includes('network') || message.includes('fetch')) {
+    return 'Check your internet connection and try refreshing the page.';
+  }
+  
+  if (message.includes('cors')) {
+    return 'This appears to be a server configuration issue. Please contact support.';
+  }
+  
+  if (message.includes('timeout') || message.includes('cancelled')) {
+    return 'The server is taking too long to respond. Try again in a moment.';
+  }
+  
+  if (message.includes('404')) {
+    return 'The backend service was not found. Please contact support.';
+  }
+  
+  if (message.includes('500')) {
+    return 'The server encountered an error. Please try again later.';
+  }
+  
+  return 'Please try refreshing the page or contact support if the problem continues.';
 };
 
 /**
@@ -152,6 +234,34 @@ export const createApiClient = (baseUrl = apiUrl) => {
 export const apiClient = createApiClient();
 
 /**
+ * JWT Configuration for frontend
+ */
+export const jwtConfig = {
+  // Token storage keys
+  accessTokenKey: 'squadup_access_token',
+  refreshTokenKey: 'squadup_refresh_token',
+  userKey: 'squadup_user',
+  rememberKey: 'squadup_remember_me',
+  
+  // HTTP headers
+  headerName: 'Authorization',
+  headerType: 'Bearer',
+  
+  // Token management
+  refreshThreshold: 5 * 60 * 1000, // Refresh 5 minutes before expiry
+  maxRetries: 3,
+  retryDelay: 1000,
+  
+  // Security settings
+  requireHttps: isProduction,
+  sameSite: 'lax',
+  
+  // Validation
+  validateTokenFormat: true,
+  checkExpiration: true
+};
+
+/**
  * Environment-specific configuration object
  */
 export const config = {
@@ -164,10 +274,16 @@ export const config = {
   isDevelopment,
   isProduction,
   
+  // JWT configuration
+  jwt: jwtConfig,
+  
   // Feature flags based on environment
   features: {
     // Enable debug logs in development
     debugLogs: isDevelopment,
+    
+    // Enhanced logging for Codespaces
+    verboseLogging: isCodespace,
     
     // Enable service worker in production
     serviceWorker: isProduction,
@@ -181,14 +297,23 @@ export const config = {
     // Enable error reporting in production
     errorReporting: isProduction,
     
-    // Enable Steam integration (always on for now)
+    // Enable Steam integration
     steamIntegration: true,
     
     // Enable live voting features
     liveVoting: true,
     
     // Enable admin features (could be based on user role)
-    adminFeatures: isDevelopment
+    adminFeatures: isDevelopment,
+    
+    // Token auto-refresh
+    autoRefreshTokens: true,
+    
+    // Connection monitoring
+    connectionMonitoring: true,
+    
+    // Offline support
+    offlineSupport: true
   },
   
   // API configuration
@@ -197,13 +322,29 @@ export const config = {
     retries: 3,
     retryDelay: 1000,
     
+    // Health check configuration
+    healthCheck: {
+      interval: 60000, // 1 minute
+      timeout: 10000,  // 10 seconds
+      retries: 3
+    },
+    
+    // Authentication specific config
+    auth: {
+      loginTimeout: 15000,
+      registerTimeout: 15000,
+      verifyTimeout: 10000,
+      refreshTimeout: 10000
+    },
+    
     // Steam API specific config
     steam: {
-      // Steam Web API has rate limits
       rateLimit: {
         requests: 100,
         window: 300000 // 5 minutes
-      }
+      },
+      syncTimeout: 60000, // 1 minute for library sync
+      connectionTimeout: 30000
     }
   },
   
@@ -220,15 +361,115 @@ export const config = {
     notifications: {
       position: 'top-center',
       duration: 5000,
-      maxVisible: 3
+      maxVisible: 3,
+      
+      // Auto-dismiss settings
+      autoDismiss: {
+        success: 4000,
+        error: 8000,
+        warning: 6000,
+        info: 5000
+      }
     },
     
     // Loading states
     loading: {
       minDuration: 500, // Minimum loading time to prevent flicker
-      timeout: 10000    // Maximum loading time before error
+      timeout: 10000,   // Maximum loading time before error
+      spinnerDelay: 200 // Delay before showing spinner
+    },
+    
+    // Form validation
+    validation: {
+      debounceDelay: 300,
+      showErrorsImmediately: false,
+      validateOnBlur: true
+    }
+  },
+  
+  // Security configuration
+  security: {
+    // Token security
+    tokenRefreshThreshold: jwtConfig.refreshThreshold,
+    maxTokenAge: 24 * 60 * 60 * 1000, // 24 hours
+    
+    // Request security
+    csrfProtection: isProduction,
+    
+    // Storage security
+    encryptLocalStorage: isProduction,
+    clearOnUnload: false
+  },
+  
+  // Development configuration
+  development: {
+    // Debugging
+    enableDebugMode: isDevelopment,
+    showAuthDebugInfo: isDevelopment,
+    logNetworkRequests: isDevelopment,
+    
+    // Testing
+    enableTestEndpoints: isDevelopment,
+    mockMode: false,
+    
+    // Performance
+    enablePerformanceMonitoring: isDevelopment
+  }
+};
+
+/**
+ * Environment validation
+ */
+export const validateEnvironment = () => {
+  const warnings = [];
+  const errors = [];
+  
+  // Check critical URLs
+  if (!apiUrl) {
+    errors.push('API URL could not be determined');
+  }
+  
+  if (!frontendUrl) {
+    warnings.push('Frontend URL could not be determined');
+  }
+  
+  // Check for HTTPS in production
+  if (isProduction && !apiUrl.startsWith('https://')) {
+    warnings.push('API URL should use HTTPS in production');
+  }
+  
+  // Check Codespace configuration
+  if (isCodespace) {
+    const hasCodespaceName = !!(import.meta.env.VITE_CODESPACE_NAME || import.meta.env.CODESPACE_NAME);
+    const hasDomain = !!(import.meta.env.VITE_GITHUB_CODESPACES_DOMAIN || import.meta.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN);
+    
+    if (!hasCodespaceName) {
+      warnings.push('Codespace name not found in environment');
+    }
+    
+    if (!hasDomain) {
+      warnings.push('GitHub Codespaces domain not found in environment');
     }
   }
+  
+  // Log results
+  if (errors.length > 0) {
+    console.error('🚨 Environment validation errors:', errors);
+  }
+  
+  if (warnings.length > 0) {
+    console.warn('⚠️ Environment validation warnings:', warnings);
+  }
+  
+  if (errors.length === 0 && warnings.length === 0) {
+    console.log('✅ Environment validation passed');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
 };
 
 /**
@@ -241,8 +482,12 @@ if (isDevelopment) {
   console.log('Is Codespace:', isCodespace);
   console.log('Is Development:', isDevelopment);
   console.log('Is Production:', isProduction);
+  console.log('JWT Config:', jwtConfig);
   console.log('Features:', config.features);
   console.groupEnd();
+  
+  // Validate environment
+  validateEnvironment();
 }
 
 // Export everything as default as well for convenience
@@ -253,7 +498,10 @@ export default {
   apiUrl,
   frontendUrl,
   fetchWithConfig,
+  testConnectivity,
   createApiClient,
   apiClient,
-  config
+  jwtConfig,
+  config,
+  validateEnvironment
 };
