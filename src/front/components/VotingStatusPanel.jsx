@@ -1,5 +1,5 @@
 // src/front/components/VotingStatusPanel.jsx - UNIFIED VERSION
-// Merges VotersStatusPanel.jsx and LiveMembersStatus.jsx into single component
+// Combines VotingStatusPanel and LiveMembersStatus into single component
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';

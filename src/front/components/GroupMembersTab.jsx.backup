@@ -45,6 +45,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     };
 
     // 🔧 ADD: Steam Progress Bar Component
+    const SteamProgressBar = () => (
         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4">
             <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium flex items-center">
@@ -373,6 +374,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
             </div>
 
             {/* 🔧 ENHANCED: Steam Connection Progress */}
+            <SteamProgressBar />
 
             {/* Controls */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
