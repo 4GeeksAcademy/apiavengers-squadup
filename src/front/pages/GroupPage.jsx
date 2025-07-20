@@ -1,476 +1,664 @@
-// src/front/pages/GroupPage.jsx - FIXED VERSION with correct context import
+// src/front/pages/GroupPage.jsx - Updated with Lazy Loading
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import useGlobalReducer from '../hooks/useGlobalReducer'; // 🔧 FIX 4: Use this instead of AuthContext
 import authService from '../store/authService';
+import useGlobalReducer from '../hooks/useGlobalReducer';
+import toast from 'react-hot-toast';
 
-const PageLoadingState = ({ message }) => (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 flex items-center justify-center">
-        <div className="text-center">
-            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-white/70">{message}</p>
-        </div>
-    </div>
-);
+// 🚀 PHASE 5: Import standardized components
+import { PageLoadingState, DataLoadingState } from '../components/LoadingState';
+import { 
+    NetworkErrorState, 
+    NotFoundErrorState, 
+    PermissionErrorState,
+    GroupErrorState 
+} from '../components/ErrorState';
+import { validateGroupId, safeGroupOperation } from '../utils/groupValidation';
 
-const NetworkErrorState = ({ error, onRetry, onRefresh, helpText }) => (
-    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center">
-        <div className="text-4xl mb-4">⚠️</div>
-        <h3 className="text-xl font-bold text-white mb-4">Error Loading Group</h3>
-        <p className="text-red-300 mb-4">{error}</p>
-        {helpText && <p className="text-white/60 text-sm mb-6">{helpText}</p>}
-        <div className="flex gap-3 justify-center">
-            <button
-                onClick={onRetry}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-            >
-                Try Again
-            </button>
-            <button
-                onClick={onRefresh}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white rounded-lg transition-colors"
-            >
-                Refresh Page
-            </button>
-        </div>
-    </div>
-);
+// Regular imports for lightweight components
+import CommonGamesList from '../components/CommonGamesList';
+import GroupInviteLink from '../components/GroupInviteLink';
+import GroupActionButtons from '../components/GroupActionButtons';
+import VoterStatusPanel from '../components/VoterStatusPanel';
+import VotingReminders from '../components/VotingReminders';
 
-export const GroupPage = () => {
+// 🎯 NEW: Lazy-loaded imports for large components
+import { 
+    LazyLiveVotingSession,
+    LazyQuickVote, 
+    LazyGroupMembersTab,
+    preloadOnIntent 
+} from '../components/LazyComponents';
+
+const GroupPage = () => {
     const { groupId } = useParams();
     const navigate = useNavigate();
-    
-    // 🔧 FIX 4: Use global state instead of broken AuthContext
     const { store } = useGlobalReducer();
     const user = store.user;
-    const token = authService.getAccessToken();
-
+    
     const [group, setGroup] = useState(null);
-    const [games, setGames] = useState([]);
-    const [members, setMembers] = useState([]);
-    const [activeSession, setActiveSession] = useState(null);
-    const [sessionId, setSessionId] = useState(null);
-    const [myVote, setMyVote] = useState(null);
-    const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [activeTab, setActiveTab] = useState('vote');
+    const [activeSessions, setActiveSessions] = useState([]);
+    
+    // Live voting state
+    const [showLiveVoting, setShowLiveVoting] = useState(false);
+    const [currentLiveSession, setCurrentLiveSession] = useState(null);
+    
+    // 🎯 NEW: Preloading state for lazy components
+    const [preloadedTabs, setPreloadedTabs] = useState(new Set(['vote'])); // Start with vote tab preloaded
 
-    // Validate authentication and group ID
     useEffect(() => {
-        if (!user || !token) {
-            console.error('❌ GroupPage: User not authenticated');
-            navigate('/login');
-            return;
-        }
-
-        if (!groupId || isNaN(parseInt(groupId))) {
-            console.error('❌ GroupPage: Invalid group ID');
-            setError('Invalid group ID');
-            setLoading(false);
-            return;
-        }
-
-        console.log('🏗️ GroupPage: Initializing for group', groupId, 'user', user.username);
-        initializeGroupPage();
-    }, [groupId, user, token, navigate]);
-
-    // Initialize group page data
-    const initializeGroupPage = async () => {
-        setLoading(true);
-        setError(null);
-
-        try {
-            // Fetch group details
-            await Promise.all([
-                fetchGroupDetails(),
-                fetchGroupMembers(),
-                fetchCommonGames(),
-                checkActiveSession()
-            ]);
-        } catch (err) {
-            console.error('❌ GroupPage initialization failed:', err);
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Fetch group details
-    const fetchGroupDetails = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${groupId}`
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                setGroup(data.group);
-                console.log('✅ Group details loaded:', data.group.name);
-            } else {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to load group');
+        if (groupId) {
+            // Validate groupId before proceeding
+            const validation = validateGroupId(groupId);
+            if (!validation.isValid) {
+                console.error('❌ Invalid groupId in URL:', groupId, validation.error);
+                setError('Invalid group ID in URL');
+                setLoading(false);
+                return;
             }
-        } catch (error) {
-            console.error('❌ Failed to fetch group details:', error);
-            throw error;
+
+            fetchGroupData();
+            fetchActiveSessions();
         }
-    };
+    }, [groupId]);
 
-    // Fetch group members
-    const fetchGroupMembers = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${groupId}/members`
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                setMembers(data.members || []);
-                console.log('✅ Group members loaded:', data.members?.length || 0);
-            } else {
-                console.warn('⚠️ Failed to load group members');
-                setMembers([]);
-            }
-        } catch (error) {
-            console.warn('⚠️ Failed to fetch group members:', error);
-            setMembers([]);
+    // Check if there's an active voting session
+    useEffect(() => {
+        const activeVotingSession = activeSessions.find(s => s.status === 'voting');
+        
+        if (activeVotingSession) {
+            setShowLiveVoting(true);
+            setCurrentLiveSession(activeVotingSession);
+            console.log('🔴 Active voting session found:', activeVotingSession.session_name);
+            
+            // 🎯 NEW: Preload voting components when there's an active session
+            preloadOnIntent.voting();
+        } else {
+            setShowLiveVoting(false);
+            setCurrentLiveSession(null);
         }
-    };
+    }, [activeSessions]);
 
-    // Fetch common games
-    const fetchCommonGames = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${groupId}/common-games`
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                setGames(data.games || []);
-                console.log('✅ Common games loaded:', data.games?.length || 0);
-            } else {
-                console.warn('⚠️ Failed to load common games');
-                setGames([]);
-            }
-        } catch (error) {
-            console.warn('⚠️ Failed to fetch common games:', error);
-            setGames([]);
+    // 🎯 NEW: Preload components based on user interaction patterns
+    useEffect(() => {
+        // Preload likely next components based on current tab
+        const preloadTimers = [];
+        
+        switch (activeTab) {
+            case 'vote':
+                // User is on vote tab, likely to check members or games next
+                preloadTimers.push(
+                    setTimeout(() => {
+                        if (!preloadedTabs.has('members')) {
+                            preloadOnIntent.members();
+                            setPreloadedTabs(prev => new Set(prev).add('members'));
+                        }
+                    }, 1500)
+                );
+                break;
+                
+            case 'games':
+                // User is viewing games, might want to start voting
+                preloadTimers.push(
+                    setTimeout(() => {
+                        if (!preloadedTabs.has('vote')) {
+                            preloadOnIntent.voting();
+                            setPreloadedTabs(prev => new Set(prev).add('vote'));
+                        }
+                    }, 1000)
+                );
+                break;
+                
+            case 'members':
+                // User is managing members, might want to check games or start voting
+                preloadTimers.push(
+                    setTimeout(() => {
+                        preloadOnIntent.voting();
+                        setPreloadedTabs(prev => new Set(prev).add('vote'));
+                    }, 2000)
+                );
+                break;
         }
-    };
+        
+        return () => {
+            preloadTimers.forEach(timer => clearTimeout(timer));
+        };
+    }, [activeTab, preloadedTabs]);
 
-    // Check for active voting session
-    const checkActiveSession = async () => {
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${groupId}/active-session`
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data.session) {
-                    setActiveSession(data.session);
-                    setSessionId(data.session.id);
-                    console.log('✅ Active session found:', data.session.session_name);
+    const fetchGroupData = async () => {
+        const result = await safeGroupOperation(
+            groupId,
+            async (validatedGroupId) => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${validatedGroupId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.group;
+                } else if (response.status === 404) {
+                    throw new Error('Group not found');
+                } else if (response.status === 403) {
+                    throw new Error('Access denied to this group');
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to load group details');
                 }
-            }
-        } catch (error) {
-            console.warn('⚠️ Failed to check active session:', error);
-        }
-    };
+            },
+            'fetch group data'
+        );
 
-    // Handle voting
-    const handleVote = async (gameId) => {
-        if (!sessionId || myVote !== null) {
-            console.warn('⚠️ Cannot vote: no session or already voted');
-            return;
-        }
+        setLoading(false);
 
-        try {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/sessions/${sessionId}/vote`,
-                {
-                    method: 'POST',
-                    body: JSON.stringify({ game_id: gameId })
-                }
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                setMyVote(gameId);
-                console.log('✅ Vote submitted for game:', gameId);
+        if (result.success) {
+            setGroup(result.data);
+            setError(null);
+        } else {
+            console.error('❌ Failed to fetch group data:', result.error);
+            setError(result.error);
+            
+            // Show appropriate toast based on error type
+            if (result.error.includes('not found')) {
+                toast.error("Group not found");
+            } else if (result.error.includes('Access denied')) {
+                toast.error("You don't have access to this group");
             } else {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to vote');
+                toast.error("Failed to load group details");
             }
-        } catch (error) {
-            console.error('❌ Vote submission failed:', error);
-            setError(`Failed to vote: ${error.message}`);
         }
     };
 
-    // Start new voting session
-    const startVotingSession = async () => {
-        try {
-            const sessionName = prompt('Enter a name for this voting session:');
-            if (!sessionName) return;
-
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            const response = await authService.authenticatedFetch(
-                `${backendUrl}/api/gaming/groups/${groupId}/start-vote`,
-                {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        session_name: sessionName.trim(),
-                        voting_type: 'ranked_choice'
-                    })
+    const fetchActiveSessions = async () => {
+        const result = await safeGroupOperation(
+            groupId,
+            async (validatedGroupId) => {
+                const backendUrl = import.meta.env.VITE_BACKEND_URL;
+                const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups/${validatedGroupId}/sessions`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.sessions || [];
+                } else {
+                    console.warn('Failed to fetch sessions:', response.status);
+                    return [];
                 }
-            );
+            },
+            'fetch active sessions'
+        );
 
-            if (response.ok) {
-                const data = await response.json();
-                setActiveSession(data.session);
-                setSessionId(data.session.id);
-                console.log('✅ Voting session started:', data.session.session_name);
-            } else {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to start voting session');
+        if (result.success) {
+            const sessions = result.data;
+            setActiveSessions(sessions);
+            
+            console.log('📊 Found sessions:', sessions.length, 'sessions');
+            const votingSessions = sessions.filter(s => s.status === 'voting');
+            if (votingSessions.length > 0) {
+                console.log('🔴 Active voting sessions:', votingSessions.length);
             }
-        } catch (error) {
-            console.error('❌ Failed to start voting session:', error);
-            setError(`Failed to start session: ${error.message}`);
+        } else {
+            console.error("Error fetching sessions:", result.error);
         }
     };
 
-    // Check if all members have voted
-    const allVoted = members.length > 0 && members.every(member => member.has_voted);
-    const isCreator = group?.creator?.id === user?.id;
+    // Handle session state changes
+    const handleSessionUpdate = () => {
+        console.log('🔄 Session updated, refreshing data...');
+        fetchActiveSessions();
+    };
 
+    const handleGroupUpdate = (action, wasDeleted, data) => {
+        if (wasDeleted || action === 'deleted') {
+            navigate('/dashboard', { 
+                state: { message: `Group "${group?.name || 'Unknown'}" was deleted` }
+            });
+        } else if (action === 'left') {
+            navigate('/dashboard', { 
+                state: { message: `You left "${group?.name || 'the group'}"` }
+            });
+        } else if (action === 'ownership_transferred') {
+            fetchGroupData();
+        } else if (action === 'member_kicked') {
+            setGroup(prev => ({
+                ...prev,
+                current_members: data?.remainingMembers || prev.current_members - 1
+            }));
+        }
+    };
+
+    // 🎯 NEW: Handle tab change with preloading
+    const handleTabChange = (tabId) => {
+        setActiveTab(tabId);
+        
+        // Preload components for the selected tab
+        if (!preloadedTabs.has(tabId)) {
+            switch (tabId) {
+                case 'vote':
+                    preloadOnIntent.voting();
+                    break;
+                case 'members':
+                    preloadOnIntent.members();
+                    break;
+                case 'games':
+                    // Games tab uses lightweight components, no preload needed
+                    break;
+            }
+            setPreloadedTabs(prev => new Set(prev).add(tabId));
+        }
+    };
+
+    // Loading state
     if (loading) {
-        return <PageLoadingState message="Loading group details..." />;
+        return <PageLoadingState 
+            message="Loading group..." 
+            subMessage="Fetching members and game data" 
+        />;
     }
 
+    // Enhanced error handling with specific error states
     if (error) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
-                <div className="max-w-4xl mx-auto">
-                    <NetworkErrorState 
-                        error={error}
-                        onRetry={() => {
-                            setError(null);
-                            initializeGroupPage();
-                        }}
-                        onRefresh={() => window.location.reload()}
-                        helpText="Make sure you have permission to view this group."
-                    />
-                </div>
-            </div>
-        );
+        if (error.includes('not found')) {
+            return <NotFoundErrorState 
+                title="Group Not Found"
+                message="This group may have been deleted or you don't have access to it."
+                onGoBack={() => navigate('/dashboard')}
+            />;
+        }
+        
+        if (error.includes('Access denied') || error.includes('permission')) {
+            return <PermissionErrorState 
+                onGoBack={() => navigate('/dashboard')}
+                onGoHome={() => navigate('/')}
+            />;
+        }
+        
+        if (error.includes('Invalid group ID')) {
+            return <GroupErrorState 
+                error="Invalid group ID in the URL"
+                onRetry={() => window.location.reload()}
+                onGoHome={() => navigate('/dashboard')}
+            />;
+        }
+        
+        return <NetworkErrorState 
+            error={error}
+            onRetry={fetchGroupData}
+            onRefresh={() => window.location.reload()}
+            helpText="Check your connection and try again."
+        />;
     }
 
     if (!group) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4">
-                <div className="max-w-4xl mx-auto text-center">
-                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
-                        <h2 className="text-2xl font-bold text-white mb-4">Group Not Found</h2>
-                        <p className="text-white/70 mb-6">This group may have been deleted or you don't have access.</p>
-                        <button
-                            onClick={() => navigate('/dashboard')}
-                            className="px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
-                        >
-                            Back to Dashboard
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
+        return <NotFoundErrorState 
+            title="Group Not Found"
+            message="This group may have been deleted or you don't have access to it."
+            onGoBack={() => navigate('/dashboard')}
+        />;
     }
-
+    
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 pt-24 px-4 pb-12">
             <div className="max-w-6xl mx-auto">
                 
-                {/* Group Header */}
+                {/* Header */}
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 mb-8">
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <h1 className="text-4xl font-bold text-white mb-2">{group.name}</h1>
-                            <p className="text-white/70">
-                                Created by {group.creator?.username || 'Unknown'} • {members.length} members
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => navigate('/dashboard')}
-                            className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white rounded-xl transition-colors duration-200"
-                        >
-                            ← Back
-                        </button>
-                    </div>
-
-                    {group.description && (
-                        <p className="text-white/80 mb-6">{group.description}</p>
-                    )}
-
-                    {/* Group Stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-white/5 rounded-xl p-4 text-center">
-                            <div className="text-2xl font-bold text-cyan-400">{members.length}</div>
-                            <div className="text-white/60 text-sm">Members</div>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-4 text-center">
-                            <div className="text-2xl font-bold text-green-400">{games.length}</div>
-                            <div className="text-white/60 text-sm">Common Games</div>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-4 text-center">
-                            <div className="text-2xl font-bold text-purple-400">
-                                {members.filter(m => m.is_online).length}
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                        <div className="flex-1">
+                            <div className="flex items-center space-x-3 mb-3">
+                                <h1 className="text-3xl lg:text-4xl font-bold text-white">{group.name}</h1>
+                                {group.is_public ? (
+                                    <span className="px-3 py-1 bg-green-500/20 text-green-300 border border-green-500/30 rounded-full text-sm">
+                                        Public
+                                    </span>
+                                ) : (
+                                    <span className="px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full text-sm">
+                                        Private
+                                    </span>
+                                )}
+                                
+                                {/* Live voting indicator */}
+                                {showLiveVoting && (
+                                    <span className="px-3 py-1 bg-red-500/20 text-red-300 border border-red-500/30 rounded-full text-sm animate-pulse">
+                                        🔴 Live Voting
+                                    </span>
+                                )}
                             </div>
-                            <div className="text-white/60 text-sm">Online Now</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    
-                    {/* Voting Section */}
-                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-bold text-white">Group Voting</h2>
-                            {isCreator && !activeSession && (
-                                <button
-                                    onClick={startVotingSession}
-                                    className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-xl transition-colors duration-200"
-                                >
-                                    Start Vote
-                                </button>
+                            
+                            {group.description && (
+                                <p className="text-white/70 text-lg mb-3">{group.description}</p>
                             )}
-                        </div>
-
-                        {activeSession ? (
-                            <div>
-                                <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl p-4 mb-6">
-                                    <h3 className="text-lg font-semibold text-blue-200 mb-2">
-                                        Active Session: {activeSession.session_name}
-                                    </h3>
-                                    <p className="text-blue-100 text-sm">
-                                        {myVote ? 'You have voted! Waiting for others...' : 'Click on a game below to vote!'}
-                                    </p>
+                            
+                            <div className="flex flex-wrap items-center gap-4 text-sm">
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-white/60">👥</span>
+                                    <span className="text-white">{group.current_members}/{group.max_members} members</span>
                                 </div>
-
-                                <div className="space-y-3 max-h-80 overflow-y-auto">
-                                    {games.map(game => (
-                                        <div
-                                            key={game.id}
-                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${
-                                                myVote === game.id
-                                                    ? 'border-green-500 bg-green-500/20'
-                                                    : myVote
-                                                    ? 'border-gray-500/30 bg-gray-500/10 opacity-50 cursor-not-allowed'
-                                                    : 'border-white/20 bg-white/5 hover:border-coral-500/50 hover:bg-coral-500/10'
-                                            }`}
-                                            onClick={() => !myVote && handleVote(game.id)}
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex-1">
-                                                    <h4 className="text-white font-semibold">{game.name}</h4>
-                                                    <p className="text-white/60 text-sm">
-                                                        {game.ownership_stats?.owners || 0} members own this
-                                                    </p>
-                                                </div>
-                                                {myVote === game.id && (
-                                                    <div className="text-green-400 font-bold">✓ Voted</div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-white/60">👑</span>
+                                    <span className="text-white">{group.creator?.username || 'Unknown'}</span>
                                 </div>
-
-                                {allVoted && (
-                                    <div className="mt-6 text-center">
-                                        <button
-                                            onClick={() => navigate(`/results/${sessionId}`)}
-                                            className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-colors duration-200"
-                                        >
-                                            View Results 🎉
-                                        </button>
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-white/60">📅</span>
+                                    <span className="text-white">{new Date(group.created_at).toLocaleDateString()}</span>
+                                </div>
+                                
+                                {activeSessions.length > 0 && (
+                                    <div className="flex items-center space-x-2">
+                                        <span className="text-white/60">🎯</span>
+                                        <span className="text-white">{activeSessions.length} active sessions</span>
                                     </div>
                                 )}
                             </div>
-                        ) : (
-                            <div className="text-center py-8">
-                                <div className="text-4xl mb-4">🗳️</div>
-                                <h3 className="text-xl font-bold text-white mb-2">No Active Voting Session</h3>
-                                <p className="text-white/70 mb-6">
-                                    {isCreator 
-                                        ? 'Start a voting session to let members choose what to play!' 
-                                        : 'Waiting for the group creator to start a voting session.'}
-                                </p>
+                            
+                            {/* Progress Bar */}
+                            <div className="mt-4">
+                                <div className="w-full bg-white/10 rounded-full h-2">
+                                    <div 
+                                        className="bg-coral-500 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${(group.current_members / group.max_members) * 100}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Actions */}
+                        {user && group && (
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <button
+                                    onClick={() => navigate('/dashboard')}
+                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl text-sm transition-colors duration-200"
+                                >
+                                    ← Dashboard
+                                </button>
+                                <GroupActionButtons 
+                                    group={group} 
+                                    user={user} 
+                                    onGroupUpdate={handleGroupUpdate}
+                                />
                             </div>
                         )}
                     </div>
+                </div>
 
-                    {/* Members Section */}
-                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8">
-                        <h2 className="text-2xl font-bold text-white mb-6">Group Members</h2>
-                        
-                        {members.length > 0 ? (
-                            <div className="space-y-3 max-h-80 overflow-y-auto">
-                                {members.map(member => (
-                                    <div
-                                        key={member.id}
-                                        className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors duration-200"
-                                    >
-                                        <div className="flex items-center space-x-3">
-                                            <div className={`w-3 h-3 rounded-full ${
-                                                member.is_online ? 'bg-green-400' : 'bg-gray-400'
-                                            }`}></div>
-                                            <div>
-                                                <div className="text-white font-medium">
-                                                    {member.username}
-                                                    {member.id === group.creator?.id && (
-                                                        <span className="ml-2 text-yellow-400">👑</span>
-                                                    )}
-                                                    {member.id === user.id && (
-                                                        <span className="ml-2 text-blue-400">(You)</span>
-                                                    )}
-                                                </div>
-                                                <div className="text-white/60 text-sm">
-                                                    {member.steam_connected ? '🎮 Steam Connected' : '⚠️ Steam Disconnected'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="text-right">
-                                            <div className={`text-sm ${
-                                                member.is_online ? 'text-green-400' : 'text-gray-400'
-                                            }`}>
-                                                {member.is_online ? 'Online' : 'Offline'}
-                                            </div>
-                                            {activeSession && (
-                                                <div className={`text-xs ${
-                                                    member.has_voted ? 'text-green-400' : 'text-yellow-400'
-                                                }`}>
-                                                    {member.has_voted ? 'Voted ✓' : 'Pending...'}
-                                                </div>
-                                            )}
-                                        </div>
+                {/* Active Sessions Alert */}
+                {activeSessions.length > 0 && (
+                    <div className="mb-6">
+                        {activeSessions.map(session => (
+                            <div key={session.id} className={`backdrop-blur-xl border rounded-2xl p-4 mb-4 ${
+                                session.status === 'voting' 
+                                    ? 'bg-red-500/10 border-red-500/30' 
+                                    : 'bg-blue-500/10 border-blue-500/30'
+                            }`}>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h3 className={`font-semibold ${
+                                            session.status === 'voting' ? 'text-red-300' : 'text-blue-300'
+                                        }`}>
+                                            {session.status === 'voting' ? '🔴 Active Voting Session' : '🏆 Voting Complete'}
+                                        </h3>
+                                        <p className={`text-sm ${
+                                            session.status === 'voting' ? 'text-red-200' : 'text-blue-200'
+                                        }`}>
+                                            {session.session_name}
+                                        </p>
+                                        {session.status === 'voting' && (
+                                            <p className="text-xs text-white/60 mt-1">
+                                                🔴 Live updates • Real-time results
+                                            </p>
+                                        )}
                                     </div>
-                                ))}
+                                    <button
+                                        onClick={() => navigate(`/sessions/${session.id}/results`)}
+                                        className={`px-4 py-2 font-medium rounded-lg text-sm transition-colors duration-200 ${
+                                            session.status === 'voting'
+                                                ? 'bg-red-500 hover:bg-red-600 text-white'
+                                                : 'bg-blue-500 hover:bg-blue-600 text-white'
+                                        }`}
+                                    >
+                                        {session.status === 'voting' ? 'Join Live Voting' : 'View Results'}
+                                    </button>
+                                </div>
                             </div>
-                        ) : (
-                            <div className="text-center py-8">
-                                <div className="text-4xl mb-4">👥</div>
-                                <h3 className="text-xl font-bold text-white mb-2">No Members Found</h3>
-                                <p className="text-white/70">
-                                    Invite friends to join your group!
-                                </p>
+                        ))}
+                    </div>
+                )}
+
+                {/* Tab Navigation */}
+                <div className="mb-8">
+                    <div className="flex space-x-1 bg-white/5 p-1 rounded-xl w-fit">
+                        {[
+                            { id: 'vote', label: 'Vote & Play', icon: showLiveVoting ? '🔴' : '🗳️' },
+                            { id: 'games', label: 'Common Games', icon: '🎮' },
+                            { id: 'members', label: 'Members', icon: '👥' }
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => handleTabChange(tab.id)}
+                                onMouseEnter={() => {
+                                    // 🎯 NEW: Preload on hover for better UX
+                                    if (!preloadedTabs.has(tab.id)) {
+                                        switch (tab.id) {
+                                            case 'vote':
+                                                preloadOnIntent.voting();
+                                                break;
+                                            case 'members':
+                                                preloadOnIntent.members();
+                                                break;
+                                        }
+                                        setPreloadedTabs(prev => new Set(prev).add(tab.id));
+                                    }
+                                }}
+                                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 flex items-center space-x-2 ${
+                                    activeTab === tab.id
+                                        ? 'bg-coral-500 text-white shadow-lg'
+                                        : 'text-white/70 hover:text-white hover:bg-white/10'
+                                }`}
+                            >
+                                <span>{tab.icon}</span>
+                                <span>{tab.label}</span>
+                                {tab.id === 'vote' && showLiveVoting && (
+                                    <span className="ml-1 w-2 h-2 bg-red-400 rounded-full animate-pulse"></span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                
+                {/* Tab Content */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    
+                    {/* Main Content */}
+                    <div className="lg:col-span-2">
+                        {activeTab === 'vote' && (
+                            <div className="space-y-6">
+                                {/* 🎯 NEW: Use lazy-loaded components */}
+                                {showLiveVoting && currentLiveSession ? (
+                                    <LazyLiveVotingSession 
+                                        groupId={groupId} 
+                                        session={currentLiveSession}
+                                        onSessionUpdate={handleSessionUpdate}
+                                    />
+                                ) : (
+                                    <>
+                                        <LazyQuickVote 
+                                            groupId={groupId}
+                                            onSessionCreated={handleSessionUpdate}
+                                        />
+                                        
+                                        <VotingReminders 
+                                            groupId={groupId}
+                                            recentSessions={activeSessions}
+                                        />
+                                    </>
+                                )}
                             </div>
                         )}
+                        
+                        {activeTab === 'games' && (
+                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                                <CommonGamesList groupId={groupId} />
+                            </div>
+                        )}
+                        
+                        {/* 🎯 NEW: Use lazy-loaded GroupMembersTab */}
+                        {activeTab === 'members' && (
+                            <LazyGroupMembersTab 
+                                group={group}
+                                user={user}
+                                onGroupUpdate={handleGroupUpdate}
+                            />
+                        )}
+                    </div>
+
+                    {/* Sidebar */}
+                    <div className="space-y-6">
+                        <GroupInviteLink group={group} />
+                        
+                        {/* Show voter status only when voting is active */}
+                        {showLiveVoting && currentLiveSession && (
+                            <VoterStatusPanel 
+                                sessionId={currentLiveSession.id}
+                                groupId={groupId}
+                            />
+                        )}
+                        
+                        {/* Quick Stats */}
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                            <h3 className="text-white font-semibold mb-4 flex items-center">
+                                <span className="text-xl mr-2">📊</span>
+                                Quick Stats
+                            </h3>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-white/70">Members:</span>
+                                    <span className="text-white font-bold">{group.current_members}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-white/70">Max Members:</span>
+                                    <span className="text-white font-bold">{group.max_members}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-white/70">Active Sessions:</span>
+                                    <span className="text-coral-400 font-bold">{activeSessions.length}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-white/70">Live Voting:</span>
+                                    <span className={`font-bold text-sm ${showLiveVoting ? 'text-red-400' : 'text-gray-400'}`}>
+                                        {showLiveVoting ? '🔴 Active' : '⚫ None'}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-white/70">Created:</span>
+                                    <span className="text-white/60 text-sm">{new Date(group.created_at).toLocaleDateString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-white/70">Visibility:</span>
+                                    <span className={`text-sm font-medium ${group.is_public ? 'text-green-300' : 'text-blue-300'}`}>
+                                        {group.is_public ? 'Public' : 'Private'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Steam Status */}
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                            <h3 className="text-white font-semibold mb-4 flex items-center">
+                                <span className="text-xl mr-2">🎮</span>
+                                Steam Integration
+                            </h3>
+                            <div className="space-y-3">
+                                {group.members && group.members.length > 0 ? (
+                                    <>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-white/70">Connected Members:</span>
+                                            <span className="text-green-400 font-bold">
+                                                {group.members.filter(m => m.steam_connected).length}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-white/70">Not Connected:</span>
+                                            <span className="text-red-400 font-bold">
+                                                {group.members.filter(m => !m.steam_connected).length}
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-white/10 rounded-full h-2 mt-3">
+                                            <div 
+                                                className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                                                style={{ 
+                                                    width: `${(group.members.filter(m => m.steam_connected).length / group.members.length) * 100}%` 
+                                                }}
+                                            ></div>
+                                        </div>
+                                        <p className="text-white/60 text-xs mt-2">
+                                            {Math.round((group.members.filter(m => m.steam_connected).length / group.members.length) * 100)}% Steam connected
+                                        </p>
+                                    </>
+                                ) : (
+                                    <p className="text-white/60 text-sm">No members to display Steam status</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Quick Actions */}
+                        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+                            <h3 className="text-white font-semibold mb-4 flex items-center">
+                                <span className="text-xl mr-2">⚡</span>
+                                Quick Actions
+                            </h3>
+                            <div className="space-y-3">
+                                <button 
+                                    onClick={() => handleTabChange('vote')}
+                                    className={`w-full p-3 rounded-lg text-left transition-colors duration-200 ${
+                                        activeTab === 'vote' 
+                                            ? 'bg-coral-500/20 text-coral-300 border border-coral-500/30' 
+                                            : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'
+                                    }`}
+                                >
+                                    <span className="text-lg mr-2">{showLiveVoting ? '🔴' : '🗳️'}</span>
+                                    {showLiveVoting ? 'Join Live Voting' : 'Start Voting Session'}
+                                </button>
+                                
+                                <button 
+                                    onClick={() => handleTabChange('games')}
+                                    className={`w-full p-3 rounded-lg text-left transition-colors duration-200 ${
+                                        activeTab === 'games' 
+                                            ? 'bg-coral-500/20 text-coral-300 border border-coral-500/30' 
+                                            : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'
+                                    }`}
+                                >
+                                    <span className="text-lg mr-2">🎮</span>
+                                    View Common Games
+                                </button>
+                                
+                                <button 
+                                    onClick={() => handleTabChange('members')}
+                                    className={`w-full p-3 rounded-lg text-left transition-colors duration-200 ${
+                                        activeTab === 'members' 
+                                            ? 'bg-coral-500/20 text-coral-300 border border-coral-500/30' 
+                                            : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'
+                                    }`}
+                                >
+                                    <span className="text-lg mr-2">👥</span>
+                                    Manage Members
+                                </button>
+                                
+                                {/* Quick link to results if available */}
+                                {activeSessions.length > 0 && (
+                                    <button 
+                                        onClick={() => {
+                                            const latestSession = activeSessions[0];
+                                            navigate(`/sessions/${latestSession.id}/results`);
+                                        }}
+                                        className="w-full p-3 rounded-lg text-left transition-colors duration-200 bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/30"
+                                    >
+                                        <span className="text-lg mr-2">📊</span>
+                                        View Latest Results
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -478,3 +666,4 @@ export const GroupPage = () => {
     );
 };
 
+export default GroupPage;
