@@ -1,140 +1,126 @@
-# Create a simple admin interface route that returns HTML
-cat >> src/app.py << 'EOF'
-
-@app.route('/admin')
-def admin_interface():
-    """Simple HTML admin interface - like system settings"""
-    try:
-        from api.models import User, db
-        users = User.query.all()
-        
-        html = """
 <!DOCTYPE html>
-<html>
-<head>
-    <title>SquadUp Admin - User Management</title>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="/4geeks.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SquadUp - Find Your Gaming Squad</title>
+    
+    <!-- Meta tags for better SEO -->
+    <meta name="description" content="SquadUp - Connect with gamers, find your squad, and discover new games together. Steam integration for seamless gaming experiences." />
+    <meta name="keywords" content="gaming, squad, multiplayer, steam, friends, games" />
+    <meta name="author" content="API Avengers" />
+    
+    <!-- Open Graph meta tags for social sharing -->
+    <meta property="og:title" content="SquadUp - Find Your Gaming Squad" />
+    <meta property="og:description" content="Connect with gamers and find your perfect squad" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev" />
+    
+    <!-- Preconnect to external domains for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Load any external fonts if needed -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS will be injected by Vite -->
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #007cba; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background-color: #007cba; color: white; }
-        tr:hover { background-color: #f5f5f5; }
-        .status { padding: 4px 8px; border-radius: 4px; color: white; font-size: 12px; }
-        .active { background-color: #28a745; }
-        .inactive { background-color: #dc3545; }
-        .admin { background-color: #ffc107; color: black; }
-        .steam-yes { color: #28a745; font-weight: bold; }
-        .steam-no { color: #dc3545; }
-        .stats { display: flex; gap: 20px; margin-bottom: 20px; }
-        .stat-box { background: #007cba; color: white; padding: 15px; border-radius: 5px; text-align: center; flex: 1; }
+      /* Prevent flash of unstyled content */
+      body {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #0f172a;
+        color: #e2e8f0;
+      }
+      
+      /* Loading spinner styles */
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #0f172a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 3px solid #1e293b;
+        border-top: 3px solid #3b82f6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .loading-text {
+        margin-top: 20px;
+        color: #64748b;
+        font-size: 14px;
+      }
+      
+      /* Hide loading container when React takes over */
+      .app-loaded .loading-container {
+        display: none;
+      }
     </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🎮 SquadUp Admin Interface</h1>
-        
-        <div class="stats">
-            <div class="stat-box">
-                <h3>Total Users</h3>
-                <p style="font-size: 24px; margin: 0;">{total_users}</p>
-            </div>
-            <div class="stat-box">
-                <h3>Active Users</h3>
-                <p style="font-size: 24px; margin: 0;">{active_users}</p>
-            </div>
-            <div class="stat-box">
-                <h3>Steam Connected</h3>
-                <p style="font-size: 24px; margin: 0;">{steam_users}</p>
-            </div>
-            <div class="stat-box">
-                <h3>Admin Users</h3>
-                <p style="font-size: 24px; margin: 0;">{admin_users}</p>
-            </div>
-        </div>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Username</th>
-                    <th>Email</th>
-                    <th>Status</th>
-                    <th>Steam Connected</th>
-                    <th>Total Games</th>
-                    <th>Total Votes</th>
-                    <th>Created</th>
-                    <th>Last Login</th>
-                </tr>
-            </thead>
-            <tbody>
-                {user_rows}
-            </tbody>
-        </table>
-        
-        <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 5px;">
-            <h3>Quick Actions</h3>
-            <p><a href="/api/health" style="color: #007cba;">System Health Check</a></p>
-            <p><a href="/dashboard" style="color: #007cba;">Performance Dashboard</a></p>
-            <p><a href="/api/admin/view-users" style="color: #007cba;">Raw User Data (JSON)</a></p>
-        </div>
+  </head>
+  <body>
+    <!-- Loading screen shown while React app loads -->
+    <div class="loading-container" id="loading-screen">
+      <div style="text-align: center;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading SquadUp...</div>
+      </div>
     </div>
-</body>
+    
+    <!-- React app will mount here -->
+    <div id="root"></div>
+    
+    <!-- Vite will inject the main.jsx script here -->
+    <script type="module" src="/src/front/main.jsx"></script>
+    
+    <!-- Remove loading screen once React has loaded -->
+    <script>
+      // Hide loading screen once the React app has mounted
+      window.addEventListener('load', function() {
+        setTimeout(() => {
+          const loadingScreen = document.getElementById('loading-screen');
+          if (loadingScreen) {
+            loadingScreen.style.opacity = '0';
+            loadingScreen.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => {
+              loadingScreen.style.display = 'none';
+              document.body.classList.add('app-loaded');
+            }, 300);
+          }
+        }, 100);
+      });
+      
+      // Also hide on DOMContentLoaded as fallback
+      document.addEventListener('DOMContentLoaded', function() {
+        // Give React a moment to mount
+        setTimeout(() => {
+          const root = document.getElementById('root');
+          if (root && root.children.length > 0) {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) {
+              loadingScreen.style.display = 'none';
+              document.body.classList.add('app-loaded');
+            }
+          }
+        }, 500);
+      });
+    </script>
+  </body>
 </html>
-        """
-        
-        # Generate user rows
-        user_rows = ""
-        active_count = 0
-        steam_count = 0
-        admin_count = 0
-        
-        for user in users:
-            if user.is_active:
-                active_count += 1
-            if user.steam_connected or user.is_steam_connected:
-                steam_count += 1
-            if user.is_admin:
-                admin_count += 1
-            
-            status_class = "active" if user.is_active else "inactive"
-            status_text = "Active" if user.is_active else "Inactive"
-            if user.is_admin:
-                status_class = "admin"
-                status_text = "Admin"
-            
-            steam_status = "✅ Yes" if (user.steam_connected or user.is_steam_connected) else "❌ No"
-            steam_class = "steam-yes" if (user.steam_connected or user.is_steam_connected) else "steam-no"
-            
-            created_date = user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A'
-            last_login = user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never'
-            
-            user_rows += f"""
-                <tr>
-                    <td>{user.id}</td>
-                    <td><strong>{user.username}</strong></td>
-                    <td>{user.email}</td>
-                    <td><span class="status {status_class}">{status_text}</span></td>
-                    <td><span class="{steam_class}">{steam_status}</span></td>
-                    <td>{user.total_games}</td>
-                    <td>{user.total_votes_cast}</td>
-                    <td>{created_date}</td>
-                    <td>{last_login}</td>
-                </tr>
-            """
-        
-        # Fill in the template
-        html = html.format(
-            total_users=len(users),
-            active_users=active_count,
-            steam_users=steam_count,
-            admin_users=admin_count,
-            user_rows=user_rows
-        )
-        
-        return html
-        
-    except Exception as e:
-        return f"<h1>Error</h1><p>{str(e)}</p>"
-EOF

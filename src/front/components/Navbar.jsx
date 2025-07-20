@@ -1,4 +1,4 @@
-// src/front/components/Navbar.jsx - Updated with Performance Monitoring
+// src/front/components/Navbar.jsx - Merged with Performance Monitoring
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
@@ -7,68 +7,15 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
+import steamService from '../services/steamService.js';
 import toast from 'react-hot-toast';
 
 // ADD: Import SystemStatusIndicator
 import SystemStatusIndicator from './SystemStatusIndicator';
 
-// Import steamService with fallback
-let steamService;
-try {
-    steamService = require('../services/steamService.js').default;
-} catch (error) {
-    console.warn('steamService not found, using fallback');
-    steamService = {
-        connectViaOpenID: async (redirectUrl) => {
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            window.location.href = `${backendUrl}/api/auth/steam/login?return_to=${encodeURIComponent(redirectUrl)}`;
-        },
-        connectManually: async (steamId) => {
-            try {
-                const response = await authService.authenticatedFetch('/api/steam/connect', {
-                    method: 'POST',
-                    body: JSON.stringify({ steam_id: steamId })
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    return {
-                        success: true,
-                        user: result.user,
-                        newGames: result.new_games || 0,
-                        message: result.message || 'Steam connected successfully'
-                    };
-                } else {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Failed to connect Steam');
-                }
-            } catch (error) {
-                throw error;
-            }
-        },
-        showSteamIdInstructions: () => ({
-            title: 'Find Your Steam ID',
-            steps: [
-                '1. Go to your Steam profile',
-                '2. Right-click and copy profile URL',
-                '3. If URL has numbers after /profiles/, that\'s your Steam ID',
-                '4. If custom URL, use steamid.io converter'
-            ],
-            example: '76561198000000000',
-            note: 'Must be 17 digits starting with 765611...'
-        }),
-        getErrorMessage: (error) => {
-            if (error.response?.data?.error) {
-                return error.response.data.error;
-            }
-            return error.message || 'Steam connection failed';
-        }
-    };
-}
-
 gsap.registerPlugin(ScrollTrigger);
 
-export const Navbar = () => {
+const Navbar = () => {
     const { store, dispatch } = useGlobalReducer();
     const isAuthenticated = store.isAuthenticated;
     const user = store.user;
@@ -120,7 +67,7 @@ export const Navbar = () => {
         console.log('Logout clicked');
         try {
             await authService.logout();
-            dispatch({ type: 'LOGOUT' });
+            dispatch({ type: 'logout' });
             setShowUserMenu(false);
             navigate('/');
             toast.success('Logged out successfully');
@@ -170,7 +117,7 @@ export const Navbar = () => {
                 
                 if (result.success) {
                     dispatch({ 
-                        type: 'SET_USER', 
+                        type: 'set_user', 
                         payload: result.user 
                     });
                     
@@ -190,6 +137,21 @@ export const Navbar = () => {
         } finally {
             setIsConnectingSteam(false);
         }
+    };
+
+    const handleProfileClick = () => {
+        console.log('Profile Settings clicked');
+        setShowUserMenu(false);
+    };
+
+    const handleDashboardClick = () => {
+        console.log('Dashboard clicked');
+        setShowUserMenu(false);
+    };
+
+    const handleFindGamesClick = () => {
+        console.log('Find Games clicked');
+        setShowUserMenu(false);
     };
 
     const handleMenuItemClick = () => {
@@ -224,22 +186,22 @@ export const Navbar = () => {
                 <div className="flex justify-center">
                     <button
                         onClick={handlePinToggle}
-                        className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center shadow-gaming hover:scale-110 transition-all duration-300 group"
+                        className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-300 group"
                         title="Expand navbar"
                     >
                         <span className="text-white font-bold text-lg group-hover:rotate-12 transition-transform duration-300">S</span>
                     </button>
                 </div>
             ) : (
-                /* Full navbar using your glass-effect utility */
-                <div className="glass-effect rounded-6xl px-6 py-3 max-w-screen-xl mx-auto shadow-gaming">
-                    <div className="flex justify-between items-center">
+                /* Full navbar */
+                <div className="navbar-glass" style={{ minWidth: '1200px', margin: '0 auto' }}>
+                    <div className="flex justify-between items-center px-6 py-2">
                         <div className="flex items-center space-x-4">
                             <Link 
                                 to="/"
                                 className="flex items-center space-x-3 group"
                             >
-                                <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-gaming">
+                                <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
                                     <span className="text-white font-bold text-lg">S</span>
                                 </div>
                                 <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
@@ -247,7 +209,7 @@ export const Navbar = () => {
                                 </span>
                             </Link>
 
-                            {/* Pin/Collapse button */}
+                            {/* Pin/Collapse button between logo and navigation */}
                             <button
                                 onClick={handlePinToggle}
                                 className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 flex items-center justify-center text-white/70 hover:text-white transition-all duration-300 ml-2"
@@ -259,7 +221,7 @@ export const Navbar = () => {
                             </button>
                         </div>
 
-                        {/* Navigation items with proper spacing */}
+                        {/* Much more spacing between navigation items */}
                         <div className="flex items-center space-x-16">
                             {isAuthenticated ? (
                                 <>
@@ -305,7 +267,7 @@ export const Navbar = () => {
                                     </Link>
                                 </>
                             ) : (
-                                <div className="relative z-60">
+                                <div className="relative z-[60]">
                                     <button
                                         onClick={handleExploreToggle}
                                         className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:flex items-center space-x-1"
@@ -319,58 +281,52 @@ export const Navbar = () => {
                                     {showExploreMenu && (
                                         <div 
                                             ref={exploreDropdownRef}
-                                            className={`absolute top-full right-0 mt-2 min-w-[600px] glass-effect rounded-3xl p-6 shadow-depth-4 transition-all duration-300 z-70 grid grid-cols-2 gap-4 ${
-                                                showExploreMenu ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-2'
-                                            }`}
-                                            style={{ pointerEvents: showExploreMenu ? 'auto' : 'none' }}  
+                                            className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`} 
+                                            style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}  
                                             onClick={(e) => e.stopPropagation()}
                                         >  
-                                            {/* Profile Demo */}
-                                            <Link 
-                                                to="/demo" 
-                                                className="card-base p-4 hover:bg-white/15 transition-all duration-300 group"
-                                                onClick={handleMenuItemClick}
-                                            >
-                                                <div className="flex items-center mb-3">
-                                                    <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-3 group-hover:scale-110 transition-transform duration-300">
-                                                        <span className="text-lg">👤</span>
+                                            {/* Profile (Home) */}
+                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                                <div className="flex items-center mb-4">
+                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                        <span className="text-xl">👤</span>
                                                     </div>
-                                                    <h3 className="text-lg font-bold text-white">Profile Demo</h3>
+                                                    <h3 className="text-xl font-bold text-white">Profile</h3>
                                                 </div>
-                                                <p className="text-white/70 text-sm">See how profiles work with Steam integration and game libraries.</p>
-                                            </Link>
-                                            
-                                            {/* Features */}
-                                            <div className="card-base p-4">
-                                                <div className="flex items-center mb-3">
-                                                    <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-3">
-                                                        <span className="text-lg">⚙️</span>
-                                                    </div>
-                                                    <h3 className="text-lg font-bold text-white">Features</h3>
-                                                </div>
-                                                <p className="text-white/70 text-sm">Create groups, sync Steam libraries, vote on games, and find your squad's next adventure!</p>
+                                                <p className="text-white/70">Manage your gaming profile, connect Steam, and view your game library.</p>
                                             </div>
                                             
-                                            {/* Gaming Groups */}
-                                            <div className="card-base p-4">
-                                                <div className="flex items-center mb-3">
-                                                    <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-3">
-                                                        <span className="text-lg">🎮</span>
+                                            {/* Features */}
+                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                                <div className="flex items-center mb-4">
+                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                        <span className="text-xl">⚙️</span>
                                                     </div>
-                                                    <h3 className="text-lg font-bold text-white">Gaming Groups</h3>
+                                                    <h3 className="text-xl font-bold text-white">Features</h3>
                                                 </div>
-                                                <p className="text-white/70 text-sm">Create or join gaming groups, sync libraries, and vote on what to play next!</p>
+                                                <p className="text-white/70">Create account, link Steam to sync games, create/join groups, vote on common games, and play the winner!</p>
+                                            </div>
+                                            
+                                            {/* Gaming */}
+                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                                <div className="flex items-center mb-4">
+                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                        <span className="text-xl">🎮</span>
+                                                    </div>
+                                                    <h3 className="text-xl font-bold text-white">Gaming</h3>
+                                                </div>
+                                                <p className="text-white/70">Stay tuned!</p>
                                             </div>
                                             
                                             {/* Community */}
-                                            <div className="card-base p-4">
-                                                <div className="flex items-center mb-3">
-                                                    <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-3">
-                                                        <span className="text-lg">👥</span>
+                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
+                                                <div className="flex items-center mb-4">
+                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
+                                                        <span className="text-xl">👥</span>
                                                     </div>
-                                                    <h3 className="text-lg font-bold text-white">Community</h3>
+                                                    <h3 className="text-xl font-bold text-white">Community</h3>
                                                 </div>
-                                                <p className="text-white/70 text-sm">Connect with gamers, find friends, and build your perfect gaming squad.</p>
+                                                <p className="text-white/70">Stay tuned!</p>
                                             </div>
                                         </div>
                                     )}
@@ -399,7 +355,7 @@ export const Navbar = () => {
                                         </button>
                                     )}
 
-                                    <div className="relative z-60">
+                                    <div className="relative z-[60]">
                                         <button 
                                             onClick={handleToggle}
                                             className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
@@ -427,32 +383,30 @@ export const Navbar = () => {
                                         
                                         <div 
                                             ref={dropdownRef}
-                                            className={`absolute top-full right-0 mt-2 w-60 glass-effect rounded-2xl p-3 shadow-depth-4 transition-all duration-300 z-70 ${
-                                                showUserMenu ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-2'
-                                            }`}
-                                            style={{ pointerEvents: showUserMenu ? 'auto' : 'none' }}  
+                                            className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} 
+                                            style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}  
                                             onClick={(e) => e.stopPropagation()}
                                         >  
-                                            <Link to="/profile" className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1" onClick={handleMenuItemClick}>
-                                                <span className="flex items-center space-x-3">
+                                            <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
+                                                <span className="flex items-center space-x-2">
                                                     <span>👤</span>
                                                     <span>Profile Settings</span>
                                                 </span>
                                             </Link>
-                                            <Link to="/dashboard" className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1" onClick={handleMenuItemClick}>
-                                                <span className="flex items-center space-x-3">
+                                            <Link to="/dashboard" className="dropdown-item" onClick={handleDashboardClick}>
+                                                <span className="flex items-center space-x-2">
                                                     <span>📊</span>
                                                     <span>Dashboard</span>
                                                 </span>
                                             </Link>
-                                            <Link to="/sessions" className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1" onClick={handleMenuItemClick}>
-                                                <span className="flex items-center space-x-3">
+                                            <Link to="/sessions" className="dropdown-item" onClick={handleFindGamesClick}>
+                                                <span className="flex items-center space-x-2">
                                                     <span>🎮</span>
                                                     <span>Find Games</span>
                                                 </span>
                                             </Link>
-                                            <Link to="/game-library" className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1" onClick={handleMenuItemClick}>
-                                                <span className="flex items-center space-x-3">
+                                            <Link to="/game-library" className="dropdown-item" onClick={handleMenuItemClick}>
+                                                <span className="flex items-center space-x-2">
                                                     <span>📚</span>
                                                     <span>Game Library</span>
                                                 </span>
@@ -460,8 +414,8 @@ export const Navbar = () => {
                                             
                                             {/* ADD: Admin Dashboard Link (only for admin users) */}
                                             {user?.is_admin && (
-                                                <Link to="/admin/performance" className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1" onClick={handleMenuItemClick}>
-                                                    <span className="flex items-center space-x-3">
+                                                <Link to="/admin/performance" className="dropdown-item" onClick={handleMenuItemClick}>
+                                                    <span className="flex items-center space-x-2">
                                                         <span>📊</span>
                                                         <span>Performance Dashboard</span>
                                                     </span>
@@ -470,11 +424,11 @@ export const Navbar = () => {
                                             
                                             {/* Enhanced Steam Integration Button */}
                                             <button 
-                                                className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1 disabled:opacity-50" 
+                                                className="dropdown-item" 
                                                 onClick={handleSteamIntegration}
                                                 disabled={isConnectingSteam}
                                             >
-                                                <span className="flex items-center space-x-3">
+                                                <span className="flex items-center space-x-2">
                                                     {isConnectingSteam ? (
                                                         <>
                                                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -495,8 +449,8 @@ export const Navbar = () => {
                                             </button>
                                             
                                             <hr className="my-2 border-white/20" />
-                                            <button className="block w-full px-4 py-3 text-left text-red-300 hover:text-red-200 hover:bg-white/10 rounded-lg transition-all duration-200" onClick={handleLogout}>
-                                                <span className="flex items-center space-x-3">
+                                            <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
+                                                <span className="flex items-center space-x-2">
                                                     <span>🚪</span>
                                                     <span>Logout</span>
                                                 </span>
@@ -530,3 +484,6 @@ export const Navbar = () => {
         </nav>
     );
 };
+
+// ✅ FIXED: Add default export
+export default Navbar;
