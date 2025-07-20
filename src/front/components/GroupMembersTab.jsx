@@ -1,10 +1,11 @@
-// src/front/components/GroupMembersTab.jsx - UNIFIED Component
+// src/front/components/GroupMembersTab.jsx - PATCHED to use existing Steam system
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Avatar from './Avatar';
 import authService from '../store/authService';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store.js';
+import SteamManager from './SteamManager'; // 🔧 ADD: Import existing Steam system
 
 const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const { store, dispatch } = useGlobalReducer();
@@ -21,6 +22,68 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     // User permissions
     const isCreator = group?.creator?.id === user?.id;
     const canManageMembers = isCreator;
+
+    // 🔧 ADD: Steam progress calculation
+    const steamConnectedCount = members.filter(m => m.steam_connected).length;
+    const steamSyncedCount = members.filter(m => 
+        m.steam_connected && m.steam_library_synced_at
+    ).length;
+    const steamConnectedPercentage = members.length > 0 ? (steamConnectedCount / members.length) * 100 : 0;
+
+    // 🔧 ADD: Steam status helper
+    const getSteamStatus = (member) => {
+        if (!member.steam_connected) return { status: 'Not Connected', color: 'text-gray-400', icon: '⚫' };
+        if (!member.total_games) return { status: 'Connected (No Games)', color: 'text-yellow-400', icon: '🎮' };
+        if (!member.steam_library_synced_at) return { status: 'Needs Sync', color: 'text-orange-400', icon: '⚠️' };
+        
+        const daysSinceSync = Math.floor(
+            (Date.now() - new Date(member.steam_library_synced_at)) / (1000 * 60 * 60 * 24)
+        );
+        
+        if (daysSinceSync > 7) return { status: 'Sync Outdated', color: 'text-yellow-400', icon: '⚠️' };
+        return { status: 'Up to Date', color: 'text-green-400', icon: '✅' };
+    };
+
+    // 🔧 ADD: Steam Progress Bar Component
+    const SteamProgressBar = () => (
+        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-white font-medium flex items-center">
+                    <span className="text-xl mr-2">🎮</span>
+                    Steam Integration Progress
+                </span>
+                <span className="text-white/60 text-sm">{steamConnectedCount}/{members.length} connected</span>
+            </div>
+            <div className="w-full bg-white/10 rounded-full h-3 mb-2">
+                <div 
+                    className="bg-gradient-to-r from-green-500 to-blue-500 h-3 rounded-full transition-all duration-500"
+                    style={{ width: `${steamConnectedPercentage}%` }}
+                ></div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 text-center text-sm">
+                <div>
+                    <div className="text-green-400 font-bold">{steamConnectedCount}</div>
+                    <div className="text-white/60">Connected</div>
+                </div>
+                <div>
+                    <div className="text-blue-400 font-bold">{steamSyncedCount}</div>
+                    <div className="text-white/60">Synced</div>
+                </div>
+                <div>
+                    <div className="text-purple-400 font-bold">{Math.round(steamConnectedPercentage)}%</div>
+                    <div className="text-white/60">Coverage</div>
+                </div>
+            </div>
+            <p className="text-white/60 text-xs mt-3">
+                {steamConnectedPercentage >= 75 ? 
+                    '🎉 Great! Most members have Steam connected for better game matching.' :
+                    steamConnectedPercentage >= 50 ?
+                    '👍 Good progress! Encourage more members to connect Steam.' :
+                    '⚠️ Low Steam connectivity. Members should connect Steam to find common games.'
+                }
+            </p>
+        </div>
+    );
 
     // Fetch members from API
     const fetchMembers = async () => {
@@ -224,14 +287,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
         return 'Member';
     };
 
-    // Get member status
-    const getMemberStatus = (member) => {
-        if (member.steam_connected) {
-            return { status: 'Steam Connected', color: 'text-green-400', icon: '🎮' };
-        }
-        return { status: 'No Steam', color: 'text-gray-400', icon: '⚫' };
-    };
-
     // Filter and sort members
     const getFilteredAndSortedMembers = () => {
         let filtered = members;
@@ -280,8 +335,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     };
 
     const filteredMembers = getFilteredAndSortedMembers();
-    const steamConnectedCount = members.filter(m => m.steam_connected).length;
-    const steamConnectedPercentage = members.length > 0 ? (steamConnectedCount / members.length) * 100 : 0;
 
     // Loading state
     if (loading && members.length === 0) {
@@ -320,27 +373,8 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                 </div>
             </div>
 
-            {/* Steam Connection Progress */}
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-white font-medium">Steam Integration Progress</span>
-                    <span className="text-white/60 text-sm">{steamConnectedCount}/{members.length} connected</span>
-                </div>
-                <div className="w-full bg-white/10 rounded-full h-3">
-                    <div 
-                        className="bg-gradient-to-r from-green-500 to-blue-500 h-3 rounded-full transition-all duration-500"
-                        style={{ width: `${steamConnectedPercentage}%` }}
-                    ></div>
-                </div>
-                <p className="text-white/60 text-xs mt-2">
-                    {steamConnectedPercentage >= 75 ? 
-                        '🎉 Great! Most members have Steam connected for better game matching.' :
-                        steamConnectedPercentage >= 50 ?
-                        '👍 Good progress! Encourage more members to connect Steam.' :
-                        '⚠️ Low Steam connectivity. Members should connect Steam to find common games.'
-                    }
-                </p>
-            </div>
+            {/* 🔧 ENHANCED: Steam Connection Progress */}
+            <SteamProgressBar />
 
             {/* Controls */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
@@ -433,7 +467,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                     <div className="divide-y divide-white/10">
                         {filteredMembers.map((member) => {
                             const role = getMemberRole(member);
-                            const status = getMemberStatus(member);
+                            const steamStatus = getSteamStatus(member);
                             const isCurrentUser = member.id === user.id;
                             const canKick = canManageMembers && !isCurrentUser && role !== 'Creator';
                             const canPromote = isCreator && role !== 'Creator' && !isCurrentUser;
@@ -496,27 +530,30 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                                                     )}
                                                 </div>
                                                 
-                                                {member.steam_username && (
-                                                    <p className="text-white/60 text-sm mb-1">Steam: {member.steam_username}</p>
-                                                )}
-                                                
-                                                <div className="flex items-center space-x-4 text-sm">
-                                                    {/* Steam Status */}
-                                                    <div className={`flex items-center space-x-1 ${status.color}`}>
-                                                        <span>{status.icon}</span>
-                                                        <span>{status.status}</span>
-                                                    </div>
-                                                    
-                                                    {/* Game Count */}
-                                                    {member.total_games && (
-                                                        <div className="text-white/60">
-                                                            {member.total_games} games
-                                                        </div>
+                                                {/* 🔧 ENHANCED: Steam Info Display */}
+                                                <div className="space-y-1">
+                                                    {member.steam_username && (
+                                                        <p className="text-white/60 text-sm">Steam: {member.steam_username}</p>
                                                     )}
                                                     
-                                                    {/* Join Date */}
-                                                    <div className="text-white/50 text-xs">
-                                                        Joined {new Date(member.joined_at || member.created_at || group.created_at).toLocaleDateString()}
+                                                    <div className="flex items-center space-x-4 text-sm">
+                                                        {/* Steam Status */}
+                                                        <div className={`flex items-center space-x-1 ${steamStatus.color}`}>
+                                                            <span>{steamStatus.icon}</span>
+                                                            <span>{steamStatus.status}</span>
+                                                        </div>
+                                                        
+                                                        {/* Game Count */}
+                                                        {member.total_games && (
+                                                            <div className="text-white/60">
+                                                                {member.total_games} games
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Join Date */}
+                                                        <div className="text-white/50 text-xs">
+                                                            Joined {new Date(member.joined_at || member.created_at || group.created_at).toLocaleDateString()}
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 
@@ -533,6 +570,17 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center space-x-2">
+                                            {/* 🔧 ADD: Steam Status Component */}
+                                            {member.steam_connected && (
+                                                <div className="hidden sm:block">
+                                                    <SteamManager 
+                                                        variant="status-only" 
+                                                        user={member}
+                                                        className="text-xs"
+                                                    />
+                                                </div>
+                                            )}
+                                            
                                             <button
                                                 onClick={() => toast.info('Profile view feature coming soon!')}
                                                 className="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/30 text-white/70 rounded-lg text-sm transition-colors flex items-center space-x-1"
@@ -639,7 +687,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                                         <div className="flex-1">
                                             <div className="text-white font-medium">{member.username}</div>
                                             <div className="text-white/60 text-sm">
-                                                {getMemberStatus(member).status}
+                                                {getSteamStatus(member).status}
                                             </div>
                                         </div>
                                         {actionLoading[`transfer_${member.id}`] && (
