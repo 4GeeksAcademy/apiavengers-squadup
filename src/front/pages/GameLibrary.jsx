@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import steamService from '../services/steamService.js';
 import authService from '../store/authService.js';
-import SteamConnectionManager from '../components/SteamConnectionManager';
+import SteamManager from '../components/SteamManager';
 import { 
     formatPlaytime, 
     formatLastPlayed, 
@@ -203,10 +203,10 @@ export const GameLibrary = () => {
                 {isConnected ? (
                     <>
                         {/* Steam Connection Status & Controls */}
-                        <SteamConnectionManager 
+                        <SteamManager 
+                            variant="full"
                             user={user}
                             onUserUpdate={handleUserUpdate}
-                            showLibraryButton={false} // We're already in the library
                             showSyncButton={true}
                             className="mb-8"
                         />
@@ -380,12 +380,11 @@ export const GameLibrary = () => {
                                     }
                                 </p>
                                 {!searchTerm && !filterGenre && !filterMultiplayer && (
-                                    <SteamConnectionManager 
+                                    <SteamManager 
+                                        variant="compact"
                                         user={user}
                                         onUserUpdate={handleUserUpdate}
-                                        showLibraryButton={false}
                                         showSyncButton={true}
-                                        compact={false}
                                         className="max-w-md mx-auto"
                                     />
                                 )}
@@ -447,12 +446,11 @@ export const GameLibrary = () => {
                             Link your Steam account to automatically sync your game library and find friends to play with.
                         </p>
                         
-                        <SteamConnectionManager 
+                        <SteamManager 
+                            variant="full"
                             user={user}
                             onUserUpdate={handleUserUpdate}
-                            showLibraryButton={false}
                             showSyncButton={false}
-                            compact={false}
                             className="max-w-lg mx-auto"
                         />
 

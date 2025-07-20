@@ -13,7 +13,7 @@ import { NetworkErrorState } from '../components/ErrorState';
 // 🎯 NEW: Import extracted components
 import ProfileDisplay from '../components/ProfileDisplay';
 import ProfileEditForm from '../components/ProfileEditForm';
-import SteamIntegrationSection from '../components/SteamIntegrationSection';
+import SteamManager from '../components/SteamManager';
 
 export const Profile = () => {
     const { store, dispatch } = useGlobalReducer();
@@ -180,7 +180,7 @@ export const Profile = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         {/* Left Column: Steam Integration Section */}
                         <div className="flex flex-col space-y-6">
-                            <SteamIntegrationSection
+                            <SteamManager
                                 user={globalUser}
                                 onUserUpdate={handleUserUpdate}
                                 onRefreshProfile={refreshUserProfile}

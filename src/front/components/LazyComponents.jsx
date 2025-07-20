@@ -129,14 +129,14 @@ export const LazyGroupMembersTab = createLazyComponent(
     'GroupMembersTab'
 );
 
-// SteamConnectionManager - Steam integration component 
-export const LazySteamConnectionManager = createLazyComponent(
-    () => import('./SteamConnectionManager.jsx'),
+// SteamManager - Steam integration component 
+export const LazySteamManager = createLazyComponent(
+    () => import('./SteamManager.jsx'),
     <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 text-center">
         <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-3"></div>
         <p className="text-white/70 text-sm">Loading Steam integration...</p>
     </div>,
-    'SteamConnectionManager'
+    'SteamManager'
 );
 
 // CreateGroupModal - Modal component
@@ -185,8 +185,8 @@ export const preloadOnIntent = {
     },
     
     steam: () => {
-        import('./SteamConnectionManager.jsx').catch(console.warn);
-        import('./SteamConnectModal.jsx').catch(console.warn);
+        import('./SteamManager.jsx').catch(console.warn);
+        import('./.jsx').catch(console.warn);
     },
     
     modals: () => {
@@ -202,7 +202,7 @@ export const COMPONENT_SIZES = {
     LiveVotingSession: 'Large (~1200 lines)', 
     QuickVote: 'Large (~1000 lines)',
     GroupMembersTab: 'Large (~800 lines)',
-    SteamConnectionManager: 'Medium (~400 lines)',
+    SteamManager: 'Medium (~400 lines)',
     CreateGroupModal: 'Medium (~300 lines)',
 };
 

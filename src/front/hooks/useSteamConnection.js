@@ -1,295 +1,299 @@
-// src/front/components/SteamConnectionManager.jsx - REFACTORED VERSION
-// Now uses the useSteamConnection hook for all logic
+// src/front/hooks/useSteamConnection.js - The missing hook file
+import { useState, useEffect, useCallback } from 'react';
+import steamService from '../services/steamService';
+import { formatLastPlayed } from '../utils/steamUtils';
 
-import React from 'react';
-import useSteamConnection from '../hooks/useSteamConnection';
-import { formatLastPlayed } from '../utils/steamUtils.js';
+const useSteamConnection = (initialUser = null) => {
+    const [state, setState] = useState({
+        isConnected: initialUser?.steam_connected || initialUser?.is_steam_connected || false,
+        loading: false,
+        error: null,
+        connectionMethod: 'openid', // 'openid' or 'manual'
+        steamId: '',
+        showInstructions: false,
+        cooldownSeconds: 0,
+        canSync: true,
+        steamUsername: initialUser?.steam_username || '',
+        steamAvatar: initialUser?.steam_avatar_url || '',
+        totalGames: initialUser?.total_games || 0,
+        lastSynced: initialUser?.steam_library_synced_at || null,
+        performanceMetrics: null
+    });
 
-const SteamConnectionManager = ({ 
-    user, 
-    onUserUpdate, 
-    showLibraryButton = true,
-    showSyncButton = true,
-    compact = false,
-    className = "" 
-}) => {
-    const {
-        isConnected,
-        loading,
-        error,
-        connectionMethod,
-        steamId,
-        showInstructions,
-        cooldownSeconds,
-        canSync,
-        steamUsername,
-        steamAvatar,
-        totalGames,
-        lastSynced,
+    // Update state helper
+    const updateState = useCallback((updates) => {
+        setState(prev => ({ ...prev, ...updates }));
+    }, []);
+
+    // Load Steam status on mount
+    useEffect(() => {
+        if (initialUser) {
+            updateState({
+                isConnected: initialUser.steam_connected || initialUser.is_steam_connected || false,
+                steamUsername: initialUser.steam_username || '',
+                steamAvatar: initialUser.steam_avatar_url || '',
+                totalGames: initialUser.total_games || 0,
+                lastSynced: initialUser.steam_library_synced_at || null
+            });
+        }
+        
+        // Load current status from API
+        loadSteamStatus();
+    }, [initialUser]);
+
+    // Cooldown timer effect
+    useEffect(() => {
+        let interval;
+        if (state.cooldownSeconds > 0) {
+            interval = setInterval(() => {
+                setState(prev => {
+                    const newCooldown = prev.cooldownSeconds - 1;
+                    return {
+                        ...prev,
+                        cooldownSeconds: Math.max(0, newCooldown),
+                        canSync: newCooldown <= 0
+                    };
+                });
+            }, 1000);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [state.cooldownSeconds]);
+
+    // Load Steam connection status
+    const loadSteamStatus = useCallback(async () => {
+        try {
+            updateState({ loading: true, error: null });
+            
+            const result = await steamService.getConnectionStatus();
+            
+            if (result.success) {
+                const { userConnection, syncStatus, performanceMetrics } = result;
+                
+                updateState({
+                    isConnected: userConnection.connected || false,
+                    steamUsername: userConnection.steam_username || '',
+                    steamAvatar: userConnection.steam_avatar_url || '',
+                    totalGames: userConnection.total_games || 0,
+                    lastSynced: userConnection.last_synced,
+                    canSync: syncStatus.can_sync || false,
+                    cooldownSeconds: syncStatus.cooldown_remaining || 0,
+                    performanceMetrics: performanceMetrics,
+                    loading: false
+                });
+            } else {
+                updateState({
+                    error: result.error,
+                    loading: false
+                });
+            }
+        } catch (error) {
+            updateState({
+                error: error.message || 'Failed to load Steam status',
+                loading: false
+            });
+        }
+    }, []);
+
+    // Connect via OpenID
+    const connectViaOpenID = useCallback(async (returnTo = '/dashboard') => {
+        try {
+            updateState({ loading: true, error: null });
+            
+            const result = await steamService.connectViaOpenID(returnTo);
+            
+            if (result.success && !result.redirected) {
+                // Connection completed without redirect
+                await loadSteamStatus();
+                updateState({ loading: false });
+            } else if (!result.success) {
+                updateState({
+                    error: result.error || 'Failed to connect Steam account',
+                    loading: false
+                });
+            }
+            // If redirected, loading state will be cleared when page reloads
+        } catch (error) {
+            updateState({
+                error: error.message || 'Failed to connect Steam account',
+                loading: false
+            });
+        }
+    }, [loadSteamStatus]);
+
+    // Connect manually with Steam ID
+    const connectManually = useCallback(async () => {
+        if (!state.steamId.trim()) {
+            updateState({ error: 'Please enter your Steam ID' });
+            return;
+        }
+
+        try {
+            updateState({ loading: true, error: null });
+            
+            const result = await steamService.connectManually(state.steamId.trim());
+            
+            if (result.success) {
+                updateState({
+                    isConnected: true,
+                    steamUsername: result.user?.steam_username || '',
+                    steamAvatar: result.user?.steam_avatar_url || '',
+                    totalGames: result.user?.total_games || 0,
+                    lastSynced: result.user?.steam_library_synced_at || null,
+                    steamId: '',
+                    loading: false
+                });
+                
+                // Refresh status to get latest data
+                await loadSteamStatus();
+            } else {
+                updateState({
+                    error: result.error || 'Failed to connect Steam account',
+                    loading: false
+                });
+            }
+        } catch (error) {
+            updateState({
+                error: error.message || 'Failed to connect Steam account',
+                loading: false
+            });
+        }
+    }, [state.steamId, loadSteamStatus]);
+
+    // Disconnect Steam account
+    const disconnect = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to disconnect your Steam account?\n\nThis will remove access to your Steam games and profile data.')) {
+            return;
+        }
+
+        try {
+            updateState({ loading: true, error: null });
+            
+            const result = await steamService.disconnect();
+            
+            if (result.success) {
+                updateState({
+                    isConnected: false,
+                    steamUsername: '',
+                    steamAvatar: '',
+                    totalGames: 0,
+                    lastSynced: null,
+                    canSync: false,
+                    cooldownSeconds: 0,
+                    loading: false
+                });
+            } else {
+                updateState({
+                    error: result.error || 'Failed to disconnect Steam account',
+                    loading: false
+                });
+            }
+        } catch (error) {
+            updateState({
+                error: error.message || 'Failed to disconnect Steam account',
+                loading: false
+            });
+        }
+    }, []);
+
+    // Sync Steam library
+    const syncLibrary = useCallback(async () => {
+        if (!state.canSync) {
+            updateState({ error: `Please wait ${formatCooldown()} before syncing again` });
+            return;
+        }
+
+        try {
+            updateState({ loading: true, error: null });
+            
+            const result = await steamService.syncLibrary();
+            
+            if (result.success) {
+                updateState({
+                    totalGames: result.totalGames || state.totalGames,
+                    lastSynced: result.syncTime || new Date().toISOString(),
+                    canSync: false,
+                    cooldownSeconds: 300, // 5 minute cooldown
+                    loading: false
+                });
+            } else {
+                updateState({
+                    error: result.error || 'Failed to sync Steam library',
+                    loading: false
+                });
+            }
+        } catch (error) {
+            updateState({
+                error: error.message || 'Failed to sync Steam library',
+                loading: false
+            });
+        }
+    }, [state.canSync, state.totalGames]);
+
+    // Format cooldown time
+    const formatCooldown = useCallback(() => {
+        if (state.cooldownSeconds <= 0) return '';
+        
+        const minutes = Math.floor(state.cooldownSeconds / 60);
+        const seconds = state.cooldownSeconds % 60;
+        
+        if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
+        }
+        return `${seconds}s`;
+    }, [state.cooldownSeconds]);
+
+    // Get Steam ID instructions
+    const getInstructions = useCallback(() => {
+        return {
+            title: 'How to find your Steam ID:',
+            steps: [
+                'Go to steamid.io or steamidfinder.com',
+                'Enter your Steam profile URL or username',
+                'Copy the 17-digit "steamID64" number',
+                'Paste it in the field above'
+            ],
+            note: 'Your Steam profile must be public to connect.',
+            example: '76561198123456789'
+        };
+    }, []);
+
+    // Get performance metrics
+    const getPerformanceMetrics = useCallback(() => {
+        return steamService.getPerformanceMetrics();
+    }, []);
+
+    return {
+        // State
+        ...state,
+        
+        // Actions
         connectViaOpenID,
         connectManually,
         disconnect,
         syncLibrary,
         updateState,
+        loadSteamStatus,
+        
+        // Utilities
         formatCooldown,
-        getInstructions
-    } = useSteamConnection(user);
-
-    // Handle successful user updates by calling parent callback
-    React.useEffect(() => {
-        if (onUserUpdate && user) {
-            // This effect ensures parent components get updated user data
-            // The hook handles global state, but parent may need local updates
-        }
-    }, [user, onUserUpdate]);
-
-    // Compact version for navbar/small spaces
-    if (compact) {
-        return (
-            <div className={`flex items-center space-x-2 ${className}`}>
-                <div className={`flex items-center space-x-2 ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                    <span className="text-sm font-medium">
-                        {isConnected ? 'Steam Connected' : 'Steam Not Connected'}
-                    </span>
-                </div>
-                
-                {isConnected ? (
-                    <div className="flex space-x-1">
-                        {showSyncButton && (
-                            <button
-                                onClick={() => syncLibrary()}
-                                disabled={loading || !canSync}
-                                className={`px-2 py-1 text-white text-xs rounded transition-colors disabled:opacity-50 ${
-                                    !canSync 
-                                        ? 'bg-orange-500 cursor-not-allowed' 
-                                        : 'bg-blue-500 hover:bg-blue-600'
-                                }`}
-                                title={!canSync ? `Cooldown: ${formatCooldown()}` : 'Sync library'}
-                            >
-                                {!canSync ? '⏳' : '🔄'}
-                            </button>
-                        )}
-                        {showLibraryButton && (
-                            <button
-                                onClick={() => window.location.href = '/game-library'}
-                                className="px-2 py-1 bg-coral-500 hover:bg-coral-600 text-white text-xs rounded transition-colors"
-                            >
-                                📚
-                            </button>
-                        )}
-                    </div>
-                ) : (
-                    <button
-                        onClick={() => connectViaOpenID()}
-                        disabled={loading}
-                        className="px-3 py-1 bg-coral-500 hover:bg-coral-600 text-white text-xs rounded transition-colors disabled:opacity-50"
-                    >
-                        Connect
-                    </button>
-                )}
-            </div>
-        );
-    }
-
-    // Full version for profile/settings pages
-    return (
-        <div className={`p-6 bg-white/5 rounded-xl border border-white/10 ${className}`}>
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-medium text-lg">Steam Integration</h3>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    isConnected 
-                        ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
-                        : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                }`}>
-                    {isConnected ? 'Connected' : 'Not Connected'}
-                </span>
-            </div>
-            
-            {isConnected ? (
-                /* Connected State */
-                <div className="space-y-4">
-                    <div className="flex items-center space-x-3">
-                        {steamAvatar && (
-                            <img 
-                                src={steamAvatar} 
-                                alt="Steam Avatar" 
-                                className="w-12 h-12 rounded-full border-2 border-white/20"
-                            />
-                        )}
-                        <div>
-                            <p className="text-white font-medium">
-                                {steamUsername || 'Steam User'}
-                            </p>
-                            <p className="text-white/60 text-sm">
-                                {totalGames} games in library
-                            </p>
-                            {lastSynced && (
-                                <p className="text-white/50 text-xs">
-                                    Last synced: {formatLastPlayed(lastSynced)}
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                    
-                    {/* Sync Cooldown Notice */}
-                    {!canSync && cooldownSeconds > 0 && (
-                        <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
-                            <div className="flex items-center space-x-2">
-                                <span className="text-orange-400">⏳</span>
-                                <div>
-                                    <p className="text-orange-300 text-sm font-medium">
-                                        Sync Cooldown Active
-                                    </p>
-                                    <p className="text-orange-400/80 text-xs">
-                                        Next sync available in {formatCooldown()}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="mt-2 w-full bg-orange-500/20 rounded-full h-1.5">
-                                <div 
-                                    className="bg-orange-400 h-1.5 rounded-full transition-all duration-1000"
-                                    style={{ 
-                                        width: `${Math.max(0, 100 - ((300 - cooldownSeconds) / 300 * 100))}%` 
-                                    }}
-                                ></div>
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="flex flex-wrap gap-2">
-                        {showLibraryButton && (
-                            <button 
-                                onClick={() => window.location.href = '/game-library'}
-                                className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center gap-2"
-                            >
-                                📚 View Library
-                            </button>
-                        )}
-                        {showSyncButton && (
-                            <button 
-                                onClick={() => syncLibrary()}
-                                disabled={loading || !canSync}
-                                className={`px-4 py-2 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center gap-2 disabled:opacity-50 ${
-                                    !canSync 
-                                        ? 'bg-orange-500 cursor-not-allowed' 
-                                        : 'bg-blue-500 hover:bg-blue-600'
-                                }`}
-                            >
-                                {loading ? (
-                                    <>⏳ Syncing...</>
-                                ) : !canSync ? (
-                                    <>⏳ Cooldown ({formatCooldown()})</>
-                                ) : (
-                                    <>🔄 Sync Games</>
-                                )}
-                            </button>
-                        )}
-                        <button 
-                            onClick={() => disconnect()}
-                            disabled={loading}
-                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 flex items-center gap-2 disabled:opacity-50"
-                        >
-                            🔌 Disconnect
-                        </button>
-                    </div>
-                </div>
-            ) : (
-                /* Not Connected State */
-                <div className="space-y-4">
-                    <p className="text-white/70 text-sm">
-                        Connect your Steam account to sync your game library and find games to play with friends.
-                    </p>
-                    
-                    {/* Connection Method Selector */}
-                    <div className="flex space-x-1 bg-white/5 rounded-lg p-1">
-                        <button
-                            onClick={() => updateState({ connectionMethod: 'openid' })}
-                            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                                connectionMethod === 'openid'
-                                    ? 'bg-coral-500 text-white'
-                                    : 'text-white/70 hover:text-white'
-                            }`}
-                        >
-                            Steam Login
-                        </button>
-                        <button
-                            onClick={() => updateState({ connectionMethod: 'manual' })}
-                            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                                connectionMethod === 'manual'
-                                    ? 'bg-coral-500 text-white'
-                                    : 'text-white/70 hover:text-white'
-                            }`}
-                        >
-                            Steam ID
-                        </button>
-                    </div>
-                    
-                    {connectionMethod === 'openid' ? (
-                        /* OpenID Connection */
-                        <div className="space-y-3">
-                            <button 
-                                onClick={() => connectViaOpenID()}
-                                disabled={loading}
-                                className="w-full px-4 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                🎮 {loading ? 'Connecting...' : 'Connect via Steam'}
-                            </button>
-                            <p className="text-white/50 text-xs text-center">
-                                Secure login through Steam's official system
-                            </p>
-                        </div>
-                    ) : (
-                        /* Manual Steam ID Connection */
-                        <div className="space-y-3">
-                            <div>
-                                <input
-                                    type="text"
-                                    value={steamId}
-                                    onChange={(e) => updateState({ steamId: e.target.value })}
-                                    placeholder="Enter your 17-digit Steam ID..."
-                                    className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-white/50 focus:outline-none focus:border-coral-500 transition-colors"
-                                    disabled={loading}
-                                />
-                                {error && (
-                                    <p className="text-red-400 text-sm mt-1">{error}</p>
-                                )}
-                            </div>
-                            
-                            <button 
-                                onClick={() => connectManually()}
-                                disabled={loading || !steamId.trim()}
-                                className="w-full px-4 py-3 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50"
-                            >
-                                {loading ? 'Connecting...' : 'Connect Steam ID'}
-                            </button>
-                            
-                            <button
-                                onClick={() => updateState({ showInstructions: !showInstructions })}
-                                className="w-full text-white/60 hover:text-white text-sm underline"
-                            >
-                                How to find my Steam ID?
-                            </button>
-                            
-                            {showInstructions && (
-                                <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-                                    <h4 className="text-white font-medium mb-2">Finding your Steam ID:</h4>
-                                    <ol className="text-white/70 text-sm space-y-1 list-decimal list-inside">
-                                        {getInstructions().steps.map((step, index) => (
-                                            <li key={index}>{step}</li>
-                                        ))}
-                                    </ol>
-                                    <p className="text-white/50 text-xs mt-3">
-                                        <strong>Note:</strong> {getInstructions().note}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
-    );
+        getInstructions,
+        getPerformanceMetrics,
+        
+        // Computed values
+        needsSync: state.lastSynced ? 
+            (Date.now() - new Date(state.lastSynced).getTime()) > (24 * 60 * 60 * 1000) : 
+            true,
+        isFullyLoaded: !state.loading && state.isConnected,
+        connectionHealth: steamService.checkSteamConnection({
+            steam_connected: state.isConnected,
+            steam_username: state.steamUsername,
+            steam_avatar_url: state.steamAvatar,
+            total_games: state.totalGames,
+            steam_library_synced_at: state.lastSynced
+        })
+    };
 };
 
-export default SteamConnectionManager;
+export default useSteamConnection;

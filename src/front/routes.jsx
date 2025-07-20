@@ -13,9 +13,9 @@ import { Profile } from './pages/Profile';
 import { Dashboard } from './pages/Dashboard';
 import { GameLibrary } from './pages/GameLibrary';
 import { FindGames } from './pages/FindGames';
-import { Friends } from './pages/Friends';
+import Friends from './pages/Friends';
 import { JoinGroup } from './pages/JoinGroup';
-import { GroupPage } from './pages/GroupPage';
+import GroupPage from './pages/GroupPage';
 import { ResultsPage } from './pages/ResultsPage';
 
 // ADD: Import AdminPerformanceDashboard
