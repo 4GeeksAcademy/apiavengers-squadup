@@ -1,4 +1,4 @@
-// src/front/components/FriendCard.jsx - Individual Friend Display Component
+// src/front/components/FriendCard.jsx - Updated with Custom Button Classes
 
 import React, { useState } from 'react';
 import Avatar from './Avatar';
@@ -115,7 +115,7 @@ const FriendCard = ({
     }
 
     return (
-        <div className={`bg-white/5 rounded-xl p-6 hover:bg-white/10 transition-colors duration-200 border border-white/10 ${className}`}>
+        <div className={`card-gaming p-6 ${className}`}>
             <div className="flex items-center justify-between">
                 {/* Friend Info Section */}
                 <div className="flex items-center space-x-4">
@@ -213,7 +213,7 @@ const FriendCard = ({
                         <button 
                             onClick={handleInviteToGroup}
                             disabled={actionLoading.invite}
-                            className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="btn-coral text-sm"
                         >
                             {actionLoading.invite ? (
                                 <div className="flex items-center">
@@ -228,7 +228,7 @@ const FriendCard = ({
                         <button 
                             onClick={handleViewProfile}
                             disabled={actionLoading.profile}
-                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg text-sm transition-colors duration-200 disabled:opacity-50"
+                            className="btn-ghost text-sm"
                         >
                             {actionLoading.profile ? (
                                 <div className="flex items-center">

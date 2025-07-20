@@ -1,4 +1,4 @@
-// src/front/components/CreateGroupModal.jsx - FIXED with onSubmit prop handling
+// src/front/components/CreateGroupModal.jsx - Updated with Custom Button Classes
 
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
@@ -143,7 +143,7 @@ const CreateGroupModal = ({ isOpen, onClose, onSubmit, onGroupCreated }) => {
         >
             <div 
                 onClick={e => e.stopPropagation()}
-                className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl w-full max-w-md"
+                className="card-gaming w-full max-w-md"
             >
                 {/* Header */}
                 <div className="p-6 border-b border-white/10">
@@ -301,14 +301,14 @@ const CreateGroupModal = ({ isOpen, onClose, onSubmit, onGroupCreated }) => {
                             type="button"
                             onClick={handleClose}
                             disabled={isSubmitting}
-                            className="flex-1 px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium rounded-xl transition-all disabled:opacity-50"
+                            className="btn-ghost flex-1"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
                             disabled={isSubmitting || Object.keys(errors).some(key => errors[key])}
-                            className="flex-1 px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                            className="btn-coral flex-1 flex items-center justify-center"
                         >
                             {isSubmitting ? (
                                 <>

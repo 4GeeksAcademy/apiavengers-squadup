@@ -1,4 +1,4 @@
-// src/front/components/AddFriendModal.jsx - Add Friend Modal Component
+// src/front/components/AddFriendModal.jsx - Updated with Custom Button Classes
 
 import React, { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
@@ -243,7 +243,7 @@ const AddFriendModal = ({
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div 
-                className={`backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden ${className}`}
+                className={`card-gaming w-full max-w-2xl max-h-[90vh] overflow-hidden ${className}`}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
@@ -380,7 +380,7 @@ const AddFriendModal = ({
                                         <button
                                             onClick={() => sendFriendInvite(user)}
                                             disabled={inviteSent}
-                                            className="px-4 py-2 bg-coral-500 hover:bg-coral-600 text-white font-medium rounded-lg text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="btn-coral"
                                         >
                                             {inviteSent ? 'Sent!' : 'Add Friend'}
                                         </button>
@@ -407,7 +407,7 @@ const AddFriendModal = ({
                         <button
                             onClick={handleClose}
                             disabled={searching}
-                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+                            className="btn-ghost"
                         >
                             Close
                         </button>
