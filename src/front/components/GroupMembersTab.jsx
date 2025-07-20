@@ -1,11 +1,12 @@
-// src/front/components/GroupMembersTab.jsx - PATCHED to use existing Steam system
+// src/front/components/GroupMembersTab.jsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import Avatar from './Avatar';
 import authService from '../store/authService';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import { ACTION_TYPES } from '../store/store.js';
-import SteamManager from './SteamManager'; // 🔧 ADD: Import existing Steam system
+import SteamManager from './SteamManager';
+import EnhancedSteamFeatures from './Steam/EnhancedSteamFeatures';
 
 const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const { store, dispatch } = useGlobalReducer();
@@ -14,8 +15,8 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortBy, setSortBy] = useState('name'); // name, role, joinDate, activity
-    const [filter, setFilter] = useState('all'); // all, steam, no-steam
+    const [sortBy, setSortBy] = useState('name');
+    const [filter, setFilter] = useState('all');
     const [showTransferModal, setShowTransferModal] = useState(false);
     const [showInviteModal, setShowInviteModal] = useState(false);
 
@@ -23,14 +24,14 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const isCreator = group?.creator?.id === user?.id;
     const canManageMembers = isCreator;
 
-    // 🔧 ADD: Steam progress calculation
+    // Steam progress calculation
     const steamConnectedCount = members.filter(m => m.steam_connected).length;
     const steamSyncedCount = members.filter(m => 
         m.steam_connected && m.steam_library_synced_at
     ).length;
     const steamConnectedPercentage = members.length > 0 ? (steamConnectedCount / members.length) * 100 : 0;
 
-    // 🔧 ADD: Steam status helper
+    // Steam status helper
     const getSteamStatus = (member) => {
         if (!member.steam_connected) return { status: 'Not Connected', color: 'text-gray-400', icon: '⚫' };
         if (!member.total_games) return { status: 'Connected (No Games)', color: 'text-yellow-400', icon: '🎮' };
@@ -43,46 +44,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
         if (daysSinceSync > 7) return { status: 'Sync Outdated', color: 'text-yellow-400', icon: '⚠️' };
         return { status: 'Up to Date', color: 'text-green-400', icon: '✅' };
     };
-
-    // 🔧 ADD: Steam Progress Bar Component
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-medium flex items-center">
-                    <span className="text-xl mr-2">🎮</span>
-                    Steam Integration Progress
-                </span>
-                <span className="text-white/60 text-sm">{steamConnectedCount}/{members.length} connected</span>
-            </div>
-            <div className="w-full bg-white/10 rounded-full h-3 mb-2">
-                <div 
-                    className="bg-gradient-to-r from-green-500 to-blue-500 h-3 rounded-full transition-all duration-500"
-                    style={{ width: `${steamConnectedPercentage}%` }}
-                ></div>
-            </div>
-            <div className="grid grid-cols-3 gap-4 text-center text-sm">
-                <div>
-                    <div className="text-green-400 font-bold">{steamConnectedCount}</div>
-                    <div className="text-white/60">Connected</div>
-                </div>
-                <div>
-                    <div className="text-blue-400 font-bold">{steamSyncedCount}</div>
-                    <div className="text-white/60">Synced</div>
-                </div>
-                <div>
-                    <div className="text-purple-400 font-bold">{Math.round(steamConnectedPercentage)}%</div>
-                    <div className="text-white/60">Coverage</div>
-                </div>
-            </div>
-            <p className="text-white/60 text-xs mt-3">
-                {steamConnectedPercentage >= 75 ? 
-                    '🎉 Great! Most members have Steam connected for better game matching.' :
-                    steamConnectedPercentage >= 50 ?
-                    '👍 Good progress! Encourage more members to connect Steam.' :
-                    '⚠️ Low Steam connectivity. Members should connect Steam to find common games.'
-                }
-            </p>
-        </div>
-    );
 
     // Fetch members from API
     const fetchMembers = async () => {
@@ -99,7 +60,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                 const data = await response.json();
                 setMembers(data.members || []);
                 
-                // Update global state if needed
                 if (dispatch) {
                     dispatch({ 
                         type: ACTION_TYPES.SET_GROUP_MEMBERS, 
@@ -117,7 +77,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
         }
     };
 
-    // Initialize and fetch members
     useEffect(() => {
         if (group?.members && Array.isArray(group.members)) {
             setMembers(group.members);
@@ -161,11 +120,9 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
             if (response.ok && data.success) {
                 toast.success(`${memberUsername} has been removed from the group`);
                 
-                // Update local state
                 const updatedMembers = members.filter(m => m.id !== memberId);
                 setMembers(updatedMembers);
                 
-                // Update global state
                 if (dispatch) {
                     dispatch({ 
                         type: ACTION_TYPES.SET_GROUP_MEMBERS, 
@@ -173,7 +130,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                     });
                 }
                 
-                // Notify parent component
                 if (onGroupUpdate) {
                     onGroupUpdate('member_kicked', false, { 
                         kickedMemberId: memberId,
@@ -240,7 +196,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                 
                 setShowTransferModal(false);
                 
-                // Notify parent component
                 if (onGroupUpdate) {
                     onGroupUpdate('ownership_transferred', false, {
                         newCreatorId: newOwnerId,
@@ -250,7 +205,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                     });
                 }
                 
-                // Refresh page since user is no longer creator
                 setTimeout(() => {
                     window.location.reload();
                 }, 2000);
@@ -290,7 +244,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const getFilteredAndSortedMembers = () => {
         let filtered = members;
 
-        // Apply search filter
         if (searchTerm) {
             filtered = filtered.filter(member =>
                 member.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -299,7 +252,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
             );
         }
 
-        // Apply connection filter
         switch (filter) {
             case 'steam':
                 filtered = filtered.filter(m => m.steam_connected);
@@ -308,11 +260,9 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                 filtered = filtered.filter(m => !m.steam_connected);
                 break;
             default:
-                // 'all' - no additional filtering
                 break;
         }
 
-        // Apply sorting
         return filtered.sort((a, b) => {
             switch (sortBy) {
                 case 'role':
@@ -335,7 +285,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
 
     const filteredMembers = getFilteredAndSortedMembers();
 
-    // Loading state
     if (loading && members.length === 0) {
         return (
             <div className="space-y-6">
@@ -350,6 +299,13 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
 
     return (
         <div className="space-y-6">
+            {/* Enhanced Steam Features */}
+            <EnhancedSteamFeatures 
+                groupMembers={members} 
+                groupId={group?.id}
+                variant="dashboard-only"
+            />
+
             {/* Header Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4 text-center">
@@ -371,8 +327,6 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                     <div className="text-white/70 text-sm">Avg Games</div>
                 </div>
             </div>
-
-            {/* 🔧 ENHANCED: Steam Connection Progress */}
 
             {/* Controls */}
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
@@ -528,7 +482,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                                                     )}
                                                 </div>
                                                 
-                                                {/* 🔧 ENHANCED: Steam Info Display */}
+                                                {/* Steam Info Display */}
                                                 <div className="space-y-1">
                                                     {member.steam_username && (
                                                         <p className="text-white/60 text-sm">Steam: {member.steam_username}</p>
@@ -568,7 +522,7 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center space-x-2">
-                                            {/* 🔧 ADD: Steam Status Component */}
+                                            {/* Steam Status Component */}
                                             {member.steam_connected && (
                                                 <div className="hidden sm:block">
                                                     <SteamManager 
@@ -658,6 +612,15 @@ const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
                     </div>
                 )}
             </div>
+
+            {/* Common Games Section */}
+            {steamConnectedCount >= 2 && (
+                <EnhancedSteamFeatures 
+                    groupMembers={members} 
+                    groupId={group?.id}
+                    variant="games-only"
+                />
+            )}
 
             {/* Transfer Ownership Modal */}
             {showTransferModal && (
