@@ -1,13 +1,18 @@
-// src/front/pages/Layout.jsx - FIXED VERSION with correct Navbar import
+// src/front/pages/Layout.jsx - SECURED VERSION with Role-Based Performance Monitor
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-// ✅ FIXED: Changed from named import to default import
 import Navbar from "../components/Navbar";
 import { Footer } from "../components/Footer";
+import PerformanceMonitoringDashboard from "../components/PerformanceMonitoringDashboard";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import authService from "../store/authService";
 import { Toaster } from "react-hot-toast";
+import { 
+    isAuthorizedForPerformanceMonitor, 
+    getPerformanceAccessLevel,
+    logPerformanceAccess 
+} from "../utils/performanceAccess";
 
 export const Layout = () => {
     const { store, dispatch } = useGlobalReducer();
@@ -16,6 +21,14 @@ export const Layout = () => {
     // 🔧 CRITICAL FIX: Prevent multiple initialization attempts
     const hasInitialized = useRef(false);
     const isInitializing = useRef(false);
+
+    // Performance Monitor state - SECURED
+    const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
+
+    // 🔒 SECURITY: Get user's performance access level
+    const user = store?.user;
+    const hasPerformanceAccess = isAuthorizedForPerformanceMonitor(user);
+    const accessLevel = getPerformanceAccessLevel(user);
 
     // 🔧 CRITICAL FIX: Only initialize ONCE on mount
     useEffect(() => {
@@ -58,6 +71,28 @@ export const Layout = () => {
         initializeAuth();
     }, []); // 🔧 CRITICAL: Empty dependency array - only run once
 
+    // 🔒 SECURED Performance Monitor keyboard shortcut
+    useEffect(() => {
+        const handleKeyPress = (event) => {
+            // Press Ctrl+Shift+P to toggle performance monitor
+            if (event.ctrlKey && event.shiftKey && event.key === 'P') {
+                event.preventDefault();
+                
+                // 🔒 SECURITY CHECK: Only allow authorized users
+                if (hasPerformanceAccess) {
+                    setShowPerformanceMonitor(prev => !prev);
+                    logPerformanceAccess(user, 'keyboard_toggle');
+                } else {
+                    console.warn('🔒 Performance monitor access denied - insufficient permissions');
+                    logPerformanceAccess(user, 'access_denied_keyboard');
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+    }, [hasPerformanceAccess, user]);
+
     // 🔧 Handle pending invites separately (no auth dependency)
     useEffect(() => {
         // Only handle pending invites when user is authenticated and not loading
@@ -74,6 +109,17 @@ export const Layout = () => {
             }
         }
     }, [store?.isAuthenticated, store?.authLoading]);
+
+    // 🔒 SECURED: Performance monitor toggle handler
+    const handlePerformanceToggle = () => {
+        if (hasPerformanceAccess) {
+            setShowPerformanceMonitor(!showPerformanceMonitor);
+            logPerformanceAccess(user, 'button_toggle');
+        } else {
+            console.warn('🔒 Performance monitor access denied');
+            logPerformanceAccess(user, 'access_denied_button');
+        }
+    };
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -139,6 +185,25 @@ export const Layout = () => {
             </main>
             
             <Footer />
+
+            {/* 🔒 SECURED: Performance Monitor Toggle Button - Only show to authorized users */}
+            {hasPerformanceAccess && (
+                <button 
+                    onClick={handlePerformanceToggle}
+                    className="fixed bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-2xl z-40 transition-all duration-200 hover:scale-110"
+                    title={`Performance Monitor (${accessLevel.toUpperCase()}) - Ctrl+Shift+P`}
+                >
+                    <span className="text-lg">📊</span>
+                </button>
+            )}
+
+            {/* 🔒 SECURED: Performance Monitoring Dashboard - Only render for authorized users */}
+            {hasPerformanceAccess && (
+                <PerformanceMonitoringDashboard 
+                    isVisible={showPerformanceMonitor} 
+                    accessLevel={accessLevel}
+                />
+            )}
         </div>
     );
 };

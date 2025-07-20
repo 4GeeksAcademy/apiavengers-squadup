@@ -42,11 +42,15 @@ export default defineConfig({
   
   // Build configuration
   build: {
-    // Ensure environment info is available in production build
-    define: {
-      __CODESPACE_NAME__: JSON.stringify(process.env.CODESPACE_NAME || null),
-      __GITHUB_CODESPACES_DOMAIN__: JSON.stringify(process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN || null),
-      __IS_CODESPACE__: JSON.stringify(!!process.env.CODESPACE_NAME),
+    // Production optimizations - code splitting and chunk optimization
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          router: ['react-router-dom'],
+          utils: ['gsap']
+        }
+      }
     }
   }
 })

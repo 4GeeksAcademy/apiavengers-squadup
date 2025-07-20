@@ -1,0 +1,326 @@
+# src/api/session_persistence.py - NEW FILE
+# Critical Fix #1: Session State Persistence for Crash Recovery
+
+from flask import current_app
+from api.models import db, GameSession, Vote, User
+from api.utils import utc_now
+import json
+import redis
+import threading
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+class SessionStateManager:
+    """
+    Manages session state persistence for crash recovery
+    Stores session data in Redis with database fallback
+    """
+    
+    def __init__(self):
+        self.redis_client = None
+        self.local_cache = {}
+        self.cache_lock = threading.Lock()
+        self._init_redis()
+        
+        # Start cleanup thread
+        self.cleanup_thread = threading.Thread(target=self._cleanup_expired_sessions, daemon=True)
+        self.cleanup_thread.start()
+        
+        print("🗄️ SessionStateManager initialized")
+    
+    def _init_redis(self):
+        """Initialize Redis connection with fallback"""
+        try:
+            import redis
+            redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379')
+            self.redis_client = redis.from_url(redis_url, decode_responses=True)
+            # Test connection
+            self.redis_client.ping()
+            print(f"✅ Redis connected: {redis_url}")
+        except Exception as e:
+            print(f"⚠️ Redis unavailable, using database fallback: {e}")
+            self.redis_client = None
+    
+    def persist_session_state(self, session_id, state_data):
+        """
+        Persist complete session state for crash recovery
+        Stores in Redis (primary) and database (fallback)
+        """
+        try:
+            # Enhance state data with timestamp
+            enhanced_state = {
+                **state_data,
+                'persisted_at': utc_now().isoformat(),
+                'session_id': session_id,
+                'version': int(time.time() * 1000)  # Microsecond timestamp as version
+            }
+            
+            serialized_state = json.dumps(enhanced_state, default=str)
+            
+            # Primary: Store in Redis with 1 hour TTL
+            if self.redis_client:
+                try:
+                    key = f"session_state:{session_id}"
+                    self.redis_client.setex(key, 3600, serialized_state)
+                    
+                    # Also store connection info
+                    connection_key = f"session_connections:{session_id}"
+                    connection_data = {
+                        'active_users': list(enhanced_state.get('connected_users', [])),
+                        'last_activity': utc_now().isoformat()
+                    }
+                    self.redis_client.setex(connection_key, 3600, json.dumps(connection_data))
+                    
+                except Exception as e:
+                    print(f"⚠️ Redis persist failed: {e}")
+                    self.redis_client = None  # Disable Redis on error
+            
+            # Fallback: Store in database
+            self._persist_to_database(session_id, enhanced_state)
+            
+            # Local cache for immediate access
+            with self.cache_lock:
+                self.local_cache[session_id] = enhanced_state
+            
+            return True
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to persist session state {session_id}: {e}")
+            return False
+    
+    def recover_session_state(self, session_id):
+        """
+        Recover session state after server restart
+        Tries Redis -> Database -> Local Cache
+        """
+        try:
+            # Try local cache first
+            with self.cache_lock:
+                if session_id in self.local_cache:
+                    cache_data = self.local_cache[session_id]
+                    # Check if cache is fresh (less than 5 minutes old)
+                    if self._is_state_fresh(cache_data):
+                        return cache_data
+            
+            # Try Redis
+            if self.redis_client:
+                try:
+                    key = f"session_state:{session_id}"
+                    state_data = self.redis_client.get(key)
+                    if state_data:
+                        recovered_state = json.loads(state_data)
+                        if self._is_state_fresh(recovered_state):
+                            # Update local cache
+                            with self.cache_lock:
+                                self.local_cache[session_id] = recovered_state
+                            return recovered_state
+                except Exception as e:
+                    print(f"⚠️ Redis recovery failed: {e}")
+            
+            # Fallback to database
+            db_state = self._recover_from_database(session_id)
+            if db_state:
+                # Update caches
+                with self.cache_lock:
+                    self.local_cache[session_id] = db_state
+                return db_state
+            
+            return None
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to recover session state {session_id}: {e}")
+            return None
+    
+    def _persist_to_database(self, session_id, state_data):
+        """Store session state in database as fallback"""
+        try:
+            # Use GameSession to store state in vote_results field
+            session = GameSession.query.get(session_id)
+            if session:
+                session.vote_results = json.dumps(state_data)
+                session.updated_at = utc_now()
+                db.session.commit()
+            
+        except Exception as e:
+            current_app.logger.error(f"Database persist failed for session {session_id}: {e}")
+            db.session.rollback()
+    
+    def _recover_from_database(self, session_id):
+        """Recover session state from database"""
+        try:
+            session = GameSession.query.get(session_id)
+            if session and session.vote_results:
+                try:
+                    return json.loads(session.vote_results)
+                except json.JSONDecodeError:
+                    pass
+            return None
+            
+        except Exception as e:
+            current_app.logger.error(f"Database recovery failed for session {session_id}: {e}")
+            return None
+    
+    def _is_state_fresh(self, state_data):
+        """Check if state data is fresh (less than 10 minutes old)"""
+        try:
+            if not state_data or 'persisted_at' not in state_data:
+                return False
+            
+            persisted_time = datetime.fromisoformat(state_data['persisted_at'].replace('Z', '+00:00'))
+            age = utc_now() - persisted_time
+            return age < timedelta(minutes=10)
+            
+        except Exception:
+            return False
+    
+    def invalidate_session(self, session_id):
+        """Remove session state from all storage"""
+        try:
+            # Remove from Redis
+            if self.redis_client:
+                try:
+                    self.redis_client.delete(f"session_state:{session_id}")
+                    self.redis_client.delete(f"session_connections:{session_id}")
+                except Exception:
+                    pass
+            
+            # Remove from local cache
+            with self.cache_lock:
+                self.local_cache.pop(session_id, None)
+            
+            print(f"🗑️ Session state invalidated: {session_id}")
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to invalidate session {session_id}: {e}")
+    
+    def get_active_sessions(self):
+        """Get list of all active sessions with state"""
+        active_sessions = []
+        
+        try:
+            # From Redis
+            if self.redis_client:
+                try:
+                    keys = self.redis_client.keys("session_state:*")
+                    for key in keys:
+                        session_id = key.split(":")[-1]
+                        active_sessions.append(int(session_id))
+                except Exception:
+                    pass
+            
+            # From local cache
+            with self.cache_lock:
+                for session_id in self.local_cache:
+                    if session_id not in active_sessions:
+                        active_sessions.append(session_id)
+            
+            return active_sessions
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to get active sessions: {e}")
+            return []
+    
+    def _cleanup_expired_sessions(self):
+        """Background thread to clean up expired session states"""
+        while True:
+            try:
+                time.sleep(300)  # Run every 5 minutes
+                
+                current_time = utc_now()
+                expired_sessions = []
+                
+                # Check local cache for expired sessions
+                with self.cache_lock:
+                    for session_id, state_data in list(self.local_cache.items()):
+                        if not self._is_state_fresh(state_data):
+                            expired_sessions.append(session_id)
+                    
+                    # Remove expired sessions
+                    for session_id in expired_sessions:
+                        self.local_cache.pop(session_id, None)
+                
+                if expired_sessions:
+                    print(f"🧹 Cleaned up {len(expired_sessions)} expired session states")
+                
+            except Exception as e:
+                current_app.logger.error(f"Session cleanup error: {e}")
+
+# Global instance
+session_state_manager = SessionStateManager()
+
+
+class SessionRecoveryMixin:
+    """
+    Mixin to add session recovery capabilities to existing classes
+    """
+    
+    def save_session_snapshot(self, session_id, additional_data=None):
+        """Save current session state snapshot"""
+        try:
+            # Gather current session data
+            session = GameSession.query.get(session_id)
+            if not session:
+                return False
+            
+            # Get current votes
+            votes = Vote.query.filter_by(session_id=session_id).all()
+            vote_data = []
+            for vote in votes:
+                vote_data.append({
+                    'user_id': vote.user_id,
+                    'game_id': vote.game_id,
+                    'priority': vote.priority,
+                    'created_at': vote.created_at.isoformat()
+                })
+            
+            # Get voting progress
+            total_members = len(session.group.members)
+            voted_users = len(set(vote.user_id for vote in votes))
+            
+            snapshot_data = {
+                'session': session.serialize(),
+                'votes': vote_data,
+                'progress': {
+                    'total_members': total_members,
+                    'voted_users': voted_users,
+                    'percentage': (voted_users / total_members * 100) if total_members > 0 else 0
+                },
+                'snapshot_type': 'auto_save',
+                **(additional_data or {})
+            }
+            
+            return session_state_manager.persist_session_state(session_id, snapshot_data)
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to save session snapshot {session_id}: {e}")
+            return False
+    
+    def restore_session_snapshot(self, session_id):
+        """Restore session from saved snapshot"""
+        try:
+            snapshot = session_state_manager.recover_session_state(session_id)
+            if not snapshot:
+                return None
+            
+            # Validate snapshot data
+            if 'session' not in snapshot or 'votes' not in snapshot:
+                return None
+            
+            # Check if snapshot is for active session
+            session = GameSession.query.get(session_id)
+            if not session or session.status == 'completed':
+                return None
+            
+            return {
+                'recovered': True,
+                'snapshot_data': snapshot,
+                'votes_count': len(snapshot.get('votes', [])),
+                'progress': snapshot.get('progress', {}),
+                'persisted_at': snapshot.get('persisted_at'),
+                'can_continue': session.status == 'voting'
+            }
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to restore session snapshot {session_id}: {e}")
+            return None

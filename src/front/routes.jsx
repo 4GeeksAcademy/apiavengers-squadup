@@ -1,4 +1,4 @@
-// src/front/routes.jsx - FULLY CORRECTED VERSION
+// src/front/routes.jsx - ENHANCED VERSION with Admin Dashboard
 
 import { createBrowserRouter } from 'react-router-dom';
 import { Layout } from './pages/Layout';
@@ -17,6 +17,9 @@ import { Friends } from './pages/Friends';
 import { JoinGroup } from './pages/JoinGroup';
 import { GroupPage } from './pages/GroupPage';
 import { ResultsPage } from './pages/ResultsPage';
+
+// ADD: Import AdminPerformanceDashboard
+import { AdminPerformanceDashboard } from './components/SystemStatusIndicator';
 
 export const router = createBrowserRouter([
   {
@@ -83,6 +86,18 @@ export const router = createBrowserRouter([
       {
         path: "results/:sessionId",
         element: <ProtectedRoute><ResultsPage /></ProtectedRoute>
+      },
+      
+      // ADD: Admin routes (requires admin privileges)
+      {
+        path: "admin/performance",
+        element: (
+          <ProtectedRoute adminOnly={true}>
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900">
+              <AdminPerformanceDashboard />
+            </div>
+          </ProtectedRoute>
+        )
       },
       
       // 404 - Catch all route

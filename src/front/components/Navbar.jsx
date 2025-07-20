@@ -1,4 +1,4 @@
-// src/front/components/Navbar.jsx - Updated to use your Tailwind config
+// src/front/components/Navbar.jsx - Updated with Performance Monitoring
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
@@ -8,6 +8,9 @@ import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService.js';
 import toast from 'react-hot-toast';
+
+// ADD: Import SystemStatusIndicator
+import SystemStatusIndicator from './SystemStatusIndicator';
 
 // Import steamService with fallback
 let steamService;
@@ -376,6 +379,12 @@ export const Navbar = () => {
 
                             {isAuthenticated ? (
                                 <div className="flex items-center space-x-6">
+                                    {/* ADD: System Status Indicator */}
+                                    <SystemStatusIndicator 
+                                        showDetails={false} 
+                                        className="hidden sm:flex"
+                                    />
+
                                     {/* Steam Connection Status Indicator */}
                                     {user && !(user.steam_connected || user.is_steam_connected) && (
                                         <button
@@ -449,6 +458,16 @@ export const Navbar = () => {
                                                 </span>
                                             </Link>
                                             
+                                            {/* ADD: Admin Dashboard Link (only for admin users) */}
+                                            {user?.is_admin && (
+                                                <Link to="/admin/performance" className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1" onClick={handleMenuItemClick}>
+                                                    <span className="flex items-center space-x-3">
+                                                        <span>📊</span>
+                                                        <span>Performance Dashboard</span>
+                                                    </span>
+                                                </Link>
+                                            )}
+                                            
                                             {/* Enhanced Steam Integration Button */}
                                             <button 
                                                 className="block w-full px-4 py-3 text-left text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 mb-1 disabled:opacity-50" 
@@ -487,6 +506,12 @@ export const Navbar = () => {
                                 </div>
                             ) : (
                                 <div className="flex items-center space-x-4">
+                                    {/* ADD: System Status for non-authenticated users */}
+                                    <SystemStatusIndicator 
+                                        showDetails={false} 
+                                        className="hidden sm:flex"
+                                    />
+                                    
                                     <Link to="/login" className="text-white/80 hover:text-white transition-colors duration-300 font-medium">
                                         Login
                                     </Link>

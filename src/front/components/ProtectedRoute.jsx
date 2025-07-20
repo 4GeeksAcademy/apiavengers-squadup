@@ -1,4 +1,4 @@
-// src/front/components/ProtectedRoute.jsx - ENHANCED VERSION
+// src/front/components/ProtectedRoute.jsx - ENHANCED VERSION with Admin Support
 
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
@@ -6,15 +6,16 @@ import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
 
 /**
- * Enhanced ProtectedRoute component with proper JWT handling
+ * Enhanced ProtectedRoute component with proper JWT handling and admin support
  * Features:
  * - Proper authentication checking with JWT validation
+ * - Admin-only route protection
  * - Loading states during auth verification
  * - Token refresh handling
  * - Graceful error handling
  * - Proper redirect preservation
  */
-const ProtectedRoute = ({ children, requireFresh = false, fallback = null }) => {
+const ProtectedRoute = ({ children, requireFresh = false, adminOnly = false, fallback = null }) => {
     const { store } = useGlobalReducer();
     const location = useLocation();
     
@@ -46,7 +47,9 @@ const ProtectedRoute = ({ children, requireFresh = false, fallback = null }) => 
                     storeAuth,
                     hasUser: !!user,
                     hasToken: !!token,
-                    authLoading: store?.authLoading
+                    authLoading: store?.authLoading,
+                    adminOnly,
+                    userIsAdmin: user?.is_admin || user?.role === 'admin'
                 });
                 
                 if (!isMounted) return;
@@ -118,7 +121,7 @@ const ProtectedRoute = ({ children, requireFresh = false, fallback = null }) => 
         return () => {
             isMounted = false;
         };
-    }, [store?.isAuthenticated, store?.user, store?.authLoading]);
+    }, [store?.isAuthenticated, store?.user, store?.authLoading, adminOnly]);
 
     // Show loading state while checking authentication
     if (authState.isChecking || store?.authLoading) {
@@ -176,6 +179,54 @@ const ProtectedRoute = ({ children, requireFresh = false, fallback = null }) => 
         );
     }
 
+    // ADD: Admin-only route protection
+    if (adminOnly && authState.user) {
+        const isAdmin = authState.user.is_admin || authState.user.role === 'admin';
+        
+        if (!isAdmin) {
+            console.log('🛡️ ProtectedRoute: Admin access required but user is not admin');
+            
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+                    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-8 text-center max-w-md mx-auto">
+                        <div className="text-6xl mb-4">🔒</div>
+                        <h1 className="text-2xl font-bold text-white mb-2">Access Denied</h1>
+                        <p className="text-white/70 mb-6">
+                            Admin privileges required to access this page.
+                        </p>
+                        <div className="space-y-3">
+                            <button
+                                onClick={() => window.history.back()}
+                                className="w-full px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-xl transition-colors duration-200"
+                            >
+                                Go Back
+                            </button>
+                            <button
+                                onClick={() => window.location.href = '/dashboard'}
+                                className="w-full px-6 py-3 bg-coral-500 hover:bg-coral-600 text-white font-semibold rounded-xl transition-colors duration-200"
+                            >
+                                Go to Dashboard
+                            </button>
+                        </div>
+                        
+                        {/* Debug info in development */}
+                        {process.env.NODE_ENV === 'development' && (
+                            <div className="mt-6 p-4 bg-black/20 rounded-lg text-left">
+                                <div className="text-white/60 text-sm">
+                                    <div>Debug Info:</div>
+                                    <div>User ID: {authState.user?.id}</div>
+                                    <div>Username: {authState.user?.username}</div>
+                                    <div>Is Admin: {String(authState.user?.is_admin)}</div>
+                                    <div>Role: {authState.user?.role}</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+    }
+
     // Check for fresh token requirement (for sensitive operations)
     if (requireFresh && authState.user) {
         const token = authService.getAccessToken();
@@ -199,8 +250,8 @@ const ProtectedRoute = ({ children, requireFresh = false, fallback = null }) => 
         }
     }
 
-    // User is authenticated, render the protected content
-    console.log('✅ ProtectedRoute: User authenticated, rendering protected content');
+    // User is authenticated and has required permissions, render the protected content
+    console.log('✅ ProtectedRoute: User authenticated and authorized, rendering protected content');
     
     return (
         <>
@@ -211,6 +262,7 @@ const ProtectedRoute = ({ children, requireFresh = false, fallback = null }) => 
                 <div className="fixed bottom-4 right-4 z-50">
                     <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-2 text-green-300 text-xs">
                         🔐 Authenticated: {authState.user?.username}
+                        {adminOnly && <span className="ml-2 text-yellow-300">👑 Admin</span>}
                     </div>
                 </div>
             )}
@@ -233,6 +285,7 @@ export const withAuth = (Component, options = {}) => {
 
 /**
  * Hook to check if user has specific permissions
+ * ENHANCED: Added admin permission check
  */
 export const useAuthPermissions = () => {
     const { store } = useGlobalReducer();
@@ -243,7 +296,7 @@ export const useAuthPermissions = () => {
         
         switch (permission) {
             case 'admin':
-                return user.role === 'admin';
+                return user.role === 'admin' || user.is_admin;
             case 'steam_connected':
                 return user.steam_connected || user.is_steam_connected;
             case 'verified':
@@ -255,7 +308,7 @@ export const useAuthPermissions = () => {
     
     const hasRole = (role) => {
         const user = store?.user;
-        return user?.role === role;
+        return user?.role === role || (role === 'admin' && user?.is_admin);
     };
     
     const isOwner = (resource) => {
@@ -267,10 +320,17 @@ export const useAuthPermissions = () => {
                resource.user_id === user.id;
     };
     
+    // ADD: Admin check helper
+    const isAdmin = () => {
+        const user = store?.user;
+        return user?.is_admin || user?.role === 'admin';
+    };
+    
     return {
         hasPermission,
         hasRole,
         isOwner,
+        isAdmin,
         user: store?.user,
         isAuthenticated: store?.isAuthenticated
     };
@@ -278,6 +338,7 @@ export const useAuthPermissions = () => {
 
 /**
  * Permission-based route protection
+ * ENHANCED: Better admin support
  */
 export const PermissionRoute = ({ children, permission, fallback = null }) => {
     const { hasPermission } = useAuthPermissions();
@@ -291,6 +352,7 @@ export const PermissionRoute = ({ children, permission, fallback = null }) => {
                         <h2 className="text-2xl font-bold text-white mb-4">Access Denied</h2>
                         <p className="text-white/70 mb-6">
                             You don't have permission to access this page.
+                            {permission === 'admin' && ' Admin privileges required.'}
                         </p>
                         <button
                             onClick={() => window.history.back()}
@@ -301,6 +363,17 @@ export const PermissionRoute = ({ children, permission, fallback = null }) => {
                     </div>
                 </div>
             )}
+        </ProtectedRoute>
+    );
+};
+
+/**
+ * NEW: Admin-only route component
+ */
+export const AdminRoute = ({ children, fallback = null }) => {
+    return (
+        <ProtectedRoute adminOnly={true} fallback={fallback}>
+            {children}
         </ProtectedRoute>
     );
 };

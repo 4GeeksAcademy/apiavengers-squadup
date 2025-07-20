@@ -1,6 +1,7 @@
-# src/api/models.py - COMPLETE FIXED VERSION - All Critical Issues Resolved
+# src/api/models.py - ENHANCED WITH COMPLETE PERFORMANCE TRACKING
 
 from flask_sqlalchemy import SQLAlchemy
+from flask import current_app
 from sqlalchemy import String, Boolean, DateTime, Text, Integer, Table, Column, ForeignKey, UniqueConstraint, CheckConstraint, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone, timedelta
@@ -9,6 +10,52 @@ import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
+
+# ENHANCED: Performance tracking imports and decorator
+from .performance_monitor import track_performance
+import time
+from functools import wraps
+
+# ENHANCED: Database performance tracking decorator
+def track_db_performance(operation_name):
+    """Decorator to track database operation performance"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                duration = (time.time() - start_time) * 1000  # Convert to milliseconds
+                
+                # Track successful operation
+                try:
+                    from .performance_monitor import monitor
+                    monitor.track_database_query(operation_name, duration, True)
+                except ImportError:
+                    # Graceful fallback if monitor not available
+                    pass
+                
+                # Log slow queries
+                if duration > 100:  # Queries over 100ms
+                    print(f"🐌 Slow database query: {operation_name} took {duration:.2f}ms")
+                
+                return result
+                
+            except Exception as e:
+                duration = (time.time() - start_time) * 1000
+                
+                # Track failed operation
+                try:
+                    from .performance_monitor import monitor
+                    monitor.track_database_query(operation_name, duration, False)
+                except ImportError:
+                    pass
+                
+                print(f"❌ Database query failed: {operation_name} - {str(e)}")
+                raise
+                
+        return wrapper
+    return decorator
 
 # ============================================================================
 # MODERN DATETIME HELPER - REPLACES DEPRECATED datetime.utcnow()
@@ -67,7 +114,7 @@ def safe_json_dumps(data):
         return str(data) if data else None
 
 # ============================================================================
-# USER MODEL - FIXED: Relationship naming conflicts resolved
+# USER MODEL - ENHANCED WITH PERFORMANCE TRACKING
 # ============================================================================
 
 class User(db.Model):
@@ -80,8 +127,9 @@ class User(db.Model):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     last_login: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False, server_default='false')
 
-    # Steam integration fields - FIXED: Consistent naming
+    # Steam integration fields
     steam_id: Mapped[str] = mapped_column(String(17), nullable=True, unique=True)
     steam_username: Mapped[str] = mapped_column(String(100), nullable=True)
     steam_avatar_url: Mapped[str] = mapped_column(String(300), nullable=True)
@@ -95,21 +143,83 @@ class User(db.Model):
     favorite_genres: Mapped[str] = mapped_column(Text, nullable=True)
     gaming_style: Mapped[str] = mapped_column(String(50), nullable=True)
     
-    # ADDED: Missing fields that frontend expects
+    # Additional fields
     total_games: Mapped[int] = mapped_column(Integer, default=0)
     total_votes_cast: Mapped[int] = mapped_column(Integer, default=0)
     favorite_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
     gaming_activity_level: Mapped[str] = mapped_column(String(20), default='moderate')
 
-    # FIXED: Relationships - Use 'groups' as primary, keep others for compatibility
+    # Relationships
     owned_games = relationship('SteamGame', secondary=user_games, back_populates='owners')
-    groups = relationship('GamingGroup', secondary=group_members, back_populates='members')  # PRIMARY relationship
-    member_of_groups = relationship('GamingGroup', secondary=group_members, back_populates='members', viewonly=True)  # COMPATIBILITY
-    gaming_groups = relationship('GamingGroup', secondary=group_members, back_populates='members', viewonly=True)  # COMPATIBILITY
+    groups = relationship('GamingGroup', secondary=group_members, back_populates='members')
+    member_of_groups = relationship('GamingGroup', secondary=group_members, back_populates='members', viewonly=True)
+    gaming_groups = relationship('GamingGroup', secondary=group_members, back_populates='members', viewonly=True)
     created_groups = relationship('GamingGroup', back_populates='creator', foreign_keys='GamingGroup.creator_id')
     created_sessions = relationship('GameSession', back_populates='creator', foreign_keys='GameSession.creator_id')
     votes = relationship('Vote', back_populates='user', cascade='all, delete-orphan')
     favorite_game = relationship('SteamGame', foreign_keys=[favorite_game_id])
+
+    # ENHANCED: Performance-tracked static methods
+    @staticmethod
+    @track_db_performance('get_user_by_id')
+    def get_user_by_id(user_id):
+        """Get user by ID with performance tracking"""
+        return User.query.filter_by(id=user_id).first()
+    
+    @staticmethod
+    @track_db_performance('get_user_by_username')
+    def get_user_by_username(username):
+        """Get user by username with performance tracking"""
+        return User.query.filter_by(username=username).first()
+    
+    @staticmethod
+    @track_db_performance('get_user_by_email')
+    def get_user_by_email(email):
+        """Get user by email with performance tracking"""
+        return User.query.filter_by(email=email).first()
+    
+    @staticmethod
+    @track_db_performance('get_user_by_steam_id')
+    def get_user_by_steam_id(steam_id):
+        """Get user by Steam ID with performance tracking"""
+        return User.query.filter_by(steam_id=steam_id).first()
+    
+    @staticmethod
+    @track_db_performance('search_users')
+    def search_users(query, limit=20):
+        """Search users by username with performance tracking"""
+        return User.query.filter(
+            User.username.ilike(f'%{query}%')
+        ).limit(limit).all()
+    
+    # ENHANCED: Performance-tracked instance methods
+    @track_db_performance('get_user_games')
+    def get_user_games(self):
+        """Get user's games with performance tracking"""
+        return self.owned_games
+    
+    @track_db_performance('get_user_groups')
+    def get_user_groups(self):
+        """Get user's groups with performance tracking"""
+        return self.groups
+    
+    @track_db_performance('get_user_votes')
+    def get_user_votes(self, session_id=None):
+        """Get user's votes with performance tracking"""
+        query = self.votes
+        if session_id:
+            query = query.filter_by(session_id=session_id)
+        return query.all()
+    
+    @track_db_performance('update_steam_data')
+    def update_steam_data(self, steam_data):
+        """Update user Steam data with performance tracking"""
+        self.steam_username = steam_data.get('personaname')
+        self.steam_avatar_url = steam_data.get('avatarfull')
+        self.steam_profile_url = steam_data.get('profileurl')
+        self.steam_connected = True
+        self.is_steam_connected = True
+        db.session.commit()
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -125,10 +235,9 @@ class User(db.Model):
         if not self.steam_library_synced_at:
             return True, "Ready to sync"
         
-        now = utc_now() # 🔧 FIXED: Use utc_now for timezone-aware datetime
+        now = utc_now()
         last_synced = self.steam_library_synced_at
         
-        # Ensure last_synced is timezone-aware for comparison
         if last_synced.tzinfo is None:
             last_synced = last_synced.replace(tzinfo=timezone.utc)
         
@@ -147,7 +256,7 @@ class User(db.Model):
         if not self.steam_id or not self.steam_library_synced_at:
             return 0
         
-        now = utc_now() # 🔧 FIXED: Use utc_now
+        now = utc_now()
         last_synced = self.steam_library_synced_at
 
         if last_synced.tzinfo is None:
@@ -164,7 +273,7 @@ class User(db.Model):
 
     def update_steam_sync_time(self):
         """Update the last Steam sync timestamp to now"""
-        self.steam_library_synced_at = utc_now() # 🔧 FIXED: Use utc_now
+        self.steam_library_synced_at = utc_now()
 
     def get_steam_sync_status(self):
         """Get comprehensive Steam sync status information"""
@@ -200,8 +309,9 @@ class User(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "is_active": self.is_active,
+            "is_admin": self.is_admin,
             
-            # FIXED: Consistent Steam field naming for frontend compatibility
+            # Steam fields
             "steam_connected": self.steam_connected or self.is_steam_connected,
             "is_steam_connected": self.steam_connected or self.is_steam_connected,
             "steam_id": self.steam_id,
@@ -217,7 +327,7 @@ class User(db.Model):
         }
 
 # ============================================================================
-# STEAM GAME MODEL
+# STEAM GAME MODEL - ENHANCED WITH PERFORMANCE TRACKING
 # ============================================================================
 
 class SteamGame(db.Model):
@@ -245,6 +355,58 @@ class SteamGame(db.Model):
     votes = relationship('Vote', back_populates='game', cascade='all, delete-orphan')
     won_sessions = relationship('GameSession', back_populates='winner_game', foreign_keys='GameSession.winner_game_id')
 
+    # ENHANCED: Performance-tracked static methods
+    @staticmethod
+    @track_db_performance('get_games_by_user')
+    def get_games_by_user(user_id):
+        """Get all games for a user with performance tracking"""
+        return db.session.query(SteamGame).join(user_games).filter(
+            user_games.c.user_id == user_id
+        ).all()
+    
+    @staticmethod
+    @track_db_performance('search_games')
+    def search_games(query, limit=50):
+        """Search games with performance tracking"""
+        return SteamGame.query.filter(
+            SteamGame.name.ilike(f'%{query}%')
+        ).limit(limit).all()
+    
+    @staticmethod
+    @track_db_performance('get_common_games')
+    def get_common_games(user_ids):
+        """Get common games between users with performance tracking"""
+        if not user_ids:
+            return []
+            
+        return db.session.query(SteamGame).join(user_games).filter(
+            user_games.c.user_id.in_(user_ids)
+        ).group_by(SteamGame.id).having(
+            db.func.count(SteamGame.id) == len(user_ids)
+        ).all()
+    
+    @staticmethod
+    @track_db_performance('get_games_by_genre')
+    def get_games_by_genre(genre, limit=100):
+        """Get games by genre with performance tracking"""
+        return SteamGame.query.filter(
+            SteamGame.genres.like(f'%{genre}%')
+        ).limit(limit).all()
+    
+    @staticmethod
+    @track_db_performance('get_multiplayer_games')
+    def get_multiplayer_games(limit=100):
+        """Get multiplayer games with performance tracking"""
+        return SteamGame.query.filter(
+            (SteamGame.multiplayer == True) | (SteamGame.co_op == True)
+        ).limit(limit).all()
+    
+    @staticmethod
+    @track_db_performance('get_game_by_appid')
+    def get_game_by_appid(appid):
+        """Get game by Steam app ID with performance tracking"""
+        return SteamGame.query.filter_by(steam_appid=appid).first()
+
     def _parse_json_field(self, field):
         return safe_json_loads(field, [])
 
@@ -271,7 +433,7 @@ class SteamGame(db.Model):
         }
 
 # ============================================================================
-# GAMING GROUP MODEL
+# GAMING GROUP MODEL - ENHANCED WITH PERFORMANCE TRACKING
 # ============================================================================
 
 class GamingGroup(db.Model):
@@ -299,6 +461,61 @@ class GamingGroup(db.Model):
     members = relationship('User', secondary=group_members, back_populates='groups')
     sessions = relationship('GameSession', back_populates='group', cascade='all, delete-orphan', passive_deletes=True)
 
+    # ENHANCED: Performance-tracked static methods
+    @staticmethod
+    @track_db_performance('get_group_by_id')
+    def get_group_by_id(group_id):
+        """Get group by ID with performance tracking"""
+        return GamingGroup.query.filter_by(id=group_id).first()
+    
+    @staticmethod
+    @track_db_performance('get_group_by_invite_code')
+    def get_group_by_invite_code(invite_code):
+        """Get group by invite code with performance tracking"""
+        return GamingGroup.query.filter_by(invite_code=invite_code).first()
+    
+    @staticmethod
+    @track_db_performance('get_public_groups')
+    def get_public_groups(limit=50):
+        """Get public groups with performance tracking"""
+        return GamingGroup.query.filter_by(is_public=True).limit(limit).all()
+    
+    @staticmethod
+    @track_db_performance('search_groups')
+    def search_groups(query, limit=20):
+        """Search groups by name with performance tracking"""
+        return GamingGroup.query.filter(
+            GamingGroup.name.ilike(f'%{query}%')
+        ).limit(limit).all()
+    
+    # ENHANCED: Performance-tracked instance methods
+    @track_db_performance('get_group_with_members')
+    def get_group_with_members(self):
+        """Get group with all members loaded with performance tracking"""
+        return db.session.query(GamingGroup).options(
+            db.joinedload(GamingGroup.members)
+        ).filter_by(id=self.id).first()
+    
+    @track_db_performance('get_group_games')
+    def get_group_games(self):
+        """Get all games available to group members with performance tracking"""
+        if not self.members:
+            return []
+            
+        member_ids = [member.id for member in self.members]
+        return db.session.query(SteamGame).join(user_games).filter(
+            user_games.c.user_id.in_(member_ids)
+        ).distinct().all()
+    
+    @track_db_performance('get_group_common_games')
+    def get_group_common_games(self):
+        """Get games owned by ALL group members with performance tracking"""
+        if not self.members:
+            return []
+            
+        member_ids = [member.id for member in self.members]
+        return SteamGame.get_common_games(member_ids)
+
     def serialize(self):
         return {
             "id": self.id,
@@ -320,28 +537,25 @@ class GamingGroup(db.Model):
         }
 
 # ============================================================================
-# GAME SESSION MODEL - FIXED: All missing fields added
+# GAME SESSION MODEL - ENHANCED WITH PERFORMANCE TRACKING
 # ============================================================================
 
 class GameSession(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     
-    # 🔧 FIXED: Required relationships
     group_id: Mapped[int] = mapped_column(Integer, ForeignKey('gaming_group.id', ondelete='CASCADE'), nullable=False)
     creator_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)
     
-    # 🔧 FIXED: Core session fields matching gaming.py expectations
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
     session_name: Mapped[str] = mapped_column(String(200), nullable=False, default='Voting Session')
     description: Mapped[str] = mapped_column(Text, nullable=True)
     scheduled_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default='planning') # planning -> voting -> completed -> archived
+    status: Mapped[str] = mapped_column(String(20), default='planning')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     vote_results: Mapped[str] = mapped_column(Text, nullable=True)
     
-    # 🔧 ADDED: Enhanced live voting fields that gaming.py expects
     auto_complete_threshold: Mapped[float] = mapped_column(Float, default=0.8)
     max_choices: Mapped[int] = mapped_column(Integer, default=3)
     winner_game_id: Mapped[int] = mapped_column(Integer, ForeignKey('steam_game.id'), nullable=True)
@@ -350,12 +564,41 @@ class GameSession(db.Model):
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     votable_games: Mapped[str] = mapped_column(Text, nullable=True)
     
-    # 🔧 FIXED: Complete relationships
+    # Relationships
     group = relationship('GamingGroup', back_populates='sessions')
     creator = relationship('User', back_populates='created_sessions', foreign_keys=[creator_id])
     game = relationship('SteamGame', foreign_keys=[game_id])
     winner_game = relationship('SteamGame', foreign_keys=[winner_game_id])
     votes = relationship('Vote', back_populates='session', cascade='all, delete-orphan')
+
+    # ENHANCED: Performance-tracked static methods
+    @staticmethod
+    @track_db_performance('get_session_by_id')
+    def get_session_by_id(session_id):
+        """Get session by ID with performance tracking"""
+        return GameSession.query.filter_by(id=session_id).first()
+    
+    @staticmethod
+    @track_db_performance('get_active_sessions')
+    def get_active_sessions(limit=50):
+        """Get active sessions with performance tracking"""
+        return GameSession.query.filter_by(status='voting').limit(limit).all()
+    
+    @staticmethod
+    @track_db_performance('get_sessions_by_group')
+    def get_sessions_by_group(group_id, limit=20):
+        """Get sessions by group with performance tracking"""
+        return GameSession.query.filter_by(group_id=group_id).order_by(
+            GameSession.created_at.desc()
+        ).limit(limit).all()
+    
+    @staticmethod
+    @track_db_performance('get_sessions_by_user')
+    def get_sessions_by_user(user_id, limit=20):
+        """Get sessions created by user with performance tracking"""
+        return GameSession.query.filter_by(creator_id=user_id).order_by(
+            GameSession.created_at.desc()
+        ).limit(limit).all()
 
     def serialize(self):
         return {
@@ -383,7 +626,7 @@ class GameSession(db.Model):
         }
 
 # ============================================================================
-# VOTE MODEL - FIXED: Improved constraints to allow vote changes
+# VOTE MODEL - ENHANCED WITH PERFORMANCE TRACKING
 # ============================================================================
 
 class Vote(db.Model):
@@ -394,10 +637,13 @@ class Vote(db.Model):
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     
-    # 🔧 FIXED: Better constraints that allow vote changes
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    
     __table_args__ = (
         UniqueConstraint('session_id', 'user_id', 'game_id', name='unique_user_game_vote'),
         CheckConstraint('priority >= 1 AND priority <= 3', name='valid_priority'),
+        CheckConstraint('version >= 1', name='valid_version'),
         {'mysql_charset': 'utf8mb4'}
     )
     
@@ -406,21 +652,11 @@ class Vote(db.Model):
     user = relationship('User', back_populates='votes')
     game = relationship('SteamGame', back_populates='votes')
     
-    def serialize(self):
-        return {
-            "id": self.id,
-            "session_id": self.session_id,
-            "user_id": self.user_id,
-            "game_id": self.game_id,
-            "priority": self.priority,
-            "points": self.priority,
-            "created_at": self.created_at.isoformat(),
-            "user": { "id": self.user.id, "username": self.user.username } if self.user else None,
-            "game": { "id": self.game.id, "name": self.game.name } if self.game else None
-        }
-    
+    # ENHANCED: Performance-tracked class methods
     @classmethod
+    @track_db_performance('get_session_results')
     def get_session_results(cls, session_id):
+        """Get voting results for session with performance tracking"""
         from sqlalchemy import func
         results = db.session.query(
             SteamGame,
@@ -446,14 +682,108 @@ class Vote(db.Model):
         ]
     
     @classmethod
+    @track_db_performance('get_voter_count')
     def get_voter_count(cls, session_id):
+        """Get unique voter count for session with performance tracking"""
         from sqlalchemy import func
         return db.session.query(func.count(func.distinct(cls.user_id))).filter_by(session_id=session_id).scalar() or 0
     
     @classmethod
+    @track_db_performance('has_user_voted')
     def has_user_voted(cls, session_id, user_id):
+        """Check if user has voted in session with performance tracking"""
         return cls.query.filter_by(session_id=session_id, user_id=user_id).first() is not None
     
     @classmethod
+    @track_db_performance('get_user_votes')
     def get_user_votes(cls, session_id, user_id):
+        """Get user's votes for session with performance tracking"""
         return cls.query.filter_by(session_id=session_id, user_id=user_id).order_by(cls.priority.desc()).all()
+    
+    @classmethod
+    @track_db_performance('get_votes_by_game')
+    def get_votes_by_game(cls, session_id, game_id):
+        """Get all votes for specific game in session with performance tracking"""
+        return cls.query.filter_by(session_id=session_id, game_id=game_id).all()
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+            "game_id": self.game_id,
+            "priority": self.priority,
+            "points": self.priority,
+            "created_at": self.created_at.isoformat(),
+            "submitted_at": self.submitted_at.isoformat(),
+            "version": self.version,
+            "user": { "id": self.user.id, "username": self.user.username } if self.user else None,
+            "game": { "id": self.game.id, "name": self.game.name } if self.game else None
+        }
+    
+    @classmethod
+    def submit_with_conflict_resolution(cls, session_id, user_id, vote_data):
+        """Submit votes with automatic conflict resolution"""
+#        from api.vote_conflict_resolution import submit_vote_safely
+        return submit_vote_safely(session_id, user_id, vote_data)
+
+# ============================================================================
+# SESSION STATE MODEL - WITH PERFORMANCE TRACKING
+# ============================================================================
+
+class SessionState(db.Model):
+    """Stores session state for crash recovery when Redis is unavailable"""
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(Integer, ForeignKey('game_session.id', ondelete='CASCADE'), nullable=False, unique=True)
+    state_data: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    
+    # Relationship
+    session = relationship('GameSession')
+    
+    @classmethod
+    @track_db_performance('upsert_session_state')
+    def upsert(cls, session_id, state_data):
+        """Update or insert session state with performance tracking"""
+        try:
+            serialized_data = json.dumps(state_data) if not isinstance(state_data, str) else state_data
+            
+            existing = cls.query.filter_by(session_id=session_id).first()
+            if existing:
+                existing.state_data = serialized_data
+                existing.version += 1
+                existing.updated_at = utc_now()
+                existing.expires_at = utc_now() + timedelta(hours=2)
+            else:
+                new_state = cls(
+                    session_id=session_id,
+                    state_data=serialized_data,
+                    expires_at=utc_now() + timedelta(hours=2)
+                )
+                db.session.add(new_state)
+            
+            db.session.commit()
+            return True
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Failed to upsert session state: {e}")
+            try:
+                current_app.logger.error(f"Failed to upsert session state: {e}")
+            except RuntimeError:
+                pass
+            return False
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "version": self.version,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "has_state_data": bool(self.state_data)
+        }

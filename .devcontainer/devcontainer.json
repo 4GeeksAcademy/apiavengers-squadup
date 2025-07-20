@@ -24,8 +24,13 @@
 	"forwardPorts": [3000, 3001],
 
 	"onCreateCommand": "(cp .env.example .env || echo \".env creation failed\"); (pipenv install || echo \"pipenv install failed\"); (bash database.sh || echo \"database.sh failed\");",
+	
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": "python docs/assets/greeting.py both > /workspaces/.codespaces/shared/first-run-notice.txt && npm install",
+	
+	// Update environment URLs every time Codespace starts
+	"postStartCommand": "chmod +x update-env.sh && ./update-env.sh",
+	
 	"customizations": {
 		"vscode": {
 			"extensions": [

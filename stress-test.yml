@@ -1,0 +1,197 @@
+config:
+  target: 'http://localhost:3000'  # Your frontend URL
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm-up"
+    
+    # Ramp-up phase  
+    - duration: 120
+      arrivalRate: 5
+      rampTo: 25
+      name: "Ramp-up"
+    
+    # Sustained load
+    - duration: 300
+      arrivalRate: 25
+      name: "Sustained load"
+    
+    # Peak load test
+    - duration: 60
+      arrivalRate: 25
+      rampTo: 50
+      name: "Peak load"
+    
+    # Cool down
+    - duration: 60
+      arrivalRate: 50
+      rampTo: 5
+      name: "Cool down"
+  
+  defaults:
+    headers:
+      User-Agent: "Artillery Load Test"
+      Accept: "application/json"
+  
+  # Performance thresholds
+  ensure:
+    maxErrorRate: 5          # Max 5% error rate
+    maxResponseTime: 2000    # Max 2 second response time
+    minResponseTime: 10      # Min 10ms response time
+
+scenarios:
+  # Test homepage loading
+  - name: "Homepage Load Test"
+    weight: 30
+    flow:
+      - get:
+          url: "/"
+          capture:
+            - header: "set-cookie"
+              as: "sessionCookie"
+      - think: 2
+      
+  # Test authentication flow
+  - name: "Authentication Test"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "test_user_{{ $randomString() }}"
+            password: "test_password"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      - think: 1
+      - get:
+          url: "/api/auth/me"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+  
+  # Test gaming groups API
+  - name: "Gaming Groups API Test"
+    weight: 25
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "test_user"
+            password: "test_password"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      - get:
+          url: "/api/gaming/groups"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+      - think: 3
+      - post:
+          url: "/api/gaming/groups"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+            Content-Type: "application/json"
+          json:
+            name: "Load Test Group {{ $randomString() }}"
+            description: "Generated during load testing"
+            is_public: true
+  
+  # Test Steam API integration
+  - name: "Steam API Test"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/steam/games"
+          headers:
+            Authorization: "Bearer test_token"
+      - think: 2
+      - get:
+          url: "/api/steam/profile"
+          headers:
+            Authorization: "Bearer test_token"
+  
+  # Test SSE connections (voting system)
+  - name: "SSE Connection Test"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/live-voting/stream/test-session"
+          headers:
+            Accept: "text/event-stream"
+            Cache-Control: "no-cache"
+          capture:
+            - header: "connection"
+              as: "sseConnection"
+
+# Backend API load testing
+---
+config:
+  target: 'http://localhost:3001'  # Your backend URL
+  phases:
+    - duration: 120
+      arrivalRate: 10
+      rampTo: 30
+      name: "Backend API Load Test"
+  
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  # Test database operations
+  - name: "Database Operations"
+    weight: 40
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            username: "load_test_user"
+            password: "load_test_password"
+          capture:
+            - json: "$.token"
+              as: "token"
+      - get:
+          url: "/api/gaming/groups"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - get:
+          url: "/api/gaming/sessions"
+          headers:
+            Authorization: "Bearer {{ token }}"
+  
+  # Test Steam API calls
+  - name: "Steam API Load"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/steam/games"
+          headers:
+            Authorization: "Bearer test_token"
+      - get:
+          url: "/api/steam/common-games/test-group"
+          headers:
+            Authorization: "Bearer test_token"
+  
+  # Test voting system
+  - name: "Voting System Load"
+    weight: 30
+    flow:
+      - post:
+          url: "/api/live-voting/sessions"
+          json:
+            name: "Load Test Session"
+            group_id: "test-group"
+          headers:
+            Authorization: "Bearer test_token"
+          capture:
+            - json: "$.session_id"
+              as: "sessionId"
+      - post:
+          url: "/api/live-voting/vote"
+          json:
+            session_id: "{{ sessionId }}"
+            game_id: "test-game"
+            vote_type: "like"
+          headers:
+            Authorization: "Bearer test_token"

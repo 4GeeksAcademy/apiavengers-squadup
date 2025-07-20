@@ -1,10 +1,10 @@
-// src/front/components/LiveVotingSession.jsx - Complete Live Voting Flow
+// src/front/components/LiveVotingSession.jsx - Complete Live Voting Flow with Performance Monitoring
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import authService from '../store/authService';
-import { apiUrl } from '../config/environment';
+import { apiUrl } from '../config/environment.js';
 
 const LiveVotingSession = () => {
     const { sessionId } = useParams();
@@ -28,6 +28,16 @@ const LiveVotingSession = () => {
     const [connectionAttempts, setConnectionAttempts] = useState(0);
     const maxReconnectAttempts = 5;
     
+    // ADD: Performance monitoring state
+    const [performanceMetrics, setPerformanceMetrics] = useState({
+        connectionTime: null,
+        latency: null,
+        lastHeartbeat: null,
+        messageCount: 0,
+        reconnectCount: 0,
+        lastConnected: null
+    });
+    
     // Connect to SSE stream
     const connectToLiveStream = useCallback(() => {
         if (!isAuthenticated || !sessionId) return;
@@ -39,6 +49,7 @@ const LiveVotingSession = () => {
         }
         
         try {
+            const connectStart = performance.now(); // ADD: Track connection start time
             const url = `${apiUrl}/api/live-voting/sessions/${sessionId}/live-stream?token=${encodeURIComponent(token)}`;
             
             console.log('🔗 Connecting to live voting stream:', url);
@@ -47,24 +58,68 @@ const LiveVotingSession = () => {
             eventSourceRef.current = eventSource;
             
             eventSource.onopen = () => {
-                console.log('✅ Live voting stream connected');
+                const connectTime = performance.now() - connectStart; // ADD: Calculate connection time
+                console.log(`✅ Live voting stream connected in ${connectTime.toFixed(2)}ms`);
                 setIsConnected(true);
                 setConnectionAttempts(0);
                 setError(null);
+                
+                // ADD: Track connection performance
+                setPerformanceMetrics(prev => ({
+                    ...prev,
+                    connectionTime: connectTime,
+                    lastConnected: new Date().toISOString(),
+                    reconnectCount: connectionAttempts
+                }));
             };
             
             eventSource.onmessage = (event) => {
+                const messageStart = performance.now(); // ADD: Track message processing start
+                
                 try {
                     const data = JSON.parse(event.data);
+                    
+                    // ADD: Track message count
+                    setPerformanceMetrics(prev => ({
+                        ...prev,
+                        messageCount: prev.messageCount + 1
+                    }));
+                    
+                    // ADD: Handle heartbeat performance tracking
+                    if (data.type === 'heartbeat') {
+                        const serverTime = data.timestamp * 1000; // Convert to milliseconds
+                        const latency = Math.abs(performance.now() - serverTime);
+                        setPerformanceMetrics(prev => ({
+                            ...prev,
+                            latency: latency,
+                            lastHeartbeat: new Date().toISOString()
+                        }));
+                        // Don't call handleLiveEvent for heartbeats to avoid unnecessary processing
+                        return;
+                    }
+                    
                     handleLiveEvent(data);
+                    
+                    // ADD: Track message processing time
+                    const processTime = performance.now() - messageStart;
+                    if (processTime > 50) {
+                        console.log(`🐌 Slow SSE message processing: ${processTime.toFixed(2)}ms for ${data.type}`);
+                    }
+                    
                 } catch (error) {
                     console.error('Error parsing SSE message:', error);
                 }
             };
-            
+
             eventSource.onerror = (error) => {
                 console.error('❌ Live voting stream error:', error);
                 setIsConnected(false);
+                
+                // ADD: Track reconnection attempts
+                setPerformanceMetrics(prev => ({
+                    ...prev,
+                    reconnectCount: prev.reconnectCount + 1
+                }));
                 
                 if (connectionAttempts < maxReconnectAttempts) {
                     const delay = Math.min(1000 * Math.pow(2, connectionAttempts), 30000);
@@ -144,10 +199,6 @@ const LiveVotingSession = () => {
                 // Update connection count in UI
                 break;
                 
-            case 'heartbeat':
-                // Keep connection alive
-                break;
-                
             case 'error':
                 setError(data.error || 'An error occurred');
                 break;
@@ -176,20 +227,34 @@ const LiveVotingSession = () => {
     
     // Start voting phase
     const startVoting = async () => {
+        const startTime = performance.now(); // ADD: Track start voting time
+        
         try {
             const response = await authService.authenticatedFetch(
                 `/api/live-voting/sessions/${sessionId}/start-voting`,
                 { method: 'POST' }
             );
             
+            const responseTime = performance.now() - startTime; // ADD: Calculate response time
+            
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Failed to start voting');
             }
             
+            // ADD: Log performance
+            console.log(`⚡ Voting started in ${responseTime.toFixed(2)}ms`);
+            
+            // ADD: Log server performance headers
+            const serverResponseTime = response.headers.get('X-Response-Time');
+            if (serverResponseTime) {
+                console.log(`📊 Server start voting time: ${serverResponseTime}`);
+            }
+            
             console.log('✅ Voting started successfully');
         } catch (error) {
-            console.error('❌ Failed to start voting:', error);
+            const responseTime = performance.now() - startTime;
+            console.error(`❌ Failed to start voting after ${responseTime.toFixed(2)}ms:`, error);
             setError(error.message);
         }
     };
@@ -209,6 +274,8 @@ const LiveVotingSession = () => {
         setIsSubmittingVote(true);
         setError(null);
         
+        const voteStart = performance.now(); // ADD: Track vote submission start
+        
         try {
             // Convert selected games to vote format
             const gameVotes = selectedGames.map((game, index) => ({
@@ -224,19 +291,43 @@ const LiveVotingSession = () => {
                 }
             );
             
+            const voteTime = performance.now() - voteStart; // ADD: Calculate vote time
+            
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Failed to submit vote');
             }
             
             const result = await response.json();
+            
+            // ADD: Log vote performance
+            console.log(`⚡ Vote submitted in ${voteTime.toFixed(2)}ms`);
+            
+            // ADD: Log server performance if available
+            const serverResponseTime = response.headers.get('X-Response-Time');
+            const serverHealth = response.headers.get('X-Server-Health');
+            
+            if (serverResponseTime) {
+                console.log(`📊 Server processing time: ${serverResponseTime}`);
+            }
+            
+            if (serverHealth && serverHealth !== 'healthy') {
+                console.warn(`⚠️ Server health status: ${serverHealth}`);
+            }
+            
+            // ADD: Log performance data from response
+            if (result.performance) {
+                console.log('📈 Vote processing performance:', result.performance);
+            }
+            
             console.log('✅ Vote submitted successfully:', result);
             
             // Clear selected games
             setSelectedGames([]);
             
         } catch (error) {
-            console.error('❌ Failed to submit vote:', error);
+            const voteTime = performance.now() - voteStart; // ADD: Track failed vote time
+            console.error(`❌ Vote submission failed after ${voteTime.toFixed(2)}ms:`, error);
             setError(error.message);
         } finally {
             setIsSubmittingVote(false);
@@ -329,6 +420,7 @@ const LiveVotingSession = () => {
                 user={user}
                 onStartVoting={startVoting}
                 isConnected={isConnected}
+                performanceMetrics={performanceMetrics}
             />
         );
     }
@@ -346,6 +438,7 @@ const LiveVotingSession = () => {
                 onCompleteVoting={completeVoting}
                 isSubmittingVote={isSubmittingVote}
                 isConnected={isConnected}
+                performanceMetrics={performanceMetrics}
             />
         );
     }
@@ -358,6 +451,7 @@ const LiveVotingSession = () => {
                 user={user}
                 onBackToDashboard={() => navigate('/dashboard')}
                 isConnected={isConnected}
+                performanceMetrics={performanceMetrics}
             />
         );
     }
@@ -375,26 +469,53 @@ const LiveVotingSession = () => {
                     Back to Dashboard
                 </button>
             </div>
+            {/* ADD: Debug panel */}
+            <PerformanceDebugPanel 
+                performanceMetrics={performanceMetrics} 
+                sessionState={sessionState} 
+            />
         </div>
     );
 };
 
 // Lobby View Component
-const LobbyView = ({ sessionData, user, onStartVoting, isConnected }) => {
+const LobbyView = ({ sessionData, user, onStartVoting, isConnected, performanceMetrics }) => {
     const canStartVoting = sessionData?.can_start_voting && 
                           sessionData?.session?.creator_id === user?.id;
     
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
             <div className="max-w-6xl mx-auto">
-                {/* Header */}
+                {/* UPDATED Header with performance metrics */}
                 <div className="text-center mb-8">
                     <h1 className="text-4xl font-bold text-white mb-2">
                         🎮 {sessionData?.session?.session_name || 'Gaming Session'}
                     </h1>
-                    <p className="text-white/70">
-                        Preparing to vote on games • {isConnected ? '🟢 Live' : '🔴 Disconnected'}
-                    </p>
+                    <div className="flex items-center justify-center space-x-2 text-white/70 flex-wrap">
+                        <span>Preparing to vote on games</span>
+                        <span>•</span>
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <span>{isConnected ? '🟢 Live' : '🔴 Disconnected'}</span>
+                        </div>
+                        {/* Performance metrics */}
+                        {performanceMetrics.latency && performanceMetrics.latency < 1000 && (
+                            <>
+                                <span>•</span>
+                                <span className="text-xs">
+                                    {Math.round(performanceMetrics.latency)}ms
+                                </span>
+                            </>
+                        )}
+                        {performanceMetrics.messageCount > 0 && (
+                            <>
+                                <span>•</span>
+                                <span className="text-xs">
+                                    {performanceMetrics.messageCount} events
+                                </span>
+                            </>
+                        )}
+                    </div>
                 </div>
                 
                 {/* Members */}
@@ -482,21 +603,43 @@ const LobbyView = ({ sessionData, user, onStartVoting, isConnected }) => {
 };
 
 // Voting View Component
-const VotingView = ({ sessionData, user, selectedGames, maxChoices, onToggleGame, onSubmitVote, onCompleteVoting, isSubmittingVote, isConnected }) => {
+const VotingView = ({ sessionData, user, selectedGames, maxChoices, onToggleGame, onSubmitVote, onCompleteVoting, isSubmittingVote, isConnected, performanceMetrics }) => {
     const userHasVoted = sessionData?.user_has_voted;
     const canCompleteVoting = sessionData?.session?.creator_id === user?.id;
     
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
             <div className="max-w-6xl mx-auto">
-                {/* Header */}
+                {/* UPDATED Header with performance metrics */}
                 <div className="text-center mb-8">
                     <h1 className="text-4xl font-bold text-white mb-2">
                         🗳️ Vote for Your Favorite Games
                     </h1>
-                    <p className="text-white/70">
-                        Select up to {maxChoices} games • {isConnected ? '🟢 Live' : '🔴 Disconnected'}
-                    </p>
+                    <div className="flex items-center justify-center space-x-2 text-white/70 flex-wrap">
+                        <span>Select up to {maxChoices} games</span>
+                        <span>•</span>
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <span>{isConnected ? '🟢 Live' : '🔴 Disconnected'}</span>
+                        </div>
+                        {/* Performance metrics */}
+                        {performanceMetrics.latency && performanceMetrics.latency < 1000 && (
+                            <>
+                                <span>•</span>
+                                <span className="text-xs">
+                                    {Math.round(performanceMetrics.latency)}ms
+                                </span>
+                            </>
+                        )}
+                        {performanceMetrics.reconnectCount > 0 && (
+                            <>
+                                <span>•</span>
+                                <span className="text-xs text-yellow-400">
+                                    {performanceMetrics.reconnectCount} reconnects
+                                </span>
+                            </>
+                        )}
+                    </div>
                     
                     {/* Progress Bar */}
                     <div className="mt-4 max-w-md mx-auto">
@@ -639,18 +782,32 @@ const VotingView = ({ sessionData, user, selectedGames, maxChoices, onToggleGame
 };
 
 // Results View Component
-const ResultsView = ({ sessionData, user, onBackToDashboard, isConnected }) => {
+const ResultsView = ({ sessionData, user, onBackToDashboard, isConnected, performanceMetrics }) => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 p-6">
             <div className="max-w-4xl mx-auto">
-                {/* Header */}
+                {/* UPDATED Header with performance metrics */}
                 <div className="text-center mb-8">
                     <h1 className="text-4xl font-bold text-white mb-2">
                         🏆 Voting Results
                     </h1>
-                    <p className="text-white/70">
-                        The votes are in! • {isConnected ? '🟢 Live' : '🔴 Disconnected'}
-                    </p>
+                    <div className="flex items-center justify-center space-x-2 text-white/70 flex-wrap">
+                        <span>The votes are in!</span>
+                        <span>•</span>
+                        <div className="flex items-center space-x-2">
+                            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <span>{isConnected ? '🟢 Live' : '🔴 Disconnected'}</span>
+                        </div>
+                        {/* Session completion time */}
+                        {sessionData?.session_completed_at && (
+                            <>
+                                <span>•</span>
+                                <span className="text-xs">
+                                    Completed {new Date(sessionData.session_completed_at).toLocaleTimeString()}
+                                </span>
+                            </>
+                        )}
+                    </div>
                 </div>
                 
                 {/* Winner */}
@@ -749,6 +906,64 @@ const ResultsView = ({ sessionData, user, onBackToDashboard, isConnected }) => {
                         🖨️ Print Results
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+// ADD: Performance Debug Panel Component
+const PerformanceDebugPanel = ({ performanceMetrics, sessionState, className = "" }) => {
+    // Only show in development or when explicitly enabled
+    const showDebug = process.env.NODE_ENV === 'development' || 
+                     localStorage.getItem('debug_performance') === 'true';
+    
+    if (!showDebug) return null;
+    
+    return (
+        <div className={`fixed bottom-4 right-4 bg-black/90 backdrop-blur-sm text-white p-3 rounded-lg text-xs max-w-xs border border-gray-600 ${className}`}>
+            <div className="flex items-center justify-between mb-2">
+                <h4 className="font-bold text-yellow-400">🔧 Performance</h4>
+                <button
+                    onClick={() => localStorage.removeItem('debug_performance')}
+                    className="text-gray-400 hover:text-white text-xs"
+                >
+                    ✕
+                </button>
+            </div>
+            <div className="space-y-1 text-gray-300">
+                <div className="flex justify-between">
+                    <span>State:</span>
+                    <span className="text-blue-400">{sessionState}</span>
+                </div>
+                {performanceMetrics.connectionTime && (
+                    <div className="flex justify-between">
+                        <span>Connect:</span>
+                        <span>{performanceMetrics.connectionTime.toFixed(0)}ms</span>
+                    </div>
+                )}
+                {performanceMetrics.latency && (
+                    <div className="flex justify-between">
+                        <span>Latency:</span>
+                        <span className={performanceMetrics.latency > 500 ? 'text-red-400' : 'text-green-400'}>
+                            {performanceMetrics.latency.toFixed(0)}ms
+                        </span>
+                    </div>
+                )}
+                <div className="flex justify-between">
+                    <span>Events:</span>
+                    <span>{performanceMetrics.messageCount}</span>
+                </div>
+                {performanceMetrics.reconnectCount > 0 && (
+                    <div className="flex justify-between">
+                        <span>Reconnects:</span>
+                        <span className="text-yellow-400">{performanceMetrics.reconnectCount}</span>
+                    </div>
+                )}
+                {performanceMetrics.lastHeartbeat && (
+                    <div className="text-xs text-gray-400 mt-1">
+                        Last HB: {new Date(performanceMetrics.lastHeartbeat).toLocaleTimeString()}
+                    </div>
+                )}
             </div>
         </div>
     );

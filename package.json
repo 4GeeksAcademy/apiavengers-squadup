@@ -7,11 +7,16 @@
   "version": "1.0.0",
   "description": "SquadUp - Find Your Gaming Squad",
   "scripts": {
-    "dev": "vite",
-    "start": "vite",
-    "build": "vite build",
+    "setup-env": "./update-env.sh",
+    "dev": "npm run setup-env && vite",
+    "start": "npm run setup-env && vite",
+    "build": "npm run setup-env && vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "npm run setup-env && vite preview",
+    "test:load": "artillery run stress-test.yml",
+    "test:load:quick": "artillery quick --count 50 --num 10 http://localhost:3000",
+    "test:load:report": "artillery run stress-test.yml --output report.json && artillery report report.json",
+    "performance:monitor": "node scripts/performance-check.js"
   },
   "dependencies": {
     "gsap": "^3.13.0",
@@ -23,6 +28,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.6.0",
+    "artillery": "^2.0.12",
     "autoprefixer": "^10.4.21",
     "eslint": "^8.57.1",
     "eslint-plugin-react": "^7.37.5",

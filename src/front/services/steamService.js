@@ -1,11 +1,11 @@
-// src/front/services/steamService.js - COMPLETE FIXED VERSION
+// src/front/services/steamService.js - ENHANCED WITH PERFORMANCE MONITORING
 
 import { fetchWithConfig, apiUrl, isCodespace, frontendUrl } from '../config/environment.js';
 import authService from '../store/authService.js';
 
 /**
  * Complete Steam service for frontend with enhanced authentication,
- * error handling, and GitHub Codespace compatibility
+ * error handling, performance monitoring, and GitHub Codespace compatibility
  */
 class SteamService {
     constructor() {
@@ -20,21 +20,47 @@ class SteamService {
         this.lastSyncAttempt = null;
         this.syncCooldown = 5 * 60 * 1000; // 5 minutes
         
-        console.log('🎮 SteamService initialized:', {
+        // Performance monitoring
+        this.performanceMetrics = {
+            totalRequests: 0,
+            successfulRequests: 0,
+            failedRequests: 0,
+            averageResponseTime: 0,
+            slowRequests: 0,
+            connectionErrors: 0,
+            lastRequestTime: null,
+            responseTimes: []
+        };
+        
+        // Performance thresholds
+        this.slowRequestThreshold = 2000; // 2 seconds
+        this.maxStoredResponseTimes = 100;
+        
+        console.log('🎮 SteamService initialized with performance monitoring:', {
             apiUrl: this.baseUrl,
             isCodespace,
-            frontendUrl
+            frontendUrl,
+            performanceTracking: true
         });
     }
 
     /**
-     * Enhanced authenticated request with comprehensive error handling
+     * Enhanced authenticated request with performance monitoring
      */
     async authenticatedRequest(endpoint, options = {}) {
+        const startTime = performance.now();
+        const requestId = this.generateRequestId();
         const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+        
+        console.log(`🚀 [${requestId}] Steam API Request Started:`, {
+            method: options.method || 'GET',
+            endpoint: endpoint,
+            timestamp: new Date().toISOString()
+        });
         
         const token = authService.getAccessToken();
         if (!token) {
+            this.trackRequestFailure(startTime, 'authentication_missing');
             throw new Error('No authentication token available. Please log in.');
         }
 
@@ -55,65 +81,85 @@ class SteamService {
         let lastError;
         
         for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+            const attemptStartTime = performance.now();
+            
             try {
-                console.log(`🔄 Steam API attempt ${attempt}/${this.retryAttempts}:`, {
+                console.log(`🔄 [${requestId}] Attempt ${attempt}/${this.retryAttempts}:`, {
                     method: defaultOptions.method,
                     url,
-                    hasAuth: !!defaultOptions.headers.Authorization
+                    hasAuth: !!defaultOptions.headers.Authorization,
+                    attempt
                 });
 
                 const response = await fetchWithConfig(url, defaultOptions);
+                const attemptTime = performance.now() - attemptStartTime;
                 
-                console.log(`📡 Steam API response:`, {
+                console.log(`📡 [${requestId}] Response received:`, {
                     status: response.status,
                     statusText: response.statusText,
-                    attempt
+                    attempt,
+                    responseTime: `${attemptTime.toFixed(2)}ms`
                 });
 
                 // Handle specific HTTP status codes
                 if (response.status === 401) {
-                    console.warn('🔑 Steam API authentication error');
+                    console.warn(`🔑 [${requestId}] Authentication error`);
                     authService.clearAuth();
+                    this.trackRequestFailure(startTime, 'authentication_expired');
                     throw new Error('Authentication expired. Please log in again.');
                 }
                 
                 if (response.status === 403) {
+                    this.trackRequestFailure(startTime, 'forbidden');
                     throw new Error('Access denied. Please check your permissions.');
                 }
                 
                 if (response.status === 404) {
+                    this.trackRequestFailure(startTime, 'not_found');
                     throw new Error('Steam service endpoint not found.');
                 }
                 
                 if (response.status === 429) {
                     const retryAfter = response.headers.get('Retry-After') || 60;
+                    this.trackRequestFailure(startTime, 'rate_limited');
                     throw new Error(`Rate limited. Please wait ${retryAfter} seconds before trying again.`);
                 }
                 
                 if (response.status >= 500) {
+                    this.trackRequestFailure(startTime, 'server_error');
                     throw new Error('Steam service is temporarily unavailable. Please try again later.');
                 }
                 
-                // Success - return response
+                // Success - track performance and return response
                 if (response.ok) {
+                    this.trackRequestSuccess(startTime, requestId, endpoint);
                     return response;
                 }
                 
                 // Handle other 4xx errors
                 const errorData = await response.json().catch(() => ({}));
+                this.trackRequestFailure(startTime, 'client_error');
                 throw new Error(errorData.error || `Request failed with status ${response.status}`);
                 
             } catch (error) {
                 lastError = error;
+                const attemptTime = performance.now() - attemptStartTime;
                 
-                console.warn(`⚠️ Steam API attempt ${attempt} failed:`, {
+                console.warn(`⚠️ [${requestId}] Attempt ${attempt} failed:`, {
                     error: error.message,
+                    attemptTime: `${attemptTime.toFixed(2)}ms`,
                     shouldRetry: this.shouldRetry(error),
                     attemptsLeft: this.retryAttempts - attempt
                 });
                 
+                // Track connection errors
+                if (this.isConnectionError(error)) {
+                    this.performanceMetrics.connectionErrors++;
+                }
+                
                 // Don't retry certain errors
                 if (!this.shouldRetry(error) || attempt === this.retryAttempts) {
+                    this.trackRequestFailure(startTime, 'max_retries_exceeded');
                     break;
                 }
                 
@@ -123,13 +169,169 @@ class SteamService {
                     this.maxRetryDelay
                 );
                 
-                console.log(`⏳ Retrying in ${Math.round(delay)}ms...`);
+                console.log(`⏳ [${requestId}] Retrying in ${Math.round(delay)}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
         
-        console.error('❌ All Steam API attempts failed:', lastError.message);
+        console.error(`❌ [${requestId}] All attempts failed:`, {
+            error: lastError.message,
+            totalTime: `${(performance.now() - startTime).toFixed(2)}ms`,
+            attempts: this.retryAttempts
+        });
+        
         throw lastError;
+    }
+
+    /**
+     * Track successful request performance
+     */
+    trackRequestSuccess(startTime, requestId, endpoint) {
+        const responseTime = performance.now() - startTime;
+        
+        this.performanceMetrics.totalRequests++;
+        this.performanceMetrics.successfulRequests++;
+        this.performanceMetrics.lastRequestTime = responseTime;
+        
+        // Store response time for average calculation
+        this.performanceMetrics.responseTimes.push(responseTime);
+        if (this.performanceMetrics.responseTimes.length > this.maxStoredResponseTimes) {
+            this.performanceMetrics.responseTimes.shift();
+        }
+        
+        // Calculate rolling average
+        this.performanceMetrics.averageResponseTime = 
+            this.performanceMetrics.responseTimes.reduce((a, b) => a + b, 0) / 
+            this.performanceMetrics.responseTimes.length;
+        
+        // Track slow requests
+        if (responseTime > this.slowRequestThreshold) {
+            this.performanceMetrics.slowRequests++;
+            console.warn(`🐌 [${requestId}] Slow Steam API request:`, {
+                endpoint,
+                responseTime: `${responseTime.toFixed(2)}ms`,
+                threshold: `${this.slowRequestThreshold}ms`
+            });
+        }
+        
+        console.log(`✅ [${requestId}] Request completed successfully:`, {
+            endpoint,
+            responseTime: `${responseTime.toFixed(2)}ms`,
+            averageTime: `${this.performanceMetrics.averageResponseTime.toFixed(2)}ms`,
+            successRate: `${this.getSuccessRate().toFixed(1)}%`
+        });
+    }
+
+    /**
+     * Track failed request
+     */
+    trackRequestFailure(startTime, errorType) {
+        const responseTime = performance.now() - startTime;
+        
+        this.performanceMetrics.totalRequests++;
+        this.performanceMetrics.failedRequests++;
+        
+        console.error(`❌ Steam API request failed:`, {
+            errorType,
+            responseTime: `${responseTime.toFixed(2)}ms`,
+            successRate: `${this.getSuccessRate().toFixed(1)}%`,
+            totalErrors: this.performanceMetrics.failedRequests
+        });
+    }
+
+    /**
+     * Check if error is a connection-related error
+     */
+    isConnectionError(error) {
+        const message = error.message.toLowerCase();
+        return message.includes('fetch') || 
+               message.includes('network') || 
+               message.includes('timeout') || 
+               message.includes('connection');
+    }
+
+    /**
+     * Generate unique request ID for tracking
+     */
+    generateRequestId() {
+        return `steam_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /**
+     * Get current success rate percentage
+     */
+    getSuccessRate() {
+        if (this.performanceMetrics.totalRequests === 0) return 100;
+        return (this.performanceMetrics.successfulRequests / this.performanceMetrics.totalRequests) * 100;
+    }
+
+    /**
+     * Get comprehensive performance metrics
+     */
+    getPerformanceMetrics() {
+        const now = Date.now();
+        
+        return {
+            ...this.performanceMetrics,
+            successRate: this.getSuccessRate(),
+            errorRate: ((this.performanceMetrics.failedRequests / Math.max(this.performanceMetrics.totalRequests, 1)) * 100),
+            connectionHealth: this.getConnectionHealth(),
+            lastUpdated: now,
+            performance: {
+                averageResponseTime: this.performanceMetrics.averageResponseTime,
+                lastRequestTime: this.performanceMetrics.lastRequestTime,
+                slowRequestPercentage: (this.performanceMetrics.slowRequests / Math.max(this.performanceMetrics.totalRequests, 1)) * 100,
+                connectionErrorRate: (this.performanceMetrics.connectionErrors / Math.max(this.performanceMetrics.totalRequests, 1)) * 100
+            }
+        };
+    }
+
+    /**
+     * Determine connection health status
+     */
+    getConnectionHealth() {
+        const successRate = this.getSuccessRate();
+        const avgResponseTime = this.performanceMetrics.averageResponseTime;
+        
+        if (successRate >= 95 && avgResponseTime < 1000) return 'excellent';
+        if (successRate >= 90 && avgResponseTime < 2000) return 'good';
+        if (successRate >= 80 && avgResponseTime < 3000) return 'fair';
+        if (successRate >= 60) return 'poor';
+        return 'critical';
+    }
+
+    /**
+     * Reset performance metrics (useful for testing)
+     */
+    resetPerformanceMetrics() {
+        this.performanceMetrics = {
+            totalRequests: 0,
+            successfulRequests: 0,
+            failedRequests: 0,
+            averageResponseTime: 0,
+            slowRequests: 0,
+            connectionErrors: 0,
+            lastRequestTime: null,
+            responseTimes: []
+        };
+        
+        console.log('🔄 Steam service performance metrics reset');
+    }
+
+    /**
+     * Log performance summary
+     */
+    logPerformanceSummary() {
+        const metrics = this.getPerformanceMetrics();
+        
+        console.log('📊 Steam Service Performance Summary:', {
+            totalRequests: metrics.totalRequests,
+            successRate: `${metrics.successRate.toFixed(1)}%`,
+            averageResponseTime: `${metrics.averageResponseTime.toFixed(2)}ms`,
+            connectionHealth: metrics.connectionHealth,
+            slowRequestsPercentage: `${metrics.performance.slowRequestPercentage.toFixed(1)}%`,
+            connectionErrors: metrics.connectionErrors
+        });
     }
 
     /**
@@ -165,7 +367,7 @@ class SteamService {
     }
 
     /**
-     * Connect Steam account via OpenID (automatic method)
+     * Connect Steam account via OpenID (automatic method) with performance tracking
      */
     async connectViaOpenID(returnTo = '/dashboard') {
         if (this.isConnecting) {
@@ -212,7 +414,7 @@ class SteamService {
     }
 
     /**
-     * Connect Steam account manually with Steam ID
+     * Connect Steam account manually with Steam ID and performance tracking
      */
     async connectManually(steamId) {
         if (this.isConnecting) {
@@ -272,7 +474,7 @@ class SteamService {
     }
 
     /**
-     * Disconnect Steam account
+     * Disconnect Steam account with performance tracking
      */
     async disconnect() {
         try {
@@ -304,7 +506,7 @@ class SteamService {
     }
 
     /**
-     * Sync Steam library with rate limiting
+     * Sync Steam library with rate limiting and performance tracking
      */
     async syncLibrary() {
         if (this.isSyncing) {
@@ -365,7 +567,7 @@ class SteamService {
     }
 
     /**
-     * Get user's Steam games with enhanced filtering
+     * Get user's Steam games with enhanced filtering and performance tracking
      */
     async getOwnedGames(filters = {}) {
         try {
@@ -414,7 +616,7 @@ class SteamService {
     }
 
     /**
-     * Get Steam connection status with detailed information
+     * Get Steam connection status with detailed information and performance metrics
      */
     async getConnectionStatus() {
         try {
@@ -430,7 +632,8 @@ class SteamService {
                     syncStatus: data.sync_status || {},
                     canConnect: !data.user_connection?.connected,
                     canSync: data.sync_status?.can_sync || false,
-                    cooldownRemaining: data.sync_status?.cooldown_remaining || 0
+                    cooldownRemaining: data.sync_status?.cooldown_remaining || 0,
+                    performanceMetrics: this.getPerformanceMetrics()
                 };
             } else {
                 const errorData = await response.json();
@@ -657,9 +860,11 @@ class SteamService {
     }
 
     /**
-     * Check Steam connection health
+     * Check Steam connection health with performance context
      */
     checkSteamConnection(user) {
+        const performanceMetrics = this.getPerformanceMetrics();
+        
         return {
             isConnected: user?.steam_connected || user?.is_steam_connected || false,
             hasUsername: !!(user?.steam_username),
@@ -667,13 +872,20 @@ class SteamService {
             hasGames: (user?.total_games || 0) > 0,
             lastSynced: user?.steam_library_synced_at,
             steamId: user?.steam_id,
+            performanceHealth: performanceMetrics.connectionHealth,
+            apiResponseTime: performanceMetrics.averageResponseTime,
+            successRate: performanceMetrics.successRate,
             isHealthy: function() {
-                return this.isConnected && this.hasUsername && this.hasGames;
+                return this.isConnected && 
+                       this.hasUsername && 
+                       this.hasGames && 
+                       this.performanceHealth !== 'critical';
             },
             getStatus: function() {
                 if (!this.isConnected) return 'disconnected';
                 if (!this.hasGames) return 'connected_no_games';
                 if (!this.hasUsername) return 'connected_partial';
+                if (this.performanceHealth === 'critical') return 'connected_performance_issues';
                 return 'connected_healthy';
             },
             getRecommendation: function() {
@@ -684,6 +896,8 @@ class SteamService {
                         return 'Sync your Steam library to see your games';
                     case 'connected_partial':
                         return 'Steam connection incomplete. Try reconnecting';
+                    case 'connected_performance_issues':
+                        return 'Steam API experiencing issues. Performance may be affected';
                     case 'connected_healthy':
                         return 'Steam connection is healthy';
                     default:

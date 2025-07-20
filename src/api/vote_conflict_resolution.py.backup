@@ -1,0 +1,328 @@
+# src/api/vote_conflict_resolution.py - NEW FILE
+# Critical Fix #2: Vote Conflict Resolution with Optimistic Locking
+
+from flask import current_app
+from api.models import db, Vote, GameSession, SteamGame, User
+from api.utils import utc_now
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
+import time
+import threading
+from contextlib import contextmanager
+
+class VoteConflictResolver:
+    """
+    Handles vote conflicts with optimistic locking and retry mechanisms
+    Prevents data corruption from simultaneous vote submissions
+    """
+    
+    def __init__(self):
+        self.conflict_stats = {
+            'total_attempts': 0,
+            'conflicts_detected': 0,
+            'successful_resolutions': 0,
+            'failed_resolutions': 0
+        }
+        self.lock = threading.Lock()
+        print("🔒 VoteConflictResolver initialized")
+    
+    @contextmanager
+    def database_transaction(self):
+        """Context manager for safe database transactions"""
+        session = db.session
+        try:
+            yield session
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise e
+    
+    def submit_vote_with_conflict_resolution(self, session_id, user_id, vote_data, max_retries=3):
+        """
+        Submit votes with automatic conflict resolution
+        Uses optimistic locking and exponential backoff retry
+        
+        Args:
+            session_id: Gaming session ID
+            user_id: User submitting votes
+            vote_data: List of vote objects [{game_id, priority}, ...]
+            max_retries: Maximum retry attempts
+            
+        Returns:
+            dict: Result with success status and conflict info
+        """
+        with self.lock:
+            self.conflict_stats['total_attempts'] += 1
+        
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                result = self._attempt_vote_submission(session_id, user_id, vote_data, attempt)
+                
+                # Success!
+                with self.lock:
+                    if attempt > 0:
+                        self.conflict_stats['conflicts_detected'] += 1
+                        self.conflict_stats['successful_resolutions'] += 1
+                
+                result['attempt_number'] = attempt + 1
+                result['had_conflicts'] = attempt > 0
+                return result
+                
+            except VoteConflictException as e:
+                last_error = e
+                
+                with self.lock:
+                    self.conflict_stats['conflicts_detected'] += 1
+                
+                current_app.logger.warning(f"Vote conflict attempt {attempt + 1}/{max_retries} for user {user_id}: {e}")
+                
+                if attempt < max_retries - 1:
+                    # Exponential backoff with jitter
+                    delay = min(0.1 * (2 ** attempt), 2.0)  # Max 2 second delay
+                    time.sleep(delay)
+                    continue
+                else:
+                    # Final attempt failed
+                    with self.lock:
+                        self.conflict_stats['failed_resolutions'] += 1
+                    break
+                    
+            except Exception as e:
+                current_app.logger.error(f"Unexpected error in vote submission: {e}")
+                last_error = e
+                break
+        
+        # All attempts failed
+        return {
+            'success': False,
+            'error': f'Vote submission failed after {max_retries} attempts: {str(last_error)}',
+            'conflict_detected': True,
+            'attempts_made': max_retries,
+            'error_type': type(last_error).__name__
+        }
+    
+    def _attempt_vote_submission(self, session_id, user_id, vote_data, attempt_number):
+        """Single attempt at vote submission with conflict detection"""
+        
+        try:
+            with self.database_transaction() as session:
+                # Step 1: Validate session and user permissions
+                self._validate_vote_submission(session_id, user_id, vote_data)
+                
+                # Step 2: Check for existing votes with locking
+                existing_votes = session.query(Vote).filter_by(
+                    session_id=session_id,
+                    user_id=user_id
+                ).with_for_update().all()  # Row-level locking
+                
+                if existing_votes:
+                    raise VoteConflictException(f"User {user_id} has already voted in session {session_id}")
+                
+                # Step 3: Validate games exist and are votable
+                game_ids = [vote['game_id'] for vote in vote_data]
+                votable_games = self._get_votable_games(session_id)
+                votable_game_ids = [game['id'] for game in votable_games]
+                
+                invalid_games = [gid for gid in game_ids if gid not in votable_game_ids]
+                if invalid_games:
+                    raise VoteConflictException(f"Invalid game IDs: {invalid_games}")
+                
+                # Step 4: Create votes atomically
+                created_votes = []
+                for vote_item in vote_data:
+                    # Validate priority
+                    if not (1 <= vote_item['priority'] <= 3):
+                        raise VoteConflictException(f"Invalid priority: {vote_item['priority']}")
+                    
+                    # Create vote object
+                    vote = Vote(
+                        session_id=session_id,
+                        user_id=user_id,
+                        game_id=vote_item['game_id'],
+                        priority=vote_item['priority']
+                    )
+                    
+                    session.add(vote)
+                    created_votes.append(vote)
+                
+                # Step 5: Commit transaction (this may fail with integrity constraints)
+                session.flush()  # Trigger constraint checks
+                
+                # Success! Return the created votes
+                return {
+                    'success': True,
+                    'votes_created': len(created_votes),
+                    'vote_details': [
+                        {
+                            'game_id': vote.game_id,
+                            'priority': vote.priority,
+                            'points': vote.priority
+                        } for vote in created_votes
+                    ],
+                    'message': f'Successfully submitted {len(created_votes)} votes'
+                }
+                
+        except IntegrityError as e:
+            # Database constraint violation - likely a conflict
+            if 'unique_user_game_vote' in str(e) or 'UNIQUE constraint failed' in str(e):
+                raise VoteConflictException(f"Vote conflict detected: duplicate vote submission")
+            else:
+                raise VoteConflictException(f"Database integrity error: {str(e)}")
+                
+        except SQLAlchemyError as e:
+            raise VoteConflictException(f"Database error: {str(e)}")
+    
+    def _validate_vote_submission(self, session_id, user_id, vote_data):
+        """Validate that vote submission is allowed"""
+        
+        # Check session exists and is in voting state
+        game_session = GameSession.query.get(session_id)
+        if not game_session:
+            raise VoteConflictException(f"Session {session_id} not found")
+        
+        if game_session.status != 'voting':
+            raise VoteConflictException(f"Session {session_id} is not accepting votes (status: {game_session.status})")
+        
+        # Check user is member of the group
+        user = User.query.get(user_id)
+        if not user:
+            raise VoteConflictException(f"User {user_id} not found")
+        
+        if user not in game_session.group.members:
+            raise VoteConflictException(f"User {user_id} is not a member of this group")
+        
+        # Validate vote data structure
+        if not vote_data or not isinstance(vote_data, list):
+            raise VoteConflictException("Vote data must be a non-empty list")
+        
+        if len(vote_data) > (game_session.max_choices or 3):
+            raise VoteConflictException(f"Too many votes: {len(vote_data)} (max: {game_session.max_choices or 3})")
+        
+        # Check for duplicate game IDs in submission
+        game_ids = [vote['game_id'] for vote in vote_data]
+        if len(game_ids) != len(set(game_ids)):
+            raise VoteConflictException("Duplicate games in vote submission")
+    
+    def _get_votable_games(self, session_id):
+        """Get list of games that can be voted on for this session"""
+        try:
+            game_session = GameSession.query.get(session_id)
+            if not game_session:
+                return []
+            
+            # Get votable games from session or compute from group
+            if hasattr(game_session, 'votable_games') and game_session.votable_games:
+                try:
+                    import json
+                    return json.loads(game_session.votable_games)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Fallback: get common games for the group
+            from api.live_voting_system import get_group_common_games
+            return get_group_common_games(game_session.group_id)
+            
+        except Exception as e:
+            current_app.logger.error(f"Error getting votable games for session {session_id}: {e}")
+            return []
+    
+    def detect_vote_conflicts(self, session_id):
+        """
+        Detect potential vote conflicts in a session
+        Returns conflict analysis
+        """
+        try:
+            # Get all votes for the session
+            votes = Vote.query.filter_by(session_id=session_id).order_by(Vote.created_at).all()
+            
+            if not votes:
+                return {'conflicts': [], 'analysis': 'No votes found'}
+            
+            # Group votes by user
+            user_votes = {}
+            for vote in votes:
+                if vote.user_id not in user_votes:
+                    user_votes[vote.user_id] = []
+                user_votes[vote.user_id].append(vote)
+            
+            conflicts = []
+            
+            # Check for users with multiple voting sessions
+            for user_id, user_vote_list in user_votes.items():
+                if len(user_vote_list) > 3:  # More votes than max allowed
+                    conflicts.append({
+                        'type': 'excess_votes',
+                        'user_id': user_id,
+                        'vote_count': len(user_vote_list),
+                        'votes': [v.serialize() for v in user_vote_list]
+                    })
+                
+                # Check for duplicate game votes by same user
+                game_counts = {}
+                for vote in user_vote_list:
+                    game_counts[vote.game_id] = game_counts.get(vote.game_id, 0) + 1
+                
+                for game_id, count in game_counts.items():
+                    if count > 1:
+                        conflicts.append({
+                            'type': 'duplicate_game_vote',
+                            'user_id': user_id,
+                            'game_id': game_id,
+                            'vote_count': count
+                        })
+            
+            return {
+                'conflicts': conflicts,
+                'total_users_voted': len(user_votes),
+                'total_votes': len(votes),
+                'analysis': f'Found {len(conflicts)} conflicts' if conflicts else 'No conflicts detected'
+            }
+            
+        except Exception as e:
+            current_app.logger.error(f"Error detecting vote conflicts for session {session_id}: {e}")
+            return {'conflicts': [], 'analysis': f'Error: {str(e)}'}
+    
+    def get_conflict_statistics(self):
+        """Get conflict resolution statistics"""
+        with self.lock:
+            stats = self.conflict_stats.copy()
+        
+        if stats['total_attempts'] > 0:
+            stats['conflict_rate'] = (stats['conflicts_detected'] / stats['total_attempts']) * 100
+            stats['resolution_rate'] = (stats['successful_resolutions'] / max(stats['conflicts_detected'], 1)) * 100
+        else:
+            stats['conflict_rate'] = 0
+            stats['resolution_rate'] = 0
+        
+        return stats
+    
+    def reset_statistics(self):
+        """Reset conflict statistics"""
+        with self.lock:
+            self.conflict_stats = {
+                'total_attempts': 0,
+                'conflicts_detected': 0,
+                'successful_resolutions': 0,
+                'failed_resolutions': 0
+            }
+
+
+class VoteConflictException(Exception):
+    """Custom exception for vote conflicts"""
+    pass
+
+
+# Global instance
+vote_conflict_resolver = VoteConflictResolver()
+
+
+def submit_vote_safely(session_id, user_id, vote_data):
+    """
+    Convenience function to submit votes with conflict resolution
+    This should replace direct Vote creation in your routes
+    """
+    return vote_conflict_resolver.submit_vote_with_conflict_resolution(
+        session_id, user_id, vote_data
+    )

@@ -1,9 +1,10 @@
-// src/front/pages/Dashboard.jsx - COMPREHENSIVE FIX
+// src/front/pages/Dashboard.jsx - COMPREHENSIVE FIX with Performance Tracking
 
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import useGlobalReducer from '../hooks/useGlobalReducer';
 import authService from '../store/authService';
+import performanceService from '../services/performanceService';
 import toast from 'react-hot-toast';
 
 // ✅ FIXED: Import all components with proper error handling
@@ -27,6 +28,23 @@ const Dashboard = () => {
     const user = store.user;
     const isAuthenticated = store.isAuthenticated;
 
+    // 📊 Performance tracking for user connections
+    useEffect(() => {
+        if (isAuthenticated && user) {
+            // Track user connection
+            performanceService.updateUserConnections(1);
+            
+            // Track active sessions (estimate based on groups)
+            performanceService.updateActiveSessions(groups.length);
+        }
+        
+        return () => {
+            if (isAuthenticated && user) {
+                performanceService.updateUserConnections(0);
+            }
+        };
+    }, [isAuthenticated, user, groups.length]);
+
     // ✅ FIXED: Comprehensive effect for fetching groups
     useEffect(() => {
         if (isAuthenticated && user?.id) {
@@ -43,12 +61,14 @@ const Dashboard = () => {
         }
     }, [isAuthenticated, user?.id]);
 
-    // ✅ ENHANCED: Better error handling and retry logic
+    // ✅ ENHANCED: Better error handling and retry logic with performance tracking
     const fetchUserGroups = async (silent = false) => {
         if (!silent) {
             setLoading(true);
             setError(null);
         }
+        
+        const startTime = Date.now();
         
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
@@ -59,6 +79,7 @@ const Dashboard = () => {
             console.log(`🔄 Fetching groups (attempt ${retryAttempt + 1})`);
             
             const response = await authService.authenticatedFetch(`${backendUrl}/api/gaming/groups`);
+            const responseTime = Date.now() - startTime;
             
             if (response.ok) {
                 const data = await response.json();
@@ -68,6 +89,9 @@ const Dashboard = () => {
                 setError(null);
                 setRetryAttempt(0); // Reset retry count on success
                 
+                // 📊 Track successful API call
+                performanceService.trackGenericPerformance('fetch_groups', responseTime, true);
+                
                 console.log(`✅ Successfully fetched ${groupsData.length} groups`);
                 
                 if (!silent) {
@@ -76,6 +100,9 @@ const Dashboard = () => {
             } else {
                 const errorData = await response.json().catch(() => ({}));
                 const errorMessage = errorData.error || `Server error (${response.status})`;
+                
+                // 📊 Track failed API call
+                performanceService.trackGenericPerformance('fetch_groups', responseTime, false);
                 
                 if (response.status === 401) {
                     throw new Error('Your session has expired. Please log in again.');
@@ -89,6 +116,10 @@ const Dashboard = () => {
             }
         } catch (err) {
             console.error('❌ Error fetching groups:', err);
+            
+            // 📊 Track failed request if not already tracked
+            const responseTime = Date.now() - startTime;
+            performanceService.trackGenericPerformance('fetch_groups', responseTime, false);
             
             let errorMessage = err.message;
             
@@ -130,7 +161,7 @@ const Dashboard = () => {
         }
     };
 
-    // ✅ ENHANCED: Better group creation handling
+    // ✅ ENHANCED: Better group creation handling with performance tracking
     const handleGroupCreated = (newGroup) => {
         if (!newGroup || !newGroup.id) {
             console.error('❌ Invalid group data received:', newGroup);
@@ -146,14 +177,19 @@ const Dashboard = () => {
                 console.warn('⚠️ Group already exists in list:', newGroup.id);
                 return prev;
             }
-            return [newGroup, ...prev];
+            const newGroups = [newGroup, ...prev];
+            
+            // 📊 Update active sessions count
+            performanceService.updateActiveSessions(newGroups.length);
+            
+            return newGroups;
         });
         
         toast.success(`🎉 Group "${newGroup.name}" created successfully!`);
         console.log('✅ Group created and added to list:', newGroup.name);
     };
 
-    // ✅ ENHANCED: Better group joining handling
+    // ✅ ENHANCED: Better group joining handling with performance tracking
     const handleGroupJoined = (joinedGroup) => {
         if (!joinedGroup || !joinedGroup.id) {
             console.error('❌ Invalid joined group data:', joinedGroup);
@@ -169,7 +205,12 @@ const Dashboard = () => {
                 toast.info(`You're already a member of "${joinedGroup.name}"`);
                 return prev;
             }
-            return [...prev, joinedGroup];
+            const newGroups = [...prev, joinedGroup];
+            
+            // 📊 Update active sessions count
+            performanceService.updateActiveSessions(newGroups.length);
+            
+            return newGroups;
         });
         
         toast.success(`🎉 Welcome to "${joinedGroup.name}"!`);
@@ -192,6 +233,10 @@ const Dashboard = () => {
                 
                 setGroups(prev => {
                     const filtered = prev.filter(g => g.id !== groupIdToRemove);
+                    
+                    // 📊 Update active sessions count
+                    performanceService.updateActiveSessions(filtered.length);
+                    
                     console.log(`✅ Removed group ${groupIdToRemove} from list`);
                     return filtered;
                 });
@@ -218,8 +263,10 @@ const Dashboard = () => {
         }
     };
 
-    // ✅ ENHANCED: Better create modal submission
+    // ✅ ENHANCED: Better create modal submission with performance tracking
     const handleCreateModalSubmit = async (groupData) => {
+        const startTime = Date.now();
+        
         try {
             const backendUrl = import.meta.env.VITE_BACKEND_URL;
             if (!backendUrl) {
@@ -236,17 +283,29 @@ const Dashboard = () => {
                 body: JSON.stringify(groupData)
             });
             
+            const responseTime = Date.now() - startTime;
+            
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 const errorMessage = errorData.error || `Server error (${response.status})`;
+                
+                // 📊 Track failed group creation
+                performanceService.trackGenericPerformance('create_group', responseTime, false);
+                
                 throw new Error(errorMessage);
             }
             
             const data = await response.json();
             
             if (!data.group) {
+                // 📊 Track failed group creation (invalid response)
+                performanceService.trackGenericPerformance('create_group', responseTime, false);
+                
                 throw new Error('Invalid response: missing group data');
             }
+            
+            // 📊 Track successful group creation
+            performanceService.trackGenericPerformance('create_group', responseTime, true);
             
             handleGroupCreated(data.group);
             setIsCreateModalOpen(false);
@@ -255,6 +314,10 @@ const Dashboard = () => {
             
         } catch (error) {
             console.error('❌ Error creating group:', error);
+            
+            // 📊 Track failed group creation if not already tracked
+            const responseTime = Date.now() - startTime;
+            performanceService.trackGenericPerformance('create_group', responseTime, false);
             
             let errorMessage = error.message;
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
