@@ -499,10 +499,15 @@ const SteamConnectionWidget = ({
 };
 
 // Export all components
-export {
+const SteamComponents = {
     SteamStatusIndicator,
-    SteamConnectButton,
+    SteamGameCard,
+    SteamLibraryGrid,
+    SteamConnectionPrompt,
     SteamSyncButton,
-    SteamUserCard,
-    SteamConnectionWidget
+    SteamUserProfile,
+    SteamGameSearch,
+    SteamStatsCard
 };
+
+export default SteamComponents;

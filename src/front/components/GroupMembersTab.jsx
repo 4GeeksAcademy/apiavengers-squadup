@@ -8,6 +8,13 @@ import { ACTION_TYPES } from '../store/store.js';
 import SteamManager from './SteamManager';
 import EnhancedSteamFeatures from './Steam/EnhancedSteamFeatures';
 
+import { 
+    MemberCard, 
+    MemberSearchAndFilters, 
+    MembersList, 
+    MemberStatsCards 
+} from './GroupMembers';
+
 const GroupMembersTab = ({ group, user, onGroupUpdate }) => {
     const { store, dispatch } = useGlobalReducer();
     
