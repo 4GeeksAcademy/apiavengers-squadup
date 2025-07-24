@@ -1,6 +1,6 @@
 // src/front/components/SteamManager.jsx - Updated to work with your existing backend
 import React, { useState, useEffect } from 'react';
-import useSteamConnection from '../hooks/useSteamConnection';
+import useSteamConnection from '../hooks/useSteamConnection.js';
 
 // Inline Steam components to replace missing imports
 const SteamStatusIndicator = ({ isConnected, isLoading, compact = false, className = '' }) => {
