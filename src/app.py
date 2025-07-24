@@ -24,11 +24,10 @@ if str(parent_dir) not in sys.path:
 from dotenv import load_dotenv
 load_dotenv()
 
-# Third-party imports
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+# Third-party imports - 🔥 FIXED: Added make_response import, REMOVED CORS import
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, make_response
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, get_jwt, jwt_required, get_jwt_identity
-from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -317,22 +316,100 @@ app.limiter = limiter
 
 
 # ============================================================================
-# CORS Configuration for GitHub Codespaces
+# 🔥 FIXED CORS Configuration - MANUAL HANDLING ONLY
 # ============================================================================
-allowed_origins = [os.getenv('FRONTEND_URL')] if os.getenv('FRONTEND_URL') else []
-if not allowed_origins:
-    allowed_origins.append('http://localhost:3000') # Default for local dev
 
+# Build allowed origins list
+allowed_origins = []
+
+# Add environment variable origins
+if os.getenv('FRONTEND_URL'):
+    allowed_origins.append(os.getenv('FRONTEND_URL'))
+
+# Add default local development
+allowed_origins.extend([
+    'http://localhost:3000',
+    'https://localhost:3000'
+])
+
+# Add GitHub Codespaces URLs
 CODESPACE_NAME = os.getenv('CODESPACE_NAME')
 GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = os.getenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN')
 
 if CODESPACE_NAME and GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:
+    # Your specific Codespace URLs
     frontend_codespace_url = f"https://{CODESPACE_NAME}-3000.{GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
-    if frontend_codespace_url not in allowed_origins:
-        allowed_origins.append(frontend_codespace_url)
+    backend_codespace_url = f"https://{CODESPACE_NAME}-3001.{GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+    
+    allowed_origins.extend([
+        frontend_codespace_url,
+        backend_codespace_url
+    ])
 
-CORS(app, origins=allowed_origins, supports_credentials=True)
-print(f"CORS enabled for origins: {allowed_origins}")
+# Add your specific Codespace URLs from the error logs
+allowed_origins.extend([
+    "https://bookish-funicular-9754qgjjg9743pqr7-3000.app.github.dev",
+    "https://bookish-funicular-9754qgjjg9743pqr7-3001.app.github.dev"
+])
+
+# Remove duplicates while preserving order
+allowed_origins = list(dict.fromkeys(allowed_origins))
+
+print(f"🔧 CORS enabled for origins: {allowed_origins}")
+print(f"🔥 CORS credentials support: ENABLED")
+
+
+# ============================================================================
+# 🔥 MANUAL CORS HANDLING - NO Flask-CORS to avoid duplicates
+# ============================================================================
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        origin = request.headers.get('Origin')
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Headers'] = "Content-Type,Authorization,Accept,Origin,X-Requested-With"
+            response.headers['Access-Control-Allow-Methods'] = "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    if origin in allowed_origins:
+        # Only set if not already set to avoid duplicates
+        if not response.headers.get('Access-Control-Allow-Origin'):
+            response.headers['Access-Control-Allow-Origin'] = origin
+        if not response.headers.get('Access-Control-Allow-Credentials'):
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        if not response.headers.get('Access-Control-Allow-Headers'):
+            response.headers['Access-Control-Allow-Headers'] = "Content-Type,Authorization,Accept,Origin,X-Requested-With"
+        if not response.headers.get('Access-Control-Allow-Methods'):
+            response.headers['Access-Control-Allow-Methods'] = "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+    
+    # Add performance headers for debugging
+    if hasattr(request, 'start_time'):
+        request_time = (time.time() - request.start_time) * 1000
+        response.headers['X-Response-Time'] = f"{request_time:.2f}ms"
+        
+        # Get current health status safely
+        try:
+            current_metrics = monitor.get_current_metrics()
+            response.headers['X-Server-Health'] = current_metrics['health_status']['status']
+        except Exception as e:
+            response.headers['X-Server-Health'] = 'unknown'
+            print(f"Warning: Could not get health status: {e}")
+        
+        # Log slow requests with detailed information
+        if request_time > 1000:  # Requests over 1 second
+            print(f"🐌 Slow request: {request.endpoint or 'unknown'} ({request.method}) took {request_time:.2f}ms")
+            # Only call if method exists
+            if hasattr(monitor, 'track_slow_request'):
+                monitor.track_slow_request(request.endpoint or 'unknown', request_time)
+    
+    return response
 
 
 # ============================================================================
@@ -361,32 +438,6 @@ def setup_performance_monitoring(app):
         endpoint = request.endpoint
         if endpoint and hasattr(monitor, 'track_endpoint_access'):
             monitor.track_endpoint_access(endpoint)
-    
-    @app.after_request  
-    def after_request(response):
-        if hasattr(request, 'start_time'):
-            request_time = (time.time() - request.start_time) * 1000
-            monitor.track_request(request_time)
-            
-            # Add performance headers for debugging
-            response.headers['X-Response-Time'] = f"{request_time:.2f}ms"
-            
-            # Get current health status safely
-            try:
-                current_metrics = monitor.get_current_metrics()
-                response.headers['X-Server-Health'] = current_metrics['health_status']['status']
-            except Exception as e:
-                response.headers['X-Server-Health'] = 'unknown'
-                print(f"Warning: Could not get health status: {e}")
-            
-            # Log slow requests with detailed information
-            if request_time > 1000:  # Requests over 1 second
-                print(f"🐌 Slow request: {request.endpoint or 'unknown'} ({request.method}) took {request_time:.2f}ms")
-                # Only call if method exists
-                if hasattr(monitor, 'track_slow_request'):
-                    monitor.track_slow_request(request.endpoint or 'unknown', request_time)
-        
-        return response
     
     # Enhanced global error handler with monitoring
     @app.errorhandler(Exception)
@@ -510,6 +561,19 @@ def debug_database_info():
             'error': str(e),
             'database_url': app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set')[:50]
         })
+
+@app.route('/debug/cors-test')
+def cors_test():
+    """Test endpoint to verify CORS configuration"""
+    return jsonify({
+        'message': 'CORS test successful',
+        'origin': request.headers.get('Origin'),
+        'method': request.method,
+        'headers': dict(request.headers),
+        'cors_origins': allowed_origins,
+        'supports_credentials': True,
+        'timestamp': time.time()
+    })
 
 @app.route('/debug/force-refresh')
 def force_refresh_database():
@@ -726,6 +790,8 @@ def health_check():
             'timestamp': utc_now().isoformat(),
             'jwt_configured': bool(app.config.get('JWT_SECRET_KEY')),
             'environment': ENV,
+            'cors_origins': allowed_origins,
+            'supports_credentials': True,
             'performance': {
                 'health_status': current_metrics['health_status']['status'],
                 'memory_usage_mb': current_metrics['system']['memory_usage_mb'],
@@ -941,6 +1007,7 @@ if __name__ == '__main__':
     print(f"   Health Check: http://localhost:{PORT}/health")
     print("🔧 Debug Endpoints:")
     print(f"   Database Info: http://localhost:{PORT}/debug/database-info")
+    print(f"   CORS Test: http://localhost:{PORT}/debug/cors-test")
     print(f"   Force Refresh: http://localhost:{PORT}/debug/force-refresh")
     print(f"   Create Test User: http://localhost:{PORT}/debug/create-test-user")
     print(f"   Flask-Admin Refresh: http://localhost:{PORT}/debug/flask-admin-refresh")

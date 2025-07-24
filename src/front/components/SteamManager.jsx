@@ -1,13 +1,269 @@
 // src/front/components/SteamManager.jsx - Updated to work with your existing backend
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import useSteamConnection from '../hooks/useSteamConnection';
-import { 
-    SteamConnectionWidget,
-    SteamStatusIndicator,
-    SteamConnectButton,
-    SteamSyncButton,
-    SteamUserCard 
-} from './Steam/SteamComponents';
+
+// Inline Steam components to replace missing imports
+const SteamStatusIndicator = ({ isConnected, isLoading, compact = false, className = '' }) => {
+    const getStatus = () => {
+        if (isLoading) {
+            return { text: 'Loading...', color: 'text-yellow-400', icon: '⏳' };
+        }
+        if (!isConnected) {
+            return { text: 'Not Connected', color: 'text-red-400', icon: '❌' };
+        }
+        return { text: 'Connected', color: 'text-green-400', icon: '✅' };
+    };
+    
+    const status = getStatus();
+    
+    return (
+        <div className={`flex items-center space-x-2 ${className}`}>
+            <span>{status.icon}</span>
+            <span className={status.color}>{status.text}</span>
+        </div>
+    );
+};
+
+const SteamConnectButton = ({ 
+    isConnected, 
+    isLoading = false, 
+    onConnect, 
+    onDisconnect,
+    variant = 'primary',
+    size = 'md',
+    className = '' 
+}) => {
+    const baseClasses = 'font-medium rounded-lg transition-colors disabled:opacity-50';
+    const variants = {
+        primary: 'bg-green-600 hover:bg-green-700 text-white',
+        secondary: 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+    };
+    const sizes = {
+        sm: 'px-3 py-1.5 text-sm',
+        md: 'px-4 py-2'
+    };
+    
+    const buttonClasses = `${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`;
+    
+    if (isConnected) {
+        return (
+            <button 
+                onClick={onDisconnect}
+                disabled={isLoading}
+                className={buttonClasses}
+            >
+                {isLoading ? 'Disconnecting...' : 'Disconnect Steam'}
+            </button>
+        );
+    }
+    
+    return (
+        <button 
+            onClick={onConnect}
+            disabled={isLoading}
+            className={buttonClasses}
+        >
+            {isLoading ? 'Connecting...' : '🎮 Connect Steam'}
+        </button>
+    );
+};
+
+const SteamSyncButton = ({ 
+    onSync, 
+    isLoading = false, 
+    lastSyncTime,
+    needsSync,
+    gamesCount,
+    canSync = true,
+    cooldownSeconds = 0,
+    variant = 'primary',
+    size = 'md',
+    className = '' 
+}) => {
+    const baseClasses = 'font-medium rounded-lg transition-colors disabled:opacity-50';
+    const variants = {
+        primary: 'bg-blue-600 hover:bg-blue-700 text-white',
+        secondary: 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+    };
+    const sizes = {
+        sm: 'px-3 py-1.5 text-sm',
+        md: 'px-4 py-2'
+    };
+    
+    const buttonClasses = `${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`;
+    const disabled = isLoading || !canSync || cooldownSeconds > 0;
+    
+    let buttonText = '🔄 Sync Games';
+    if (isLoading) buttonText = 'Syncing...';
+    else if (cooldownSeconds > 0) buttonText = `Cooldown (${cooldownSeconds}s)`;
+    else if (needsSync) buttonText = '🔄 Sync Needed';
+    
+    return (
+        <button 
+            onClick={onSync}
+            disabled={disabled}
+            className={buttonClasses}
+            title={gamesCount ? `${gamesCount} games` : 'Sync your Steam library'}
+        >
+            {buttonText}
+        </button>
+    );
+};
+
+const SteamConnectionWidget = ({ 
+    variant = 'full',
+    steam,
+    title,
+    showSyncButton = true,
+    showUserCard = true,
+    className = '' 
+}) => {
+    if (variant === 'compact') {
+        return (
+            <div className={`space-y-3 ${className}`}>
+                <div className="flex items-center justify-between">
+                    {title && <h3 className="text-white font-medium">{title}</h3>}
+                    <SteamStatusIndicator 
+                        isConnected={steam.isConnected}
+                        isLoading={steam.loading}
+                        compact={true}
+                    />
+                </div>
+                
+                {steam.isConnected ? (
+                    <div className="flex space-x-2">
+                        {showSyncButton && (
+                            <SteamSyncButton
+                                onSync={steam.syncLibrary}
+                                isLoading={steam.loading}
+                                lastSyncTime={steam.lastSynced}
+                                needsSync={steam.needsSync}
+                                gamesCount={steam.totalGames}
+                                canSync={steam.canSync}
+                                cooldownSeconds={steam.cooldownSeconds}
+                                size="sm"
+                            />
+                        )}
+                        
+                        <SteamConnectButton
+                            isConnected={steam.isConnected}
+                            isLoading={steam.loading}
+                            onConnect={steam.connectViaOpenID}
+                            onDisconnect={steam.disconnect}
+                            variant="secondary"
+                            size="sm"
+                        />
+                    </div>
+                ) : (
+                    <SteamConnectButton
+                        isConnected={steam.isConnected}
+                        isLoading={steam.loading}
+                        onConnect={steam.connectViaOpenID}
+                        onDisconnect={steam.disconnect}
+                        size="sm"
+                    />
+                )}
+            </div>
+        );
+    }
+    
+    // Full variant
+    return (
+        <div className={`space-y-4 ${className}`}>
+            <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white flex items-center">
+                    <span className="text-xl mr-2">🎮</span>
+                    {title || 'Steam Connection'}
+                </h3>
+                <SteamStatusIndicator 
+                    isConnected={steam.isConnected}
+                    isLoading={steam.loading}
+                />
+            </div>
+
+            {steam.isConnected ? (
+                <div className="space-y-4">
+                    {showUserCard && (
+                        <SteamUserCard 
+                            steamUsername={steam.steamUsername}
+                            steamAvatar={steam.steamAvatar}
+                            gamesCount={steam.totalGames}
+                        />
+                    )}
+
+                    <div className="flex space-x-3">
+                        {showSyncButton && (
+                            <div className="flex-1">
+                                <SteamSyncButton
+                                    onSync={steam.syncLibrary}
+                                    isLoading={steam.loading}
+                                    lastSyncTime={steam.lastSynced}
+                                    needsSync={steam.needsSync}
+                                    gamesCount={steam.totalGames}
+                                    canSync={steam.canSync}
+                                    cooldownSeconds={steam.cooldownSeconds}
+                                />
+                            </div>
+                        )}
+
+                        <SteamConnectButton
+                            isConnected={steam.isConnected}
+                            isLoading={steam.loading}
+                            onConnect={steam.connectViaOpenID}
+                            onDisconnect={steam.disconnect}
+                            variant="secondary"
+                        />
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                        <p className="text-blue-300 text-sm">
+                            Connect your Steam account to sync your games and improve squad matching.
+                        </p>
+                    </div>
+                    
+                    <SteamConnectButton
+                        isConnected={steam.isConnected}
+                        isLoading={steam.loading}
+                        onConnect={steam.connectViaOpenID}
+                        onDisconnect={steam.disconnect}
+                    />
+                </div>
+            )}
+        </div>
+    );
+};
+
+const SteamUserCard = ({ 
+    steamUsername, 
+    steamAvatar, 
+    gamesCount, 
+    compact = false,
+    className = '' 
+}) => {
+    return (
+        <div className={`p-4 bg-white/10 border border-white/20 rounded-lg ${className}`}>
+            <div className="flex items-center space-x-3">
+                {steamAvatar && (
+                    <img 
+                        src={steamAvatar} 
+                        alt={steamUsername}
+                        className={compact ? "w-8 h-8 rounded-full" : "w-12 h-12 rounded-full"}
+                    />
+                )}
+                <div>
+                    <h3 className={`text-white font-bold ${compact ? 'text-sm' : ''}`}>
+                        {steamUsername || 'Steam User'}
+                    </h3>
+                    <p className={`text-white/60 ${compact ? 'text-xs' : 'text-sm'}`}>
+                        {gamesCount || 0} games
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 /**
  * Unified Steam Manager - Replaces multiple Steam components
@@ -38,7 +294,7 @@ const SteamManager = ({
     const steam = useSteamConnection(user);
 
     // Notify parent of connection changes
-    React.useEffect(() => {
+    useEffect(() => {
         if (onConnectionChange) {
             onConnectionChange(steam.isConnected, {
                 steam_username: steam.steamUsername,
@@ -50,7 +306,7 @@ const SteamManager = ({
     }, [steam.isConnected, steam.steamUsername, steam.steamAvatar, steam.totalGames, steam.lastSynced, onConnectionChange]);
 
     // Notify parent of user data updates (for compatibility with existing components)
-    React.useEffect(() => {
+    useEffect(() => {
         if (onUserUpdate && steam.isConnected) {
             onUserUpdate({
                 ...user,
@@ -202,15 +458,13 @@ const SteamManager = ({
     );
 };
 
-// Export individual components for advanced usage
 export {
     SteamStatusIndicator,
-    SteamConnectButton, 
+    SteamConnectButton,
     SteamSyncButton,
-    SteamUserCard,
     SteamConnectionWidget,
+    SteamUserCard,
     useSteamConnection
 };
 
-// Default export
 export default SteamManager;

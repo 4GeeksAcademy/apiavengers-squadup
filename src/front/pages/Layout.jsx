@@ -1,4 +1,4 @@
-// src/front/pages/Layout.jsx - SECURED VERSION with Role-Based Performance Monitor
+// src/front/pages/Layout.jsx - FIXED VERSION with NavbarDebug
 
 import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
@@ -13,6 +13,9 @@ import {
     getPerformanceAccessLevel,
     logPerformanceAccess 
 } from "../utils/performanceAccess";
+
+// 🐛 DEBUG: Import the debug component (only shows in development)
+import NavbarDebug from "../components/NavbarDebug";
 
 export const Layout = () => {
     const { store, dispatch } = useGlobalReducer();
@@ -123,6 +126,9 @@ export const Layout = () => {
 
     return (
         <div className="min-h-screen flex flex-col">
+            {/* 🐛 DEBUG: Only shows in development */}
+            {import.meta.env.DEV && <NavbarDebug />}
+            
             {/* Enhanced Gaming-themed Toaster */}
             <Toaster 
                 position="top-center"

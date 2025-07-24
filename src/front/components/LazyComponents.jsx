@@ -186,7 +186,6 @@ export const preloadOnIntent = {
     
     steam: () => {
         import('./SteamManager.jsx').catch(console.warn);
-        import('./.jsx').catch(console.warn);
     },
     
     modals: () => {

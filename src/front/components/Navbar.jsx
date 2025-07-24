@@ -1,489 +1,430 @@
-// src/front/components/Navbar.jsx - Merged with Performance Monitoring
+// src/front/components/Navbar.jsx - ENHANCED with ALL protected routes
 
-import React, { useState, useRef, useEffect } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { GamingLink } from './GamingAnimations';
 import useGlobalReducer from '../hooks/useGlobalReducer';
-import authService from '../store/authService.js';
-import steamService from '../services/steamService.js';
+import authService from '../store/authService';
 import toast from 'react-hot-toast';
 
-// ADD: Import SystemStatusIndicator
-import SystemStatusIndicator from './SystemStatusIndicator';
+const EnhancedNavbar = () => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const navRef = useRef(null);
+  const logoRef = useRef(null);
+  const navigate = useNavigate();
 
-gsap.registerPlugin(ScrollTrigger);
+  // 🔧 FIX: Connect to global state
+  const { store } = useGlobalReducer();
+  const isAuthenticated = store?.isAuthenticated || false;
+  const user = store?.user || null;
 
-const Navbar = () => {
-    const { store, dispatch } = useGlobalReducer();
-    const isAuthenticated = store.isAuthenticated;
-    const user = store.user;
-    const [showUserMenu, setShowUserMenu] = useState(false);
-    const [showExploreMenu, setShowExploreMenu] = useState(false);
-    const [isConnectingSteam, setIsConnectingSteam] = useState(false);
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const location = useLocation();
-    const navigate = useNavigate();
-    const dropdownRef = useRef(null);
-    const exploreDropdownRef = useRef(null);
+  console.log('🔍 Enhanced Navbar state:', { 
+    isAuthenticated, 
+    user: user?.username, 
+    authLoading: store?.authLoading,
+    hasUser: !!user 
+  });
 
-    const authPages = ['/login', '/signup'];
-    const isAuthPage = authPages.includes(location.pathname);
+  useEffect(() => {
+    initializeNavbarAnimations();
+  }, []);
 
-    if (isAuthPage) {
-        return null;
+  const initializeNavbarAnimations = () => {
+    const magneticElements = navRef.current?.querySelectorAll('.magnetic');
+    magneticElements?.forEach(element => {
+      let isHovering = false;
+      
+      const handleMouseMove = (e) => {
+        if (!isHovering) return;
+        const rect = element.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const deltaX = (e.clientX - centerX) * 0.15;
+        const deltaY = (e.clientY - centerY) * 0.15;
+        
+        gsap.to(element, {
+          x: deltaX,
+          y: deltaY,
+          rotation: deltaX * 0.05,
+          duration: 0.3,
+          ease: "power2.out"
+        });
+      };
+
+      const handleMouseEnter = () => {
+        isHovering = true;
+        gsap.to(element, {
+          scale: 1.05,
+          duration: 0.3,
+          ease: "power2.out"
+        });
+      };
+
+      const handleMouseLeave = () => {
+        isHovering = false;
+        gsap.to(element, {
+          x: 0,
+          y: 0,
+          rotation: 0,
+          scale: 1,
+          duration: 0.6,
+          ease: "elastic.out(1, 0.3)"
+        });
+      };
+
+      element.addEventListener('mousemove', handleMouseMove);
+      element.addEventListener('mouseenter', handleMouseEnter);
+      element.addEventListener('mouseleave', handleMouseLeave);
+    });
+  };
+
+  const toggleCollapse = () => {
+    const newCollapsedState = !isCollapsed;
+    setIsCollapsed(newCollapsedState);
+
+    const navbar = navRef.current;
+    const timeline = gsap.timeline();
+
+    if (newCollapsedState) {
+      timeline
+        .to(navbar.querySelectorAll('.nav-content'), {
+          opacity: 0,
+          scale: 0.8,
+          duration: 0.3,
+          ease: "power2.inOut"
+        })
+        .to(navbar, {
+          width: '80px',
+          height: '80px',
+          borderRadius: '50%',
+          duration: 0.5,
+          ease: "power3.inOut"
+        }, "-=0.1")
+        .to(logoRef.current, {
+          scale: 0.8,
+          duration: 0.3,
+          ease: "power2.out"
+        }, "-=0.3");
+    } else {
+      timeline
+        .to(navbar, {
+          width: '95%',
+          maxWidth: '1536px',
+          height: '80px',
+          borderRadius: '32px',
+          duration: 0.5,
+          ease: "power3.inOut"
+        })
+        .to(logoRef.current, {
+          scale: 1,
+          duration: 0.3,
+          ease: "power2.out"
+        }, "-=0.3")
+        .to(navbar.querySelectorAll('.nav-content'), {
+          opacity: 1,
+          scale: 1,
+          duration: 0.4,
+          ease: "power2.out",
+          stagger: 0.05
+        }, "-=0.2");
     }
+  };
 
-    const handleToggle = (event) => {
-        event.stopPropagation();
-        console.log('Profile button clicked, current showUserMenu:', showUserMenu);
-        setShowUserMenu(!showUserMenu);
-        setShowExploreMenu(false);
-    };
+  const handleNavigation = (path) => {
+    navigate(path);
+    setShowMobileMenu(false);
+  };
 
-    const handleExploreToggle = (event) => {
-        event.stopPropagation();
-        setShowExploreMenu(!showExploreMenu);
-        setShowUserMenu(false);
-    };
+  const handleLogout = async () => {
+    try {
+      console.log('🚪 Logging out...');
+      await authService.logout();
+      toast.success('Logged out successfully');
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Error logging out');
+    }
+  };
 
-    useEffect(() => {
-        const handleOutsideClick = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setShowUserMenu(false);
-            }
-            if (exploreDropdownRef.current && !exploreDropdownRef.current.contains(event.target)) {
-                setShowExploreMenu(false);
-            }
-        };
-        if (showUserMenu || showExploreMenu) {
-            document.addEventListener('click', handleOutsideClick);
-        }
-        return () => document.removeEventListener('click', handleOutsideClick);
-    }, [showUserMenu, showExploreMenu]);
-
-    const handleLogout = async () => {
-        console.log('Logout clicked');
-        try {
-            await authService.logout();
-            dispatch({ type: 'logout' });
-            setShowUserMenu(false);
-            navigate('/');
-            toast.success('Logged out successfully');
-        } catch (error) {
-            console.error('Logout error:', error);
-            toast.error('Error logging out');
-        }
-    };
-
-    const handleSteamIntegration = async () => {
-        console.log('Steam Integration clicked');
-        
-        // If already connected, show status
-        if (user?.steam_connected || user?.is_steam_connected) {
-            toast.success(`Steam already connected as ${user.steam_username || 'Steam User'}`);
-            setShowUserMenu(false);
-            return;
-        }
-        
-        setIsConnectingSteam(true);
-        
-        try {
-            const useOpenID = window.confirm(
-                'Choose Steam connection method:\n\n' +
-                'OK = Use Steam OpenID (Automatic - Recommended)\n' +
-                'Cancel = Enter Steam ID manually'
-            );
-
-            if (useOpenID) {
-                await steamService.connectViaOpenID('/dashboard?steam_connected=true');
-            } else {
-                const instructions = steamService.showSteamIdInstructions();
-                const steamId = prompt(
-                    `${instructions.title}\n\n` +
-                    `${instructions.steps.join('\n')}\n\n` +
-                    `Example: ${instructions.example}\n\n` +
-                    `Note: ${instructions.note}\n\n` +
-                    'Enter your 17-digit Steam ID:'
-                );
-
-                if (!steamId) {
-                    setIsConnectingSteam(false);
-                    return;
-                }
-
-                const result = await steamService.connectManually(steamId);
-                
-                if (result.success) {
-                    dispatch({ 
-                        type: 'set_user', 
-                        payload: result.user 
-                    });
-                    
-                    toast.success(
-                        `Steam connected! ${result.newGames} games added to your library.`
-                    );
-                    
-                    setShowUserMenu(false);
-                } else {
-                    throw new Error(result.error || 'Failed to connect Steam account');
-                }
-            }
-        } catch (error) {
-            console.error('Steam integration failed:', error);
-            const friendlyError = steamService.getErrorMessage(error);
-            toast.error(friendlyError);
-        } finally {
-            setIsConnectingSteam(false);
-        }
-    };
-
-    const handleProfileClick = () => {
-        console.log('Profile Settings clicked');
-        setShowUserMenu(false);
-    };
-
-    const handleDashboardClick = () => {
-        console.log('Dashboard clicked');
-        setShowUserMenu(false);
-    };
-
-    const handleFindGamesClick = () => {
-        console.log('Find Games clicked');
-        setShowUserMenu(false);
-    };
-
-    const handleMenuItemClick = () => {
-        setShowUserMenu(false);
-        setShowExploreMenu(false);
-    };
-
-    const handlePinToggle = () => {
-        setIsCollapsed(!isCollapsed);
-        // Close any open dropdowns when collapsing
-        if (!isCollapsed) {
-            setShowUserMenu(false);
-            setShowExploreMenu(false);
-        }
-    };
-
-    // Get user avatar with fallback
-    const getUserAvatar = () => {
-        if (user?.steam_avatar_url) return user.steam_avatar_url;
-        if (user?.avatar_url) return user.avatar_url;
-        return null;
-    };
-
-    const getUserInitial = () => {
-        return user?.username?.[0]?.toUpperCase() || 'U';
-    };
-
-    return (
-        <nav className="fixed top-4 left-4 right-4 z-50">
-            {/* Collapsed state - just the S logo */}
-            {isCollapsed ? (
-                <div className="flex justify-center">
-                    <button
-                        onClick={handlePinToggle}
-                        className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-300 group"
-                        title="Expand navbar"
+  return (
+    <>
+      <nav 
+        ref={navRef}
+        className={`fixed top-6 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
+          isCollapsed 
+            ? 'w-20 h-20' 
+            : 'w-[95%] max-w-6xl h-20'
+        }`}
+      >
+        <div className="glass-navbar w-full h-full">
+          <div className={`h-full flex items-center transition-all duration-700 ${
+            isCollapsed ? 'justify-center' : 'justify-between px-8'
+          }`}>
+            
+            {/* Logo Section */}
+            <div 
+              ref={logoRef}
+              className={`cursor-pointer transition-all duration-700 ${
+                isCollapsed ? 'scale-75' : 'scale-100'
+              }`}
+              onClick={toggleCollapse}
+            >
+              <div className="magnetic">
+                {isCollapsed ? (
+                  <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-blue-500 rounded-full flex items-center justify-center">
+                    <svg 
+                      className="w-6 h-6 text-white" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
                     >
-                        <span className="text-white font-bold text-lg group-hover:rotate-12 transition-transform duration-300">S</span>
-                    </button>
-                </div>
-            ) : (
-                /* Full navbar */
-                <div className="navbar-glass" style={{ minWidth: '1200px', margin: '0 auto' }}>
-                    <div className="flex justify-between items-center px-6 py-2">
-                        <div className="flex items-center space-x-4">
-                            <Link 
-                                to="/"
-                                className="flex items-center space-x-3 group"
-                            >
-                                <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-marine-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                                    <span className="text-white font-bold text-lg">S</span>
-                                </div>
-                                <span className="text-white font-bold text-2xl group-hover:text-coral-400 transition-colors duration-300 text-shadow">
-                                    SquadUp
-                                </span>
-                            </Link>
-
-                            {/* Pin/Collapse button between logo and navigation */}
-                            <button
-                                onClick={handlePinToggle}
-                                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 flex items-center justify-center text-white/70 hover:text-white transition-all duration-300 ml-2"
-                                title="Collapse Nav"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        {/* Much more spacing between navigation items */}
-                        <div className="flex items-center space-x-16">
-                            {isAuthenticated ? (
-                                <>
-                                    <Link 
-                                        to="/dashboard" 
-                                        className={`text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block ${
-                                            location.pathname === '/dashboard' ? 'text-coral-400' : ''
-                                        }`}
-                                    >
-                                        Dashboard
-                                    </Link>
-                                    <Link 
-                                        to="/groups" 
-                                        className={`text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block ${
-                                            location.pathname.startsWith('/groups') ? 'text-coral-400' : ''
-                                        }`}
-                                    >
-                                        Groups
-                                    </Link>
-                                    <Link 
-                                        to="/sessions" 
-                                        className={`text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block whitespace-nowrap ${
-                                            location.pathname === '/sessions' ? 'text-coral-400' : ''
-                                        }`}
-                                    >
-                                        Find Games
-                                    </Link>
-                                    <Link 
-                                        to="/game-library" 
-                                        className={`text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block whitespace-nowrap ${
-                                            location.pathname === '/game-library' ? 'text-coral-400' : ''
-                                        }`}
-                                    >
-                                        Game Library
-                                    </Link>
-                                    <Link 
-                                        to="/friends" 
-                                        className={`text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:block ${
-                                            location.pathname === '/friends' ? 'text-coral-400' : ''
-                                        }`}
-                                    >
-                                        Friends
-                                    </Link>
-                                </>
-                            ) : (
-                                <div className="relative z-[60]">
-                                    <button
-                                        onClick={handleExploreToggle}
-                                        className="text-white/80 hover:text-white transition-colors duration-300 font-medium hidden sm:flex items-center space-x-1"
-                                    >
-                                        <span>Explore</span>
-                                        <svg className={`w-4 h-4 transition-transform duration-200 ${showExploreMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </button>
-                                    
-                                    {showExploreMenu && (
-                                        <div 
-                                            ref={exploreDropdownRef}
-                                            className={`nav-dropdown ${showExploreMenu ? 'active' : ''}`} 
-                                            style={{ pointerEvents: showExploreMenu ? 'auto' : 'none', zIndex: 70 }}  
-                                            onClick={(e) => e.stopPropagation()}
-                                        >  
-                                            {/* Profile (Home) */}
-                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                                <div className="flex items-center mb-4">
-                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                        <span className="text-xl">👤</span>
-                                                    </div>
-                                                    <h3 className="text-xl font-bold text-white">Profile</h3>
-                                                </div>
-                                                <p className="text-white/70">Manage your gaming profile, connect Steam, and view your game library.</p>
-                                            </div>
-                                            
-                                            {/* Features */}
-                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                                <div className="flex items-center mb-4">
-                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                        <span className="text-xl">⚙️</span>
-                                                    </div>
-                                                    <h3 className="text-xl font-bold text-white">Features</h3>
-                                                </div>
-                                                <p className="text-white/70">Create account, link Steam to sync games, create/join groups, vote on common games, and play the winner!</p>
-                                            </div>
-                                            
-                                            {/* Gaming */}
-                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                                <div className="flex items-center mb-4">
-                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                        <span className="text-xl">🎮</span>
-                                                    </div>
-                                                    <h3 className="text-xl font-bold text-white">Gaming</h3>
-                                                </div>
-                                                <p className="text-white/70">Stay tuned!</p>
-                                            </div>
-                                            
-                                            {/* Community */}
-                                            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl p-6">
-                                                <div className="flex items-center mb-4">
-                                                    <div className="w-12 h-12 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center mr-4">
-                                                        <span className="text-xl">👥</span>
-                                                    </div>
-                                                    <h3 className="text-xl font-bold text-white">Community</h3>
-                                                </div>
-                                                <p className="text-white/70">Stay tuned!</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {isAuthenticated ? (
-                                <div className="flex items-center space-x-6">
-                                    {/* ADD: System Status Indicator */}
-                                    <SystemStatusIndicator 
-                                        showDetails={false} 
-                                        className="hidden sm:flex"
-                                    />
-
-                                    {/* Steam Connection Status Indicator */}
-                                    {user && !(user.steam_connected || user.is_steam_connected) && (
-                                        <button
-                                            onClick={handleSteamIntegration}
-                                            disabled={isConnectingSteam}
-                                            className="hidden sm:flex items-center space-x-2 px-3 py-1 bg-orange-500/20 border border-orange-500/30 rounded-lg hover:bg-orange-500/30 transition-colors duration-300 disabled:opacity-50"
-                                        >
-                                            <span className="text-orange-300 text-sm">🎮</span>
-                                            <span className="text-orange-300 text-sm font-medium">
-                                                {isConnectingSteam ? 'Connecting...' : 'Connect Steam'}
-                                            </span>
-                                        </button>
-                                    )}
-
-                                    <div className="relative z-[60]">
-                                        <button 
-                                            onClick={handleToggle}
-                                            className="flex items-center space-x-2 p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all duration-300"
-                                        >
-                                            {getUserAvatar() ? (
-                                                <img 
-                                                    src={getUserAvatar()} 
-                                                    alt="Avatar" 
-                                                    className="w-8 h-8 rounded-full border border-white/20" 
-                                                />
-                                            ) : (
-                                                <div className="w-8 h-8 bg-gradient-to-r from-coral-500 to-marine-500 rounded-full flex items-center justify-center">
-                                                    <span className="text-white font-bold text-sm">
-                                                        {getUserInitial()}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            <span className="text-white font-medium hidden sm:block">
-                                                {user?.username || 'Profile'}
-                                            </span>
-                                            <svg className={`w-4 h-4 text-white/60 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </button>
-                                        
-                                        <div 
-                                            ref={dropdownRef}
-                                            className={`nav-dropdown ${showUserMenu ? 'active' : ''}`} 
-                                            style={{ pointerEvents: showUserMenu ? 'auto' : 'none', zIndex: 70 }}  
-                                            onClick={(e) => e.stopPropagation()}
-                                        >  
-                                            <Link to="/profile" className="dropdown-item" onClick={handleProfileClick}>
-                                                <span className="flex items-center space-x-2">
-                                                    <span>👤</span>
-                                                    <span>Profile Settings</span>
-                                                </span>
-                                            </Link>
-                                            <Link to="/dashboard" className="dropdown-item" onClick={handleDashboardClick}>
-                                                <span className="flex items-center space-x-2">
-                                                    <span>📊</span>
-                                                    <span>Dashboard</span>
-                                                </span>
-                                            </Link>
-                                            <Link to="/sessions" className="dropdown-item" onClick={handleFindGamesClick}>
-                                                <span className="flex items-center space-x-2">
-                                                    <span>🎮</span>
-                                                    <span>Find Games</span>
-                                                </span>
-                                            </Link>
-                                            <Link to="/game-library" className="dropdown-item" onClick={handleMenuItemClick}>
-                                                <span className="flex items-center space-x-2">
-                                                    <span>📚</span>
-                                                    <span>Game Library</span>
-                                                </span>
-                                            </Link>
-                                            
-                                            {/* ADD: Admin Dashboard Link (only for admin users) */}
-                                            {user?.is_admin && (
-                                                <Link to="/admin/performance" className="dropdown-item" onClick={handleMenuItemClick}>
-                                                    <span className="flex items-center space-x-2">
-                                                        <span>📊</span>
-                                                        <span>Performance Dashboard</span>
-                                                    </span>
-                                                </Link>
-                                            )}
-                                            
-                                            {/* Enhanced Steam Integration Button */}
-                                            <button 
-                                                className="dropdown-item" 
-                                                onClick={handleSteamIntegration}
-                                                disabled={isConnectingSteam}
-                                            >
-                                                <span className="flex items-center space-x-2">
-                                                    {isConnectingSteam ? (
-                                                        <>
-                                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                                            <span>Connecting...</span>
-                                                        </>
-                                                    ) : (user?.steam_connected || user?.is_steam_connected) ? (
-                                                        <>
-                                                            <span>✅</span>
-                                                            <span>Steam: {user?.steam_username || 'Connected'}</span>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <span>🔗</span>
-                                                            <span>Connect Steam</span>
-                                                        </>
-                                                    )}
-                                                </span>
-                                            </button>
-                                            
-                                            <hr className="my-2 border-white/20" />
-                                            <button className="dropdown-item text-red-300 hover:text-red-200" onClick={handleLogout}>
-                                                <span className="flex items-center space-x-2">
-                                                    <span>🚪</span>
-                                                    <span>Logout</span>
-                                                </span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex items-center space-x-4">
-                                    {/* ADD: System Status for non-authenticated users */}
-                                    <SystemStatusIndicator 
-                                        showDetails={false} 
-                                        className="hidden sm:flex"
-                                    />
-                                    
-                                    <Link to="/login" className="text-white/80 hover:text-white transition-colors duration-300 font-medium">
-                                        Login
-                                    </Link>
-                                    <GamingLink
-                                        to="/signup"
-                                        variant="primary"
-                                    >
-                                        Sign Up
-                                    </GamingLink>
-                                </div>
-                            )}
-                        </div>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-coral-500 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg 
+                        className="w-4 h-4 text-white" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
                     </div>
-                </div>
-            )}
-        </nav>
-    );
+                    <h1 className="text-2xl font-black whitespace-nowrap">
+                      <span className="text-white glow-text">Squad</span>
+                      <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-purple">Up</span>
+                    </h1>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Navigation Links */}
+            <div className={`nav-content flex items-center space-x-6 transition-all duration-700 ${
+              isCollapsed ? 'opacity-0 scale-0 pointer-events-none' : 'opacity-100 scale-100'
+            }`}>
+              
+              {/* Always show Explore */}
+              <button
+                onClick={() => handleNavigation('/demo')}
+                className="nav-link magnetic"
+              >
+                <span>Explore</span>
+              </button>
+
+              {/* 🔧 ENHANCED: Show different navigation based on authentication */}
+              {!isAuthenticated ? (
+                // 🔧 Not logged in - show Login and Sign Up
+                <>
+                  <button
+                    onClick={() => handleNavigation('/login')}
+                    className="nav-link magnetic"
+                  >
+                    <span>Login</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => handleNavigation('/signup')}
+                    className="glass-signup-button magnetic"
+                  >
+                    <span>Sign Up</span>
+                  </button>
+                </>
+              ) : (
+                // 🔧 ENHANCED: Logged in - show ALL protected navigation options
+                <>
+                  {/* Dashboard */}
+                  <button
+                    onClick={() => handleNavigation('/dashboard')}
+                    className="nav-link magnetic"
+                  >
+                    <span>Dashboard</span>
+                  </button>
+
+                  {/* 🎮 Game Library */}
+                  <button
+                    onClick={() => handleNavigation('/game-library')}
+                    className="nav-link magnetic"
+                  >
+                    <span>Game Library</span>
+                  </button>
+
+                  {/* 🔍 Find Games */}
+                  <button
+                    onClick={() => handleNavigation('/find-games')}
+                    className="nav-link magnetic"
+                  >
+                    <span>Find Games</span>
+                  </button>
+
+                  {/* 👥 Friends */}
+                  <button
+                    onClick={() => handleNavigation('/friends')}
+                    className="nav-link magnetic"
+                  >
+                    <span>Friends</span>
+                  </button>
+
+                  {/* Profile with Avatar */}
+                  <button
+                    onClick={() => handleNavigation('/profile')}
+                    className="nav-link magnetic flex items-center space-x-2"
+                  >
+                    {user?.avatar ? (
+                      <img 
+                        src={user.avatar} 
+                        alt="Profile" 
+                        className="w-6 h-6 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-6 h-6 bg-gradient-to-r from-coral-400 to-purple-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">
+                          {user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
+                        </span>
+                      </div>
+                    )}
+                    <span>{user?.username || 'Profile'}</span>
+                  </button>
+
+                  {/* Logout */}
+                  <button
+                    onClick={handleLogout}
+                    className="nav-link magnetic text-red-300 hover:text-red-200"
+                  >
+                    <span>Logout</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Enhanced Styles */}
+        <style>{`
+          .glass-navbar {
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            background: linear-gradient(135deg, 
+              rgba(255, 255, 255, 0.15) 0%, 
+              rgba(255, 255, 255, 0.08) 50%, 
+              rgba(255, 255, 255, 0.15) 100%
+            );
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: ${isCollapsed ? '50%' : '32px'};
+            box-shadow: 
+              0 25px 60px rgba(0, 0, 0, 0.4),
+              inset 0 1px 0 rgba(255, 255, 255, 0.3),
+              0 0 30px rgba(0, 255, 255, 0.1);
+            transition: all 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          }
+
+          .nav-link {
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            padding: 12px 20px;
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            white-space: nowrap;
+          }
+
+          .nav-link::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, 
+              transparent, 
+              rgba(0, 255, 255, 0.2), 
+              transparent
+            );
+            transition: left 0.5s ease;
+          }
+
+          .nav-link:hover::before {
+            left: 100%;
+          }
+
+          .nav-link:hover {
+            color: rgba(0, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 20px rgba(0, 255, 255, 0.2);
+            transform: translateY(-2px);
+          }
+
+          .glass-signup-button {
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            background: linear-gradient(135deg, 
+              rgba(255, 127, 80, 0.8) 0%, 
+              rgba(255, 107, 70, 0.8) 100%
+            );
+            border: 1px solid rgba(255, 127, 80, 0.4);
+            border-radius: 16px;
+            padding: 12px 24px;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 20px rgba(255, 127, 80, 0.3);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .glass-signup-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+          }
+
+          .glass-signup-button:hover::before {
+            left: 100%;
+          }
+
+          .glass-signup-button:hover {
+            background: linear-gradient(135deg, 
+              rgba(255, 127, 80, 0.9) 0%, 
+              rgba(255, 107, 70, 0.9) 100%
+            );
+            border-color: rgba(255, 127, 80, 0.6);
+            box-shadow: 0 12px 30px rgba(255, 127, 80, 0.5);
+            transform: translateY(-3px) scale(1.02);
+          }
+
+          .glow-text {
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+          }
+
+          .magnetic {
+            transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          }
+
+          .text-neon-cyan { color: #00ffff; }
+          .text-neon-purple { color: #bf00ff; }
+        `}</style>
+      </nav>
+    </>
+  );
 };
 
-// ✅ FIXED: Add default export
-export default Navbar;
+export default EnhancedNavbar;
