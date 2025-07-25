@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-flask-admin = "*"
 psycopg2-binary = "*"
 gunicorn = "*"
 cloudinary = "*"
@@ -20,6 +19,7 @@ flask-migrate = "*"
 python-dotenv = "*"
 psycopg = {extras = ["binary"], version = "*"}
 flask-monitoringdashboard = "*"
+flask-admin = "==1.6.1"
 
 [dev-packages]
 

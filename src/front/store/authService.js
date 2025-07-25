@@ -1,4 +1,4 @@
-// src/front/store/authService.js - ENHANCED VERSION with proper JWT handling
+// src/front/store/authService.js - FIXED VERSION with proper token handling
 
 import { fetchWithConfig, apiUrl, frontendUrl, isCodespace } from '../config/environment.js';
 
@@ -261,7 +261,7 @@ class AuthService {
     }
 
     // ============================================================================
-    // ENHANCED LOGIN/REGISTER WITH PROPER JWT HANDLING
+    // FIXED LOGIN/REGISTER WITH PROPER TOKEN HANDLING
     // ============================================================================
 
     async login(credentials, remember = false) {
@@ -286,9 +286,21 @@ class AuthService {
             });
             
             const data = await response.json();
+            console.log('🔍 Login response data:', data);
             
             if (response.ok && data.success) {
-                const { access_token: accessToken, refresh_token: refreshToken } = data.tokens || {};
+                // FIXED: Handle both token formats
+                let accessToken, refreshToken;
+                
+                if (data.tokens) {
+                    // New format: tokens nested under 'tokens' object
+                    accessToken = data.tokens.access_token;
+                    refreshToken = data.tokens.refresh_token;
+                } else {
+                    // Current format: tokens at root level
+                    accessToken = data.access_token;
+                    refreshToken = data.refresh_token;
+                }
                 
                 if (!accessToken) {
                     throw new Error('No access token received');
@@ -320,7 +332,7 @@ class AuthService {
                 this.authCheckCompleted = true;
                 this.scheduleTokenRefresh(accessToken);
                 
-                return { success: true, user: data.user };
+                return { success: true, user: data.user, message: data.message };
             } else { 
                 const errorMessage = this.getErrorMessage(data, response.status);
                 if (this.dispatch) {
@@ -357,16 +369,30 @@ class AuthService {
             });
             
             const data = await response.json();
+            console.log('🔍 Registration response data:', data);
             
             if (response.ok && data.success) {
-                const { access_token: accessToken, refresh_token: refreshToken } = data.tokens || {};
+                // FIXED: Handle both token formats
+                let accessToken, refreshToken;
+                
+                if (data.tokens) {
+                    // New format: tokens nested under 'tokens' object
+                    accessToken = data.tokens.access_token;
+                    refreshToken = data.tokens.refresh_token;
+                } else {
+                    // Current format: tokens at root level
+                    accessToken = data.access_token;
+                    refreshToken = data.refresh_token;
+                }
                 
                 if (!accessToken) {
-                    throw new Error('No access token received');
+                    console.error('❌ No access token in response:', data);
+                    throw new Error('No access token received from server');
                 }
                 
                 // Validate received token
                 if (!this.isValidTokenFormat(accessToken)) {
+                    console.error('❌ Invalid token format:', accessToken);
                     throw new Error('Received invalid access token format');
                 }
                 
@@ -391,7 +417,12 @@ class AuthService {
                 this.authCheckCompleted = true;
                 this.scheduleTokenRefresh(accessToken);
                 
-                return { success: true, user: data.user };
+                console.log('🎉 Registration completed successfully!');
+                return { 
+                    success: true, 
+                    user: data.user, 
+                    message: data.message || 'Account created successfully! Welcome to SquadUp!'
+                };
             } else { 
                 const errorMessage = this.getErrorMessage(data, response.status);
                 if (this.dispatch) {
@@ -544,7 +575,14 @@ class AuthService {
 
             if (response.ok) {
                 const data = await response.json();
-                const { access_token: newAccessToken } = data.tokens || {};
+                
+                // FIXED: Handle both token formats for refresh too
+                let newAccessToken;
+                if (data.tokens) {
+                    newAccessToken = data.tokens.access_token;
+                } else {
+                    newAccessToken = data.access_token;
+                }
                 
                 if (newAccessToken && this.isValidTokenFormat(newAccessToken)) {
                     const user = this.getUser();

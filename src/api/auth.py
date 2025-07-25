@@ -1,9 +1,8 @@
-# src/api/auth.py - ENHANCED VERSION with better JWT error handling
+# src/api/auth.py - FIXED VERSION with proper JWT error handling and refresh endpoint
 
 from flask import Blueprint, request, jsonify, current_app
-from api.models import db, User  # User model now handles password logic
+from api.models import db, User
 from api.utils import APIException, utc_now
-from flask_cors import CORS
 from flask_jwt_extended import (
     create_access_token, create_refresh_token, jwt_required,
     get_jwt_identity, get_jwt, verify_jwt_in_request, decode_token
@@ -15,13 +14,34 @@ from sqlalchemy import or_
 import traceback
 
 auth = Blueprint('auth', __name__)
-CORS(auth)
 
 # Import limiter from main app
 def get_limiter():
     """Get the limiter instance from the main app"""
     from flask import current_app
     return getattr(current_app, 'limiter', None)
+
+# ============================================================================
+# JWT ERROR HANDLERS - FIXED
+# ============================================================================
+
+@auth.errorhandler(401)
+def handle_auth_unauthorized(error):
+    """Handle 401 errors in auth blueprint"""
+    return jsonify({
+        'success': False,
+        'error': 'Authentication required',
+        'code': 'TOKEN_REQUIRED'
+    }), 401
+
+@auth.errorhandler(422)
+def handle_auth_jwt_error(error):
+    """Handle JWT validation errors in auth blueprint"""
+    return jsonify({
+        'success': False,
+        'error': 'Invalid or expired token',
+        'code': 'TOKEN_INVALID'
+    }), 422
 
 # ============================================================================
 # ENHANCED JWT ERROR HANDLING
@@ -117,7 +137,7 @@ def validate_token_format(token):
     return True, "Token format is valid"
 
 # ============================================================================
-# ENHANCED AUTHENTICATION ENDPOINTS
+# AUTHENTICATION ENDPOINTS
 # ============================================================================
 
 @auth.route('/register', methods=['POST'])
@@ -180,17 +200,10 @@ def register():
         db.session.add(new_user)
         db.session.commit()
         
-        # Create tokens with enhanced claims
+        # Create tokens
         access_token = create_access_token(
             identity=new_user.id, 
-            expires_delta=timedelta(hours=1),
-            additional_claims={
-                'username': new_user.username, 
-                'email': new_user.email,
-                'steam_connected': new_user.is_steam_connected,
-                'is_active': new_user.is_active,
-                'fresh': True  # Mark as fresh token
-            }
+            expires_delta=timedelta(hours=24)
         )
         refresh_token = create_refresh_token(
             identity=new_user.id, 
@@ -203,21 +216,17 @@ def register():
             "success": True, 
             "message": "Account created successfully! Welcome to SquadUp!",
             "user": new_user.serialize(),
-            "tokens": {
-                "access_token": access_token, 
-                "refresh_token": refresh_token
-            },
-            "expires_in": 3600,
-            "token_type": "Bearer"
+            "access_token": access_token,
+            "refresh_token": refresh_token
         }), 201
         
     except APIException as e:
         db.session.rollback()
-        current_app.logger.warning(f"Registration failed: {e.message} (IP: {client_ip})")
+        current_app.logger.warning(f"Registration failed: {e.message}")
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Registration unexpected error: {str(e)} (IP: {client_ip})")
+        current_app.logger.error(f"Registration unexpected error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @auth.route('/login', methods=['POST'])
@@ -246,56 +255,45 @@ def login():
         user = User.query.filter(or_(User.email == login_field.lower(), User.username == login_field)).first()
 
         if not user:
-            current_app.logger.warning(f"Login attempt with non-existent user: {login_field} (IP: {client_ip})")
+            current_app.logger.warning(f"Login attempt with non-existent user: {login_field}")
             raise APIException("Invalid credentials", status_code=401)
         
         if not user.check_password(password):
-            current_app.logger.warning(f"Failed login attempt for user: {user.username} (IP: {client_ip})")
+            current_app.logger.warning(f"Failed login attempt for user: {user.username}")
             raise APIException("Invalid credentials", status_code=401)
         
         if not user.is_active:
-            current_app.logger.warning(f"Login attempt for inactive account: {user.username} (IP: {client_ip})")
+            current_app.logger.warning(f"Login attempt for inactive account: {user.username}")
             raise APIException("Account is deactivated. Please contact support.", status_code=401)
         
         # Update last login timestamp
         user.last_login = utc_now()
         db.session.commit()
         
-        # Create tokens with enhanced claims
+        # Create tokens
         access_token = create_access_token(
             identity=user.id, 
-            expires_delta=timedelta(hours=1),
-            additional_claims={
-                'username': user.username, 
-                'email': user.email,
-                'steam_connected': user.is_steam_connected,
-                'is_active': user.is_active,
-                'fresh': True  # Mark as fresh token for login
-            }
+            expires_delta=timedelta(hours=24)
         )
         refresh_token = create_refresh_token(
             identity=user.id, 
             expires_delta=timedelta(days=30)
         )
         
-        current_app.logger.info(f"Login successful for user: {user.username} (IP: {client_ip})")
+        current_app.logger.info(f"✅ Login successful for user: {user.username}")
         
         return jsonify({
             "success": True, 
             "message": f"Welcome back, {user.username}!",
             "user": user.serialize(),
-            "tokens": {
-                "access_token": access_token, 
-                "refresh_token": refresh_token
-            },
-            "expires_in": 3600,
-            "token_type": "Bearer"
+            "access_token": access_token,
+            "refresh_token": refresh_token
         }), 200
         
     except APIException as e:
         return jsonify({"success": False, "error": e.message}), e.status_code
     except Exception as e:
-        current_app.logger.error(f"Login unexpected error: {str(e)} (IP: {client_ip})")
+        current_app.logger.error(f"Login unexpected error: {str(e)}")
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @auth.route('/logout', methods=['POST'])
@@ -325,44 +323,52 @@ def logout():
         return jsonify({"success": False, "error": "Logout failed"}), 500
 
 @auth.route('/refresh', methods=['POST'])
-@jwt_required(refresh=True)
-@handle_jwt_exceptions
+@jwt_required(refresh=True)  # FIXED: Specify refresh=True for refresh tokens
 def refresh_token():
-    """Enhanced token refresh with comprehensive validation"""
+    """Refresh access token using refresh token - FIXED VERSION"""
     try:
+        # Get current user from refresh token
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
-        if not user or not user.is_active: 
-            raise APIException("User not found or inactive", status_code=401)
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': 'User not found'
+            }), 404
         
-        # Create new access token with updated claims
+        if not user.is_active:
+            return jsonify({
+                'success': False,
+                'error': 'Account is inactive'
+            }), 401
+        
+        # Create new access token
         new_access_token = create_access_token(
-            identity=current_user_id, 
-            expires_delta=timedelta(hours=1),
-            additional_claims={
-                'username': user.username,
-                'email': user.email,
-                'steam_connected': user.is_steam_connected,
-                'is_active': user.is_active,
-                'fresh': False  # Refreshed tokens are not fresh
-            }
+            identity=user.id,
+            expires_delta=timedelta(hours=24)
         )
         
-        current_app.logger.info(f"Token refreshed for user: {user.username}")
+        current_app.logger.info(f"✅ Token refreshed for user: {user.username}")
         
         return jsonify({
-            "success": True, 
-            "tokens": {
-                "access_token": new_access_token
-            }, 
-            "user": user.serialize(), 
-            "expires_in": 3600,
-            "token_type": "Bearer"
+            'success': True,
+            'access_token': new_access_token,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'steam_connected': user.steam_connected or user.is_steam_connected
+            },
+            'message': 'Token refreshed successfully'
         }), 200
+        
     except Exception as e:
         current_app.logger.error(f"Token refresh error: {str(e)}")
-        return jsonify({"success": False, "error": "Token refresh failed"}), 401
+        return jsonify({
+            'success': False,
+            'error': 'Token refresh failed'
+        }), 401
 
 @auth.route('/verify', methods=['GET'])
 @jwt_required()
@@ -388,11 +394,6 @@ def verify_token():
                 token_valid = False
                 validation_errors.append("Token is expired")
         
-        # Check if user exists in token claims
-        if 'username' in jwt_data and jwt_data['username'] != user.username:
-            token_valid = False
-            validation_errors.append("Token user mismatch")
-        
         if not token_valid:
             current_app.logger.warning(f"Token validation failed for user {user.username}: {validation_errors}")
             return jsonify({
@@ -406,13 +407,7 @@ def verify_token():
             "valid": True, 
             "success": True, 
             "user": user.serialize(),
-            "message": "Token is valid",
-            "token_info": {
-                "issued_at": jwt_data.get('iat'),
-                "expires_at": jwt_data.get('exp'),
-                "fresh": jwt_data.get('fresh', False),
-                "type": jwt_data.get('type', 'access')
-            }
+            "message": "Token is valid"
         }), 200
     except Exception as e:
         current_app.logger.error(f"Token verification error: {str(e)}")
